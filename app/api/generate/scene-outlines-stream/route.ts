@@ -38,6 +38,10 @@ import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import {
+  appendFusionTeachingPrompt,
+  lookupFusionLessonSession,
+} from '@/lib/fusion/session-catalog';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -288,6 +292,18 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    // The browser can only nominate an opaque id. Resolve the frozen, reviewed
+    // projection again on the server; never accept client-supplied prompt text.
+    const fusionLookup = lookupFusionLessonSession(body.fusionSessionId);
+    if (fusionLookup.kind === 'invalid') {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
+      );
+    }
+    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
+
     // Get API configuration from request headers/body
     const {
       model: languageModel,
@@ -312,10 +328,12 @@ export async function POST(req: NextRequest) {
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
     // Build user profile string for language inference context
-    const userProfileText =
+    const userProfileText = appendFusionTeachingPrompt(
       requirements.userNickname || requirements.userBio
         ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
-        : '';
+        : '',
+      fusionSession,
+    );
 
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;

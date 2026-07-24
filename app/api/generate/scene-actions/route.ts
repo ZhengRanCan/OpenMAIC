@@ -27,6 +27,10 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import {
+  appendFusionTeachingPrompt,
+  lookupFusionLessonSession,
+} from '@/lib/fusion/session-catalog';
 
 const log = createLogger('Scene Actions API');
 
@@ -37,6 +41,15 @@ export async function POST(req: NextRequest) {
   let resolvedModelString: string | undefined;
   try {
     const body = await req.json();
+    const fusionLookup = lookupFusionLessonSession(body.fusionSessionId);
+    if (fusionLookup.kind === 'invalid') {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
+      );
+    }
+    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
     const {
       outline,
       allOutlines,
@@ -142,6 +155,7 @@ export async function POST(req: NextRequest) {
       allTitles,
       previousSpeeches: incomingPreviousSpeeches ?? [],
     };
+    const effectiveLanguageDirective = appendFusionTeachingPrompt(languageDirective, fusionSession);
 
     // ── Generate actions ──
     log.info(`Generating actions: "${outline.title}" (${outline.type}) [model=${modelString}]`);
@@ -150,7 +164,7 @@ export async function POST(req: NextRequest) {
       ctx,
       agents,
       userProfile,
-      languageDirective,
+      languageDirective: effectiveLanguageDirective,
     });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);

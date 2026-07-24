@@ -157,6 +157,10 @@ function GenerationPreviewContent() {
   const isReviewingOutlines = session?.previewPhase === 'review';
 
   const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
+    if (session?.fusionSessionId && failure.errorCode === 'INVALID_REQUEST') {
+      return t('generation.fusionSessionUnavailable');
+    }
+
     if (
       failure.errorCode === 'MISSING_API_KEY' ||
       failure.statusCode === 401 ||
@@ -606,6 +610,7 @@ function GenerationPreviewContent() {
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
+                fusionSessionId: currentSession.fusionSessionId,
               }),
             ),
             signal,
@@ -613,7 +618,17 @@ function GenerationPreviewContent() {
             .then((res) => {
               if (!res.ok) {
                 return res.json().then((d) => {
-                  reject(new Error(d.error || t('generation.outlineGenerateFailed')));
+                  const isFusionSessionError =
+                    currentSession.fusionSessionId && d?.errorCode === 'INVALID_REQUEST';
+                  const responseError =
+                    typeof d?.error === 'string' ? d.error : t('generation.outlineGenerateFailed');
+                  reject(
+                    new Error(
+                      isFusionSessionError
+                        ? t('generation.fusionSessionUnavailable')
+                        : responseError,
+                    ),
+                  );
                 });
               }
 
@@ -975,6 +990,7 @@ function GenerationPreviewContent() {
           agents,
           languageDirective,
           requirements: currentSession.requirements,
+          fusionSessionId: currentSession.fusionSessionId,
         },
         signal,
         FOREGROUND_SCENE_RETRY_OPTIONS,
@@ -998,6 +1014,7 @@ function GenerationPreviewContent() {
           previousSpeeches: [],
           userProfile,
           languageDirective,
+          fusionSessionId: currentSession.fusionSessionId,
         },
         signal,
         FOREGROUND_SCENE_RETRY_OPTIONS,
@@ -1071,6 +1088,7 @@ function GenerationPreviewContent() {
           agents,
           userProfile,
           languageDirective,
+          fusionSessionId: currentSession.fusionSessionId,
         }),
       );
 

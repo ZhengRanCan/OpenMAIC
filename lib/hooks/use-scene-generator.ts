@@ -141,6 +141,8 @@ export async function fetchSceneContent(
     agents?: AgentInfo[];
     languageDirective?: string;
     requirements?: UserRequirements;
+    /** Opaque F02 session id; the server resolves its teaching context. */
+    fusionSessionId?: string;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneContentResult>,
@@ -190,6 +192,8 @@ export async function fetchSceneActions(
     previousSpeeches?: string[];
     userProfile?: string;
     languageDirective?: string;
+    /** Opaque F02 session id; the server resolves its teaching context. */
+    fusionSessionId?: string;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneActionsResult>,
@@ -414,6 +418,8 @@ export interface GenerationParams {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  /** Opaque F02 session id carried through every remaining scene. */
+  fusionSessionId?: string;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -518,6 +524,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageInfo: params.stageInfo,
               agents: params.agents,
               languageDirective: params.languageDirective,
+              fusionSessionId: params.fusionSessionId,
             },
             signal,
           );
@@ -613,6 +620,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               previousSpeeches,
               userProfile: params.userProfile,
               languageDirective: params.languageDirective,
+              fusionSessionId: params.fusionSessionId,
             },
             signal,
           );
@@ -764,6 +772,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageInfo: params.stageInfo,
             agents: params.agents,
             languageDirective: params.languageDirective,
+            fusionSessionId: params.fusionSessionId,
           },
           signal,
         );
@@ -792,6 +801,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             previousSpeeches,
             userProfile: params.userProfile,
             languageDirective: params.languageDirective,
+            fusionSessionId: params.fusionSessionId,
           },
           signal,
         );

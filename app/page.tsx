@@ -66,6 +66,7 @@ import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
+import { isSupportedFusionDemoTopic } from '@/lib/fusion/topic';
 
 const log = createLogger('Home');
 
@@ -86,6 +87,8 @@ interface FormState {
   interactiveMode: boolean;
   vocationalTestMode: boolean;
 }
+
+type FusionDemoStudent = 'a' | 'b';
 
 const initialFormState: FormState = {
   courseMaterials: [],
@@ -161,6 +164,9 @@ function HomePage() {
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFusionDemo, setSelectedFusionDemo] = useState<FusionDemoStudent | null>(null);
+  const [isPreparingFusionSession, setIsPreparingFusionSession] = useState(false);
+  const [fusionError, setFusionError] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -274,6 +280,10 @@ function HomePage() {
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+    if (field === 'requirement' && !isSupportedFusionDemoTopic(value as string)) {
+      setSelectedFusionDemo(null);
+      setFusionError(false);
+    }
     try {
       if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
       if (field === 'interactiveMode')
@@ -326,11 +336,49 @@ function HomePage() {
     setError(null);
 
     try {
+      let fusionSessionId: string | undefined;
+      if (selectedFusionDemo) {
+        setIsPreparingFusionSession(true);
+        try {
+          const response = await fetch('/api/fusion/demo-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              demoStudent: selectedFusionDemo,
+              requirement: form.requirement,
+            }),
+          });
+          const data: unknown = await response.json().catch(() => null);
+          const fusionSessionIdFromResponse =
+            typeof data === 'object' && data !== null && 'fusionSessionId' in data
+              ? (data as { fusionSessionId?: unknown }).fusionSessionId
+              : undefined;
+          if (!response.ok || typeof fusionSessionIdFromResponse !== 'string') {
+            throw new Error('Fusion demo session was not created');
+          }
+          fusionSessionId = fusionSessionIdFromResponse;
+          setFusionError(false);
+        } catch (err) {
+          log.warn('Unable to create the selected Fusion demo session:', err);
+          setFusionError(true);
+          setError(t('home.fusion.unavailable'));
+          return;
+        } finally {
+          setIsPreparingFusionSession(false);
+        }
+      }
+
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
-        userNickname: userProfile.nickname || undefined,
-        userBio: userProfile.bio || undefined,
+        // 演示会话只允许向模型传递经审阅的教学策略和课程请求；不能把本地
+        // 昵称或简介与合成演示画像混在一起。普通生成维持原有行为。
+        ...(selectedFusionDemo
+          ? {}
+          : {
+              userNickname: userProfile.nickname || undefined,
+              userBio: userProfile.bio || undefined,
+            }),
         webSearch: form.webSearch || undefined,
         interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
         ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
@@ -384,6 +432,7 @@ function HomePage() {
 
       const sessionState = {
         sessionId: nanoid(),
+        fusionSessionId,
         requirements,
         pdfText: '',
         pdfImages: [],
@@ -419,7 +468,9 @@ function HomePage() {
     return date.toLocaleDateString();
   };
 
-  const canGenerate = !!form.requirement.trim() && hasUsableProvider;
+  const isFusionDemoSupported = isSupportedFusionDemoTopic(form.requirement);
+  const canGenerate =
+    !!form.requirement.trim() && hasUsableProvider && !isPreparingFusionSession;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -610,6 +661,106 @@ function HomePage() {
               onKeyDown={handleKeyDown}
               rows={4}
             />
+
+            {/* F02：只在支持的课题中启用经审阅的离线演示画像。 */}
+            <div
+              className="mx-3 mb-2 rounded-xl border border-violet-200/70 bg-violet-50/60 p-3 dark:border-violet-900/70 dark:bg-violet-950/20"
+              role="group"
+              aria-label={t('home.fusion.title')}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/60 dark:text-violet-200">
+                      {t('home.fusion.badge')}
+                    </span>
+                    <p className="text-xs font-medium text-violet-950 dark:text-violet-100">
+                      {t('home.fusion.title')}
+                    </p>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    {t('home.fusion.description')}
+                  </p>
+                </div>
+                {selectedFusionDemo && isFusionDemoSupported && (
+                  <span className="shrink-0 rounded-full border border-violet-300/80 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-700 dark:bg-violet-950/70 dark:text-violet-200">
+                    {isPreparingFusionSession
+                      ? t('home.fusion.preparing')
+                      : t('home.fusion.selected')}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {(['a', 'b'] as const).map((demoStudent) => {
+                  const selected = selectedFusionDemo === demoStudent;
+                  const titleKey =
+                    demoStudent === 'a' ? 'home.fusion.studentA' : 'home.fusion.studentB';
+                  const descriptionKey =
+                    demoStudent === 'a' ? 'home.fusion.studentADesc' : 'home.fusion.studentBDesc';
+                  return (
+                    <button
+                      key={demoStudent}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={!isFusionDemoSupported || isPreparingFusionSession}
+                      onClick={() => {
+                        setSelectedFusionDemo(demoStudent);
+                        setFusionError(false);
+                        setError(null);
+                      }}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 dark:focus-visible:ring-offset-slate-900',
+                        selected
+                          ? 'border-violet-400 bg-white text-violet-950 shadow-sm dark:border-violet-500 dark:bg-violet-950/70 dark:text-violet-100'
+                          : 'border-violet-200/80 bg-white/60 text-foreground hover:border-violet-300 hover:bg-white dark:border-violet-900/80 dark:bg-slate-950/20 dark:hover:border-violet-700',
+                      )}
+                    >
+                      <span className="block text-xs font-medium">{t(titleKey)}</span>
+                      <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                        {t(descriptionKey)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!isFusionDemoSupported && (
+                <p className="mt-2 text-[11px] text-muted-foreground" role="status">
+                  {t('home.fusion.topicHint')}
+                </p>
+              )}
+
+              {fusionError && (
+                <div
+                  className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-2"
+                  role="alert"
+                >
+                  <p className="text-[11px] text-destructive">{t('home.fusion.unavailable')}</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerate()}
+                      disabled={isPreparingFusionSession}
+                      className="rounded-md px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {t('home.fusion.retry')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFusionDemo(null);
+                        setFusionError(false);
+                        setError(null);
+                      }}
+                      className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                    >
+                      {t('home.fusion.normalGeneration')}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Toolbar row */}
             <div className="px-3 pb-3 flex items-end gap-2">

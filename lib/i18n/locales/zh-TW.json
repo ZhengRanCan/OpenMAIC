@@ -7,7 +7,22 @@
   },
   "home": {
     "slogan": "多智能體互動課室中的生成式學習",
-    "greetingWithName": "嗨，{{name}}"
+    "greetingWithName": "嗨，{{name}}",
+    "fusion": {
+      "badge": "示範",
+      "title": "DeepTutor 示範學生畫像",
+      "description": "僅用於「一次函數」示範，不連結真實帳號或學習紀錄。",
+      "studentA": "示範學生 A",
+      "studentADesc": "基礎鞏固：慢節奏、圖像與逐步講解",
+      "studentB": "示範學生 B",
+      "studentBDesc": "進階挑戰：精簡基礎複習，加入綜合任務",
+      "selected": "已選擇",
+      "preparing": "正在準備…",
+      "topicHint": "本示範目前僅支援包含「一次函數」的課程需求。",
+      "unavailable": "示範畫像暫時不可用。你可以重試，或關閉畫像後以一般方式生成。",
+      "retry": "重試",
+      "normalGeneration": "關閉畫像，一般生成"
+    }
   },
   "toolbar": {
     "pdfParser": "解析器",
@@ -892,6 +907,7 @@
     "outlineRetrying": "大綱生成異常，正在重試...",
     "outlineEmptyResponse": "模型未傳回有效的大綱內容，請檢查模型設定後重試",
     "outlineGenerateFailed": "大綱生成失敗，請稍後重試",
+    "fusionSessionUnavailable": "示範畫像工作階段已失效或暫時不可用。請返回首頁重新選擇畫像，或關閉畫像後以一般方式生成。",
     "sceneGenerateFailed": "場景生成失敗，請稍後重試",
     "sceneGenerateAuthFailed": "場景生成失敗：模型服務拒絕了目前憑證。請檢查模型設定。",
     "sceneGenerateRateLimited": "場景生成觸發限流，請稍後重試。",

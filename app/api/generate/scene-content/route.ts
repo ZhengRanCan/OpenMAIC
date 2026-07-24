@@ -26,6 +26,10 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
+import {
+  appendFusionTeachingPrompt,
+  lookupFusionLessonSession,
+} from '@/lib/fusion/session-catalog';
 
 const log = createLogger('Scene Content API');
 
@@ -36,6 +40,15 @@ export async function POST(req: NextRequest) {
   let resolvedModelString: string | undefined;
   try {
     const body = await req.json();
+    const fusionLookup = lookupFusionLessonSession(body.fusionSessionId);
+    if (fusionLookup.kind === 'invalid') {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
+      );
+    }
+    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
     const {
       outline: rawOutline,
       allOutlines,
@@ -167,6 +180,7 @@ export async function POST(req: NextRequest) {
     );
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
+    const effectiveLanguageDirective = appendFusionTeachingPrompt(languageDirective, fusionSession);
 
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
@@ -175,7 +189,7 @@ export async function POST(req: NextRequest) {
       visionEnabled: hasVision,
       generatedMediaMapping,
       agents,
-      languageDirective,
+      languageDirective: effectiveLanguageDirective,
       thinkingConfig,
       targetLanguage: userLocale || undefined,
       userRequirements: requirements,
