@@ -13,6 +13,21 @@ export interface ClassroomDiagnosisPort {
   diagnose(event: ClassroomEvent): Promise<unknown>;
 }
 
+/** Server-only transport for the F08 Development Only endpoint. */
+export function createF08DiagnosisPort(fetchFn: typeof fetch = fetch): ClassroomDiagnosisPort {
+  const baseUrl = process.env.DEEPTUTOR_FUSION_BASE_URL;
+  return {
+    async diagnose(event) {
+      if (!baseUrl) throw new DevelopmentOnlyConfigurationError('DeepTutor Fusion transport is not configured.');
+      const response = await fetchFn(`${baseUrl.replace(/\/+$/, '')}/api/v1/fusion/diagnosis`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event),
+      });
+      if (!response.ok) throw new Error('Fusion diagnosis is unavailable.');
+      return response.json();
+    },
+  };
+}
+
 export interface DevelopmentOnlyAdapterConfiguration {
   environment: string | undefined;
   developmentMockEnabled: boolean;

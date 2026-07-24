@@ -703,6 +703,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
   const [results, setResults] = useState<QuestionResult[]>(() =>
     initialSubmitted?.kind === 'reviewing' ? initialSubmitted.results : [],
   );
+  const [diagnosisStatus, setDiagnosisStatus] = useState<'idle' | 'checking' | 'available' | 'unavailable'>('idle');
 
   // Draft cache for quiz answers, keyed by sceneId to isolate across classrooms
   const {
@@ -788,6 +789,21 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       setResults(ordered);
       setPhase('reviewing');
       writeSubmittedResults(sceneId, ordered);
+      const firstQuestion = questions[0];
+      const firstResult = ordered[0];
+      if (firstQuestion && firstResult) {
+        setDiagnosisStatus('checking');
+        try {
+          const response = await fetch('/api/fusion/classroom-events', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: firstQuestion.question, answer: Array.isArray(answers[firstQuestion.id]) ? (answers[firstQuestion.id] as string[]).join(', ') : answers[firstQuestion.id], localAssessment: { gradingMode: 'local_quiz', correctness: firstResult.correct === true ? 'correct' : firstResult.correct === false ? 'incorrect' : 'unknown' } }),
+          });
+          const payload = (await response.json()) as { diagnosis?: unknown; continue?: boolean };
+          if (!cancelled) setDiagnosisStatus(payload.diagnosis ? 'available' : 'unavailable');
+        } catch {
+          if (!cancelled) setDiagnosisStatus('unavailable');
+        }
+      }
     })();
 
     return () => {
@@ -975,6 +991,11 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
             {/* Results */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               <ScoreBanner score={earnedScore} total={totalPoints} results={results} />
+              {diagnosisStatus !== 'idle' && (
+                <p className="text-xs rounded-lg px-3 py-2 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300" role="status">
+                  {diagnosisStatus === 'checking' ? '正在获取即时诊断…' : diagnosisStatus === 'available' ? '即时诊断已就绪；你可以继续课堂。' : '即时诊断暂不可用；你仍可继续课堂。'}
+                </p>
+              )}
 
               {questions.map((q, i) => {
                 const r = resultMap[q.id];
