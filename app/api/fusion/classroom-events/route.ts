@@ -5,6 +5,7 @@ import { ClassroomDiagnosisAdapter, createF08DiagnosisPort, DEVELOPMENT_MOCK_KNO
 import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
 import { applyDirective, createLessonRuntimeState, type LessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
 import { planSceneDirective } from '@/lib/fusion/scene-directive-planner';
+import { classroomObservationLedger } from '@/lib/fusion/classroom-observation-ledger';
 
 let runtimeState: LessonRuntimeState = createLessonRuntimeState();
 
@@ -24,8 +25,11 @@ export async function POST(request: NextRequest) {
     const planned = planSceneDirective(diagnosis.teachingIntent, event.eventId, DEVELOPMENT_SCENE_CATALOG, runtimeState);
     const applied = applyDirective(runtimeState, planned.directive);
     if (applied) runtimeState = applied;
+    const executionStatus = applied ? (planned.directive.kind === 'continue' ? 'degraded' : 'executed') : 'not_executed';
+    classroomObservationLedger.record(event, diagnosis, planned.directive, executionStatus);
     return apiSuccess({ diagnosis: { eventId: diagnosis.eventId, correctness: diagnosis.correctness, teachingIntent: diagnosis.teachingIntent }, directive: planned.directive, continue: planned.directive.kind === 'continue' });
   } catch {
+    classroomObservationLedger.record(event, null, undefined, 'degraded');
     return apiSuccess({ diagnosis: null, reasonCode: 'diagnosis_unavailable', continue: true });
   }
 }
