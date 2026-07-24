@@ -1,0 +1,9 @@
+import { describe, expect, it } from 'vitest';
+import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
+import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
+import { planSceneDirective } from '@/lib/fusion/scene-directive-planner';
+const intent = { schemaVersion: 'v1' as const, kind: 'insert_remediation' as const, targetLessonKnowledgePointIds: ['lesson-linear-function-slope'], recommendedStrategy: 'development_mock_concrete_example' };
+describe('F10 SceneDirectivePlanner', () => {
+  it('plans all supported intents and only matches an available remediation scene', () => { expect(planSceneDirective(intent, 'e1', DEVELOPMENT_SCENE_CATALOG, createLessonRuntimeState()).directive).toMatchObject({ kind: 'insert_remediation', targetSceneId: 'remediate-slope-concrete', sourceEventId: 'e1', expectedRuntimeRevision: 0 }); expect(planSceneDirective({ ...intent, recommendedStrategy: 'wrong' }, 'e2', DEVELOPMENT_SCENE_CATALOG, createLessonRuntimeState()).directive.reasonCode).toBe('no_matching_remediation'); });
+  it('safely degrades replay, retry limits, unknown input, and revision state', () => { const state = createLessonRuntimeState(); state.executedSourceEventIds = ['replay']; expect(planSceneDirective(intent, 'replay', DEVELOPMENT_SCENE_CATALOG, state).directive.reasonCode).toBe('duplicate_event'); const retry = createLessonRuntimeState(); retry.checkpointRetryCounts['development-checkpoint'] = 1; expect(planSceneDirective({ ...intent, kind: 'retry_checkpoint' }, 'e3', DEVELOPMENT_SCENE_CATALOG, retry).directive.reasonCode).toBe('retry_limit_reached'); expect(planSceneDirective({ kind: 'teleport' }, 'e4', DEVELOPMENT_SCENE_CATALOG, createLessonRuntimeState()).directive.reasonCode).toBe('unknown_intent'); });
+});
