@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
 import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
+import { applyDirective } from '@/lib/fusion/lesson-runtime-state';
 import { planSceneDirective } from '@/lib/fusion/scene-directive-planner';
 const intent = { schemaVersion: 'v1' as const, kind: 'insert_remediation' as const, targetLessonKnowledgePointIds: ['lesson-linear-function-slope'], recommendedStrategy: 'development_mock_concrete_example' };
 describe('F10 SceneDirectivePlanner', () => {

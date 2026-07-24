@@ -798,7 +798,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: firstQuestion.question, answer: Array.isArray(answers[firstQuestion.id]) ? (answers[firstQuestion.id] as string[]).join(', ') : answers[firstQuestion.id], localAssessment: { gradingMode: 'local_quiz', correctness: firstResult.correct === true ? 'correct' : firstResult.correct === false ? 'incorrect' : 'unknown' } }),
           });
-          const payload = (await response.json()) as { diagnosis?: unknown; continue?: boolean };
+          const payload = (await response.json()) as { diagnosis?: unknown; directive?: { kind?: string }; continue?: boolean };
           if (!cancelled) setDiagnosisStatus(payload.diagnosis ? 'available' : 'unavailable');
         } catch {
           if (!cancelled) setDiagnosisStatus('unavailable');
