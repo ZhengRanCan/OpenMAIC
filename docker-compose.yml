@@ -1,4 +1,25 @@
 services:
+  # F19 local-only authoritative Fusion persistence. It does not start unless
+  # explicitly selected, and credentials come from an untracked local env file.
+  fusion-postgres:
+    image: postgres:16-alpine
+    profiles:
+      - fusion-local
+    environment:
+      POSTGRES_DB: fusion_local
+      POSTGRES_USER: fusion_local
+      POSTGRES_PASSWORD: ${FUSION_LOCAL_POSTGRES_PASSWORD:?set in untracked .env.local}
+    ports:
+      - "127.0.0.1:54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fusion_local -d fusion_local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - fusion-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   openmaic:
     build: .
     ports:
@@ -76,3 +97,4 @@ networks:
 
 volumes:
   openmaic-data:
+  fusion-postgres-data:

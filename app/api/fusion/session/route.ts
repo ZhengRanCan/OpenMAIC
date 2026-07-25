@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSession, recoverSession } from '@/lib/fusion/session/store';
 import {
+  ensureFusionServices,
   isProductionFusion,
-  requireProductionFusionServices,
 } from '@/lib/fusion/reliability/production-services';
 const COOKIE = 'openmaic_fusion_session';
 const secure = process.env.NODE_ENV === 'production';
@@ -13,9 +13,9 @@ export async function POST(request: NextRequest) {
   } catch {}
   if (isProductionFusion()) {
     try {
-      const record = await requireProductionFusionServices().sessions.recover(
-        request.cookies.get(COOKIE)?.value ?? '',
-      );
+      const record = await (
+        await ensureFusionServices()
+      ).sessions.recover(request.cookies.get(COOKIE)?.value ?? '');
       if (!record || record.lessonSessionId !== lessonSessionId)
         return NextResponse.json(
           { success: false, error: 'Session unavailable. Restart the classroom.' },
@@ -48,9 +48,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   if (isProductionFusion()) {
     try {
-      const record = await requireProductionFusionServices().sessions.recover(
-        request.cookies.get(COOKIE)?.value ?? '',
-      );
+      const record = await (
+        await ensureFusionServices()
+      ).sessions.recover(request.cookies.get(COOKIE)?.value ?? '');
       if (!record)
         return NextResponse.json(
           { success: false, error: 'Session expired. Restart the classroom.' },

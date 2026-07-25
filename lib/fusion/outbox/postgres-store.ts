@@ -78,12 +78,14 @@ CREATE INDEX IF NOT EXISTS fusion_outbox_ready_idx
 CREATE INDEX IF NOT EXISTS fusion_outbox_learner_idx ON fusion_outbox (learner_key);
 CREATE TABLE IF NOT EXISTS fusion_outbox_operator_actions (
   id BIGSERIAL PRIMARY KEY,
-  idempotency_key TEXT NOT NULL REFERENCES fusion_outbox(idempotency_key),
+  idempotency_key TEXT NOT NULL,
   operator_id TEXT NOT NULL,
   action TEXT NOT NULL,
   reason TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE fusion_outbox_operator_actions
+  DROP CONSTRAINT IF EXISTS fusion_outbox_operator_actions_idempotency_key_fkey;
 `;
 
 export async function ensureFusionOutboxSchema(queryable: Queryable): Promise<void> {
@@ -305,5 +307,34 @@ export class PgFusionOutboxStore {
       [learnerKey],
     );
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async purgeExpired(now = new Date()): Promise<{ messages: number; auditActions: number }> {
+    const deliveredBefore = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const deadLetterBefore = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const auditBefore = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    return this.transactionHook(async (queryable) => {
+      const messages = await queryable.query<{ count: string }>(
+        `WITH deleted AS (
+           DELETE FROM fusion_outbox
+            WHERE (status = 'delivered' AND updated_at <= $1::timestamptz)
+               OR (status = 'dead_letter' AND updated_at <= $2::timestamptz)
+            RETURNING 1
+         ) SELECT COUNT(*)::text AS count FROM deleted`,
+        [deliveredBefore, deadLetterBefore],
+      );
+      const auditActions = await queryable.query<{ count: string }>(
+        `WITH deleted AS (
+           DELETE FROM fusion_outbox_operator_actions
+            WHERE created_at <= $1::timestamptz
+            RETURNING 1
+         ) SELECT COUNT(*)::text AS count FROM deleted`,
+        [auditBefore],
+      );
+      return {
+        messages: Number(messages.rows[0]?.count ?? 0),
+        auditActions: Number(auditActions.rows[0]?.count ?? 0),
+      };
+    });
   }
 }

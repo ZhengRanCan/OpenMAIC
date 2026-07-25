@@ -1,11 +1,11 @@
 import { findDelegation } from '@/lib/fusion/identity/delegation-store';
 import {
+  ensureFusionServices,
   isProductionFusion,
-  requireProductionFusionServices,
 } from '@/lib/fusion/reliability/production-services';
 async function credentialFor(lessonSessionId: string) {
   if (!isProductionFusion()) return findDelegation(lessonSessionId);
-  const services = requireProductionFusionServices();
+  const services = await ensureFusionServices();
   const session = await services.sessions.get(lessonSessionId);
   return session ? services.credentials.get(session.credentialRef, lessonSessionId) : undefined;
 }
@@ -21,7 +21,6 @@ export async function getRealProfile(lessonSessionId: string, fetchFn: typeof fe
     if (!response.ok) throw new Error('profile_unavailable');
     return response.json();
   };
-  return isProductionFusion()
-    ? requireProductionFusionServices().circuits.run('profile-read', operation)
-    : operation();
+  if (!isProductionFusion()) return operation();
+  return (await ensureFusionServices()).circuits.run('profile-read', operation);
 }

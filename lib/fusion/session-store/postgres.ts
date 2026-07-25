@@ -170,4 +170,17 @@ export class PgFusionSessionStore implements FusionSessionStore {
     );
     return Number(result.rows[0]?.count ?? 0);
   }
+
+  async purgeExpired(now = new Date()): Promise<number> {
+    const result = await this.queryable.query<CountRow>(
+      `WITH deleted AS (
+         DELETE FROM fusion_sessions
+          WHERE (completed_at IS NOT NULL AND completed_at <= $1::timestamptz)
+             OR expires_at <= $2::timestamptz
+          RETURNING 1
+       ) SELECT COUNT(*)::text AS count FROM deleted`,
+      [new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(), now.toISOString()],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
 }

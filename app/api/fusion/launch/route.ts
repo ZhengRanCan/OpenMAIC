@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { storeDelegation } from '@/lib/fusion/identity/delegation-store';
 import {
+  ensureFusionServices,
   isProductionFusion,
-  requireProductionFusionServices,
 } from '@/lib/fusion/reliability/production-services';
 const COOKIE = 'openmaic_fusion_session';
 export async function POST(request: NextRequest) {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return apiSuccess({ lessonSessionId, learnerId: credential.learnerId });
   }
   try {
-    const services = requireProductionFusionServices();
+    const services = await ensureFusionServices();
     const credentialRef = await services.credentials.store(credential);
     const sessionToken = crypto.randomUUID();
     await services.sessions.create(

@@ -1,11 +1,11 @@
 import { findDelegation } from '@/lib/fusion/identity/delegation-store';
 import {
+  ensureFusionServices,
   isProductionFusion,
-  requireProductionFusionServices,
 } from '@/lib/fusion/reliability/production-services';
 async function credentialFor(lessonSessionId: string) {
   if (!isProductionFusion()) return findDelegation(lessonSessionId);
-  const services = requireProductionFusionServices();
+  const services = await ensureFusionServices();
   const session = await services.sessions.get(lessonSessionId);
   return session ? services.credentials.get(session.credentialRef, lessonSessionId) : undefined;
 }
@@ -28,9 +28,8 @@ async function call(
     if (!response.ok) throw new Error('capability_unavailable');
     return response.json();
   };
-  return isProductionFusion()
-    ? requireProductionFusionServices().circuits.run(capability, operation)
-    : operation();
+  if (!isProductionFusion()) return operation();
+  return (await ensureFusionServices()).circuits.run(capability, operation);
 }
 export const requestRealDiagnosis = (event: { lessonSessionId: string }) =>
   call('/api/v1/fusion/real-diagnosis', 'diagnosis', event.lessonSessionId, event);
