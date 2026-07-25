@@ -70,7 +70,7 @@ export function parseClassroomEvent(value: unknown): ClassroomEvent {
   if (!isRecord(value) || value.schemaVersion !== CLASSROOM_CONTRACT_SCHEMA_VERSION || value.eventType !== 'checkpoint_submitted') throw new ClassroomContractError('invalid_event', 'Unsupported classroom event schema or type.');
   const fields = ['eventId', 'lessonSessionId', 'courseId', 'sceneId', 'correlationId', 'checkpointId', 'mappingId', 'mappingRevision', 'originalQuestion', 'studentAnswer', 'occurredAt'];
   if (fields.some((key) => !nonEmptyString(value[key])) || !stringArray(value.lessonKnowledgePointIds) || !isRecord(value.localAssessment) || !nonEmptyString(value.localAssessment.gradingMode) || (value.localAssessment.correctness !== undefined && !validCorrectness(value.localAssessment.correctness))) throw new ClassroomContractError('invalid_event', 'Classroom event has missing or invalid fields.');
-  return value as ClassroomEvent;
+  return value as unknown as ClassroomEvent;
 }
 
 export function parseLearningDiagnosis(value: unknown): LearningDiagnosis {
@@ -78,7 +78,7 @@ export function parseLearningDiagnosis(value: unknown): LearningDiagnosis {
   for (const diagnosis of value.diagnoses) {
     if (!isRecord(diagnosis) || !nonEmptyString(diagnosis.lessonKnowledgePointId) || !nonEmptyString(diagnosis.misconception) || typeof diagnosis.confidence !== 'number' || diagnosis.confidence < 0 || diagnosis.confidence > 1) throw new ClassroomContractError('invalid_diagnosis', 'Diagnosis contains an invalid diagnostic item.');
   }
-  return value as LearningDiagnosis;
+  return value as unknown as LearningDiagnosis;
 }
 
 export function serializeClassroomContract(value: ClassroomEvent | LearningDiagnosis | TeachingIntent | SceneDirective): string { return JSON.stringify(value); }
