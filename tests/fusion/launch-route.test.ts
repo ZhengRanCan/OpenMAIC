@@ -78,6 +78,7 @@ describe('F19 production launch', () => {
       credentials: { store } as never,
       sessions: { create } as never,
       outbox: {} as never,
+      circuits: {} as never,
     });
     vi.stubGlobal(
       'fetch',

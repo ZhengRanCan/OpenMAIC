@@ -11,22 +11,33 @@ async function credentialFor(lessonSessionId: string) {
 }
 async function call(
   path: string,
+  capability: 'diagnosis' | 'profile-update-submit',
   lessonSessionId: string,
   payload: unknown,
   fetchFn: typeof fetch = fetch,
 ) {
-  const credential = await credentialFor(lessonSessionId);
-  const base = process.env.DEEPTUTOR_FUSION_BASE_URL;
-  if (!credential || !base) throw new Error('capability_unavailable');
-  const response = await fetchFn(`${base.replace(/\/+$/, '')}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential.token}` },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error('capability_unavailable');
-  return response.json();
+  const operation = async () => {
+    const credential = await credentialFor(lessonSessionId);
+    const base = process.env.DEEPTUTOR_FUSION_BASE_URL;
+    if (!credential || !base) throw new Error('capability_unavailable');
+    const response = await fetchFn(`${base.replace(/\/+$/, '')}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential.token}` },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error('capability_unavailable');
+    return response.json();
+  };
+  return isProductionFusion()
+    ? requireProductionFusionServices().circuits.run(capability, operation)
+    : operation();
 }
 export const requestRealDiagnosis = (event: { lessonSessionId: string }) =>
-  call('/api/v1/fusion/real-diagnosis', event.lessonSessionId, event);
+  call('/api/v1/fusion/real-diagnosis', 'diagnosis', event.lessonSessionId, event);
 export const submitRealUpdate = (candidate: { lessonSessionId: string }) =>
-  call('/api/v1/fusion/real-profile-updates', candidate.lessonSessionId, candidate);
+  call(
+    '/api/v1/fusion/real-profile-updates',
+    'profile-update-submit',
+    candidate.lessonSessionId,
+    candidate,
+  );

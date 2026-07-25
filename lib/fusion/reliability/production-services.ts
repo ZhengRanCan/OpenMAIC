@@ -1,12 +1,14 @@
 import type { SecretManagerDelegationCredentialStore } from '../credentials/secret-manager';
 import type { PgFusionOutboxStore } from '../outbox/postgres-store';
 import type { PgFusionSessionStore } from '../session-store/postgres';
+import type { CapabilityCircuitBreakers } from './circuit-breaker';
 import { ProductionConfigurationError, readProductionFusionConfig } from './production-config';
 
 export interface ProductionFusionServices {
   credentials: SecretManagerDelegationCredentialStore;
   sessions: PgFusionSessionStore;
   outbox: PgFusionOutboxStore;
+  circuits: CapabilityCircuitBreakers;
 }
 
 let configured: ProductionFusionServices | undefined;
