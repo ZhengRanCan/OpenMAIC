@@ -8,7 +8,7 @@ const MANIFEST_VERSION = 1;
 // A shared classroom never needs request credentials or a provider configuration:
 // model availability is read separately from the server-managed provider catalog.
 const SHARED_FORBIDDEN_FIELD =
-  /(?:api[_-]?key|base[_-]?url|token|secret|password|credential|access[_-]?key|authorization|cookie|headers?|endpoint|proxy|provider(?:s)?(?:config)?|settings|configuration)$/i;
+  /(?:api[_-]?key|base[_-]?url|token|secret|password|credential|access[_-]?key|authorization|cookie|headers?|endpoint|proxy|provider|settings?|configuration|connection|relay|origin)/i;
 
 export interface SharedClassroomSummary {
   id: string;
