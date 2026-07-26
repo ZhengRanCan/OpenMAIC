@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { middleware } from '@/middleware';
+import { config, middleware } from '@/middleware';
 
 describe('F21 LAN demo boundary', () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -13,5 +13,9 @@ describe('F21 LAN demo boundary', () => {
     expect(
       (await middleware(new NextRequest('http://openmaic.local/api/server-providers'))).status,
     ).toBe(404);
+  });
+
+  it('does not exclude public logo paths from the LAN-mode route guard', () => {
+    expect(JSON.stringify(config.matcher)).not.toContain('logos/');
   });
 });

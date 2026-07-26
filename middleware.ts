@@ -59,6 +59,12 @@ export async function middleware(request: NextRequest) {
       { status: 404 },
     );
   }
+
+  // Keep the existing non-demo public-asset behavior. LAN mode evaluates
+  // these paths above, so its allowlist remains complete.
+  if (pathname.startsWith('/_next/image') || pathname.startsWith('/logos/')) {
+    return NextResponse.next();
+  }
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
     return NextResponse.next();
@@ -88,5 +94,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/).*)'],
+  matcher: ['/((?!_next/static|favicon.ico).*)'],
 };
