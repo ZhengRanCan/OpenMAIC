@@ -29,6 +29,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const lanDemo = process.env.OPENMAIC_LAN_DEMO_MODE === 'true';
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body
@@ -37,8 +38,14 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <I18nProvider>
-            <ServerProvidersInit />
-            <AccessCodeGuard>{children}</AccessCodeGuard>
+            {lanDemo ? (
+              children
+            ) : (
+              <>
+                <ServerProvidersInit />
+                <AccessCodeGuard>{children}</AccessCodeGuard>
+              </>
+            )}
             <Toaster position="top-center" />
           </I18nProvider>
         </ThemeProvider>

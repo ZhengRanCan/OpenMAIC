@@ -14,6 +14,7 @@ const requiredDemoEnvironment = {
 // without ever printing a configuration value.
 const forbiddenEnvironment = [
   'ALLOWED_FRAME_ANCESTORS',
+  'ACCESS_CODE',
   'DEEPTUTOR_FUSION_BASE_URL',
   'DEEPTUTOR_FUSION_TOKEN',
   'DEEPTUTOR_SERVICE_TOKEN',
@@ -35,10 +36,17 @@ const forbiddenEnvironment = [
   'OPENAI_API_KEY',
 ];
 
-const forbiddenEnvironmentFiles = ['.env', '.env.local', '.env.production', '.env.production.local'];
+const forbiddenEnvironmentFiles = [
+  '.env',
+  '.env.local',
+  '.env.production',
+  '.env.production.local',
+];
 
 function isCredentialOrProviderSetting(name) {
-  return /(?:_API_KEY|_TOKEN|_SECRET|_BASE_URL)$/i.test(name);
+  return /(?:_API_KEY|_TOKEN|_SECRET|_BASE_URL|_ACCESS_KEY(?:_ID)?|_PASSWORD|_CREDENTIAL)$/i.test(
+    name,
+  );
 }
 
 function privateIpv4Octets(value) {
@@ -59,16 +67,14 @@ export function isPrivateLanIpv4(value) {
 }
 
 export function parseWindowsNetstatListeners(output, port) {
-  return output
-    .split(/\r?\n/)
-    .flatMap((line) => {
-      const match = line.match(/^\s*TCP\s+(\S+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i);
-      if (!match) return [];
-      const localAddress = match[1].replace(/[\[\]]/g, '');
-      const separator = localAddress.lastIndexOf(':');
-      if (separator === -1 || Number(localAddress.slice(separator + 1)) !== port) return [];
-      return [{ localAddress: match[1], pid: Number(match[2]) }];
-    });
+  return output.split(/\r?\n/).flatMap((line) => {
+    const match = line.match(/^\s*TCP\s+(\S+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i);
+    if (!match) return [];
+    const localAddress = match[1].replace(/[\[\]]/g, '');
+    const separator = localAddress.lastIndexOf(':');
+    if (separator === -1 || Number(localAddress.slice(separator + 1)) !== port) return [];
+    return [{ localAddress: match[1], pid: Number(match[2]) }];
+  });
 }
 
 function portListeners(port) {
@@ -113,7 +119,7 @@ function runWindowsReadOnlyQuery(command, projectRoot) {
 
 function localLanAddresses(projectRoot) {
   return runWindowsReadOnlyQuery(
-    "Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Select-Object -ExpandProperty IPAddress | ConvertTo-Json -Compress",
+    'Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Select-Object -ExpandProperty IPAddress | ConvertTo-Json -Compress',
     projectRoot,
   ).filter((value) => typeof value === 'string' && isPrivateLanIpv4(value));
 }
@@ -156,9 +162,13 @@ export function inspectLanDemoReadiness({
     errors.push('Port must be an integer from 1024 through 65535.');
   }
   if (!isPrivateLanIpv4(lanAddress ?? '')) {
-    errors.push('LAN address must be an explicit RFC 1918 IPv4 address (10/8, 172.16/12, or 192.168/16).');
+    errors.push(
+      'LAN address must be an explicit RFC 1918 IPv4 address (10/8, 172.16/12, or 192.168/16).',
+    );
   } else if (!getLocalLanAddresses(projectRoot).includes(lanAddress)) {
-    errors.push('LAN address is not configured on this host; choose a confirmed local private interface address.');
+    errors.push(
+      'LAN address is not configured on this host; choose a confirmed local private interface address.',
+    );
   }
   if (!nodeSupportsNext(nodeVersion)) errors.push('Node.js 20.9 or newer is required.');
 
@@ -180,7 +190,9 @@ export function inspectLanDemoReadiness({
   }
   for (const file of forbiddenEnvironmentFiles) {
     if (pathExists(path.join(projectRoot, file))) {
-      errors.push(`${file} is not allowed for a LAN demo; use only the script-owned synthetic configuration.`);
+      errors.push(
+        `${file} is not allowed for a LAN demo; use only the script-owned synthetic configuration.`,
+      );
     }
   }
 
@@ -192,7 +204,9 @@ export function inspectLanDemoReadiness({
   }
   for (const lock of ['.next/dev/lock', '.next/lock']) {
     if (pathExists(path.join(projectRoot, lock))) {
-      errors.push(`${lock} exists, so another Next instance may still own this OpenMAIC directory. Stop it first; this script will not terminate it.`);
+      errors.push(
+        `${lock} exists, so another Next instance may still own this OpenMAIC directory. Stop it first; this script will not terminate it.`,
+      );
     }
   }
   const existingNextProcesses = getOpenMaicNextProcesses(projectRoot);
@@ -203,13 +217,19 @@ export function inspectLanDemoReadiness({
     );
   }
   if (phase === 'full' && !pathExists(path.join(projectRoot, '.next', 'BUILD_ID'))) {
-    errors.push('The production build output (.next/BUILD_ID) is missing; run corepack pnpm build first.');
+    errors.push(
+      'The production build output (.next/BUILD_ID) is missing; run corepack pnpm build first.',
+    );
   }
   if (Number.isSafeInteger(normalizedPort)) {
     const listeners = getPortListeners(normalizedPort);
     if (listeners.length) {
-      const details = listeners.map(({ localAddress, pid }) => `${localAddress} (PID ${pid})`).join(', ');
-      errors.push(`Port ${normalizedPort} is already listening at ${details}. Stop the intended process or choose another port; no process was stopped.`);
+      const details = listeners
+        .map(({ localAddress, pid }) => `${localAddress} (PID ${pid})`)
+        .join(', ');
+      errors.push(
+        `Port ${normalizedPort} is already listening at ${details}. Stop the intended process or choose another port; no process was stopped.`,
+      );
     }
   }
 
@@ -249,7 +269,9 @@ function runCli() {
   }
   const result = inspectLanDemoReadiness(options);
   if (!result.ok) {
-    process.stderr.write(`LAN demo preflight refused:\n${result.errors.map((error) => `- ${error}`).join('\n')}\n`);
+    process.stderr.write(
+      `LAN demo preflight refused:\n${result.errors.map((error) => `- ${error}`).join('\n')}\n`,
+    );
     process.exitCode = 1;
     return;
   }

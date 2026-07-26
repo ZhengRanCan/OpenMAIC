@@ -33,5 +33,5 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Starting the trusted-LAN demo at http://$LanAddress`:$Port/lan-demo"
 Write-Host 'Stop with Ctrl+C. Then verify from the second device that the URL is no longer reachable.'
-& corepack pnpm exec next start --hostname 0.0.0.0 --port $Port
+& corepack pnpm exec next start --hostname $LanAddress --port $Port
 exit $LASTEXITCODE

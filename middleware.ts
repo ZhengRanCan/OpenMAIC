@@ -42,12 +42,27 @@ async function verifyToken(token: string, accessCode: string): Promise<boolean> 
 }
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  if (process.env.OPENMAIC_LAN_DEMO_MODE === 'true') {
+    const allowed =
+      pathname === '/lan-demo' ||
+      pathname.startsWith('/_next/') ||
+      pathname === '/favicon.ico' ||
+      pathname === '/apple-icon.png';
+    if (allowed) return NextResponse.next();
+    return NextResponse.json(
+      {
+        success: false,
+        errorCode: 'LAN_DEMO_ONLY',
+        error: 'This server only exposes the LAN demo.',
+      },
+      { status: 404 },
+    );
+  }
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
     return NextResponse.next();
   }
-
-  const { pathname } = request.nextUrl;
 
   // Whitelist: access-code endpoints, health check
   if (pathname.startsWith('/api/access-code/') || pathname === '/api/health') {

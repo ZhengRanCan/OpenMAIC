@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import {
@@ -106,6 +107,25 @@ test('requires script-owned synthetic demo markers', () => {
   assert.match(result.errors.join('\n'), /OPENMAIC_LAN_DEMO_DATA/);
 });
 
+test('refuses the existing access-code credential setting', () => {
+  const result = ready({
+    env: {
+      OPENMAIC_LAN_DEMO_MODE: 'true',
+      OPENMAIC_LAN_DEMO_DATA: 'synthetic',
+      NODE_ENV: 'production',
+      ACCESS_CODE: 'do-not-print-me',
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /ACCESS_CODE/);
+  assert.doesNotMatch(result.errors.join('\n'), /do-not-print-me/);
+});
+
+test('binds Next to the presenter-confirmed LAN address instead of every interface', () => {
+  const launcher = readFileSync(path.resolve('scripts/lan-demo.ps1'), 'utf8');
+  assert.match(launcher, /next start --hostname \$LanAddress --port \$Port/);
+});
+
 test('parses Windows listeners and only returns the requested port', () => {
   const listeners = parseWindowsNetstatListeners(
     '  TCP    0.0.0.0:3100      0.0.0.0:0      LISTENING       4123\r\n' +
@@ -148,7 +168,14 @@ test('runs the preflight when invoked as a script', () => {
 
 test('removes pnpm’s script argument separator before calling PowerShell', () => {
   assert.deepEqual(
-    normalizeLanDemoArguments(['--', '-LanAddress', '10.23.13.210', '-Port', '3000', '-ConfirmLan']),
+    normalizeLanDemoArguments([
+      '--',
+      '-LanAddress',
+      '10.23.13.210',
+      '-Port',
+      '3000',
+      '-ConfirmLan',
+    ]),
     ['-LanAddress', '10.23.13.210', '-Port', '3000', '-ConfirmLan'],
   );
   assert.deepEqual(normalizeLanDemoArguments(['-LanAddress', '10.23.13.210']), [
