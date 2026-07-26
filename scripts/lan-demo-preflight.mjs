@@ -44,7 +44,7 @@ const forbiddenEnvironmentFiles = [
 ];
 
 function isCredentialOrProviderSetting(name) {
-  return /(?:_API_KEY|_TOKEN|_SECRET|_BASE_URL|_ACCESS_KEY(?:_ID)?|_PASSWORD|_CREDENTIAL)$/i.test(
+  return /(?:_API_KEY|_TOKEN|_SECRET|_BASE_URL|_ACCESS_KEY(?:_ID)?|_PASSWORD|_CREDENTIAL|(?:^|_)(?:DATABASE|DB|REDIS|POSTGRES|MYSQL|MONGO)(?:_URL|_URI|_CONNECTION_STRING))$/i.test(
     name,
   );
 }

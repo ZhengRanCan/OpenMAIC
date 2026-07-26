@@ -94,6 +94,19 @@ test('refuses inherited credentials and an existing Next lock without revealing 
   assert.doesNotMatch(result.errors.join('\n'), /do-not-print-me/);
 });
 
+test('refuses inherited data-source connection settings without revealing values', () => {
+  const result = ready({
+    env: {
+      DATABASE_URL: 'postgres://do-not-print-me@database.example/demo',
+      REDIS_URL: 'redis://do-not-print-me@cache.example/0',
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /DATABASE_URL/);
+  assert.match(result.errors.join('\n'), /REDIS_URL/);
+  assert.doesNotMatch(result.errors.join('\n'), /do-not-print-me/);
+});
+
 test('refuses a production-local environment file that Next would load', () => {
   const paths = new Set([...basePaths, path.join(projectRoot, '.env.production.local')]);
   const result = ready({ paths });
