@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { inspectLanSharedReadiness } from '../../scripts/lan-shared-preflight.mjs';
@@ -59,4 +60,10 @@ test('normalizes pnpm script argument forwarding', () => {
     '-LanAddress',
     '10.23.13.210',
   ]);
+});
+
+test('serves both localhost browser storage and the confirmed LAN address', () => {
+  const launcher = readFileSync(path.resolve('scripts/lan-shared.ps1'), 'utf8');
+  assert.match(launcher, /next start --hostname 0\.0\.0\.0 --port \$Port/);
+  assert.match(launcher, /Host workspace: http:\/\/localhost:\$Port/);
 });

@@ -27,6 +27,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & corepack pnpm lan-shared:preflight -- --lan-address $LanAddress --port $Port
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "Host workspace: http://localhost:$Port"
 Write-Host "LAN shared workspace: http://${LanAddress}:$Port"
-& corepack pnpm exec next start --hostname $LanAddress --port $Port
+& corepack pnpm exec next start --hostname 0.0.0.0 --port $Port
 exit $LASTEXITCODE
