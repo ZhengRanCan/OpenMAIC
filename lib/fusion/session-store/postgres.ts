@@ -112,47 +112,60 @@ export class PgFusionSessionStore implements FusionSessionStore {
     expectedRevision: number,
     update: (record: FusionSessionRecord) => FusionSessionRecord,
   ): Promise<FusionSessionRecord | undefined> {
-    return this.withTransaction(async (queryable) => {
-      const found = await queryable.query<StoredRow>(
-        'SELECT data FROM fusion_sessions WHERE lesson_session_id = $1 FOR UPDATE',
-        [lessonSessionId],
-      );
-      if (!found.rows[0]) return undefined;
-      const current = decode(found.rows[0].data);
-      if (current.revision !== expectedRevision) return undefined;
-      const next = update(current);
-      if (
-        next.lessonSessionId !== current.lessonSessionId ||
-        next.learnerId !== current.learnerId ||
-        next.credentialRef !== current.credentialRef
-      ) {
-        throw new Error('Fusion session identity and credentialRef are immutable');
-      }
-      const stamped: FusionSessionRecord = {
-        ...next,
-        schemaVersion: 'v1',
-        revision: current.revision + 1,
-        createdAt: current.createdAt,
-        updatedAt: new Date().toISOString(),
-      };
-      const result = await queryable.query<{ lesson_session_id: string }>(
-        `UPDATE fusion_sessions
-            SET revision = $3, expires_at = $4::timestamptz, completed_at = $5::timestamptz,
-                updated_at = $6::timestamptz, data = $7::jsonb
-          WHERE lesson_session_id = $1 AND revision = $2
-          RETURNING lesson_session_id`,
-        [
-          lessonSessionId,
-          expectedRevision,
-          stamped.revision,
-          stamped.expiresAt,
-          stamped.completedAt ?? null,
-          stamped.updatedAt,
-          JSON.stringify(stamped),
-        ],
-      );
-      return result.rows.length === 0 ? undefined : stamped;
-    });
+    return this.withTransaction((queryable) =>
+      this.compareAndSetInTransaction(queryable, lessonSessionId, expectedRevision, update),
+    );
+  }
+
+  /**
+   * Lets a related durable write share the session CAS transaction.  Callers
+   * must supply the same transaction boundary used for every related write.
+   */
+  async compareAndSetInTransaction(
+    queryable: Queryable,
+    lessonSessionId: string,
+    expectedRevision: number,
+    update: (record: FusionSessionRecord) => FusionSessionRecord,
+  ): Promise<FusionSessionRecord | undefined> {
+    const found = await queryable.query<StoredRow>(
+      'SELECT data FROM fusion_sessions WHERE lesson_session_id = $1 FOR UPDATE',
+      [lessonSessionId],
+    );
+    if (!found.rows[0]) return undefined;
+    const current = decode(found.rows[0].data);
+    if (current.revision !== expectedRevision) return undefined;
+    const next = update(current);
+    if (
+      next.lessonSessionId !== current.lessonSessionId ||
+      next.learnerId !== current.learnerId ||
+      next.credentialRef !== current.credentialRef
+    ) {
+      throw new Error('Fusion session identity and credentialRef are immutable');
+    }
+    const stamped: FusionSessionRecord = {
+      ...next,
+      schemaVersion: 'v1',
+      revision: current.revision + 1,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    const result = await queryable.query<{ lesson_session_id: string }>(
+      `UPDATE fusion_sessions
+          SET revision = $3, expires_at = $4::timestamptz, completed_at = $5::timestamptz,
+              updated_at = $6::timestamptz, data = $7::jsonb
+        WHERE lesson_session_id = $1 AND revision = $2
+        RETURNING lesson_session_id`,
+      [
+        lessonSessionId,
+        expectedRevision,
+        stamped.revision,
+        stamped.expiresAt,
+        stamped.completedAt ?? null,
+        stamped.updatedAt,
+        JSON.stringify(stamped),
+      ],
+    );
+    return result.rows.length === 0 ? undefined : stamped;
   }
 
   async deleteForLearner(learnerId: string): Promise<number> {

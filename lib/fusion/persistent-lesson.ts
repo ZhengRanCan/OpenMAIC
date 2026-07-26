@@ -45,20 +45,30 @@ export async function recordPersistentClassroomFact(
   diagnosis: LearningDiagnosis,
   directive: SceneDirective,
 ): Promise<void> {
-  await services.outbox.transaction(async (queryable) => {
-    await queryable.query(
-      `INSERT INTO fusion_classroom_facts (event_id, lesson_session_id, learner_id, data, created_at)
-       VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
-       ON CONFLICT (event_id) DO NOTHING`,
-      [
-        event.eventId,
-        session.lessonSessionId,
-        session.learnerId,
-        JSON.stringify(asJson({ event, diagnosis, directive })),
-        event.occurredAt,
-      ],
-    );
-  });
+  await services.outbox.transaction((queryable) =>
+    recordPersistentClassroomFactInTransaction(queryable, session, event, diagnosis, directive),
+  );
+}
+
+export async function recordPersistentClassroomFactInTransaction(
+  queryable: Queryable,
+  session: FusionSessionRecord,
+  event: ClassroomEvent,
+  diagnosis: LearningDiagnosis,
+  directive: SceneDirective,
+): Promise<void> {
+  await queryable.query(
+    `INSERT INTO fusion_classroom_facts (event_id, lesson_session_id, learner_id, data, created_at)
+     VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
+     ON CONFLICT (event_id) DO NOTHING`,
+    [
+      event.eventId,
+      session.lessonSessionId,
+      session.learnerId,
+      JSON.stringify(asJson({ event, diagnosis, directive })),
+      event.occurredAt,
+    ],
+  );
 }
 
 function mapReferences(session: FusionSessionRecord): Map<string, { namespace: string; scopeId: string; id: string }> {

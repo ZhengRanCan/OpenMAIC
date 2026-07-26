@@ -9,7 +9,7 @@ import { classroomObservationLedger } from '@/lib/fusion/classroom-observation-l
 import { parseLearningDiagnosis, type ClassroomEvent } from '@/lib/fusion/contracts';
 import { requestRealDiagnosis } from '@/lib/fusion/adapter/real-event-update-provider';
 import { ensureFusionServices, isProductionFusion } from '@/lib/fusion/reliability/production-services';
-import { recordPersistentClassroomFact } from '@/lib/fusion/persistent-lesson';
+import { recordPersistentClassroomFactInTransaction } from '@/lib/fusion/persistent-lesson';
 import type { SceneCatalog } from '@/lib/fusion/scene-catalog';
 
 let runtimeState: LessonRuntimeState = createLessonRuntimeState();
@@ -73,17 +73,27 @@ async function integratedPost(request: NextRequest, body: Record<string, unknown
   const planned = planSceneDirective(diagnosis.teachingIntent, event.eventId, catalog, runtime);
   const applied = applyDirective(runtime, planned.directive);
   if (!applied) return apiError('INTERNAL_ERROR', 409, 'Classroom state changed; retry the checkpoint.');
-  const updated = await services.sessions.compareAndSet(session.lessonSessionId, session.revision, (current) => ({
-    ...current,
-    runtimeState: JSON.parse(JSON.stringify(applied)),
-  }));
+  let updated;
+  try {
+    updated = await services.outbox.transaction(async (queryable) => {
+      const changed = await services.sessions.compareAndSetInTransaction(
+        queryable,
+        session.lessonSessionId,
+        session.revision,
+        (current) => ({
+          ...current,
+          runtimeState: JSON.parse(JSON.stringify(applied)),
+        }),
+      );
+      if (!changed) return undefined;
+      await recordPersistentClassroomFactInTransaction(queryable, changed, event, diagnosis, planned.directive);
+      return changed;
+    });
+  } catch {
+    return apiError('UPSTREAM_ERROR', 503, 'Classroom state could not be saved.');
+  }
   if (!updated) return apiError('INTERNAL_ERROR', 409, 'Classroom state changed; retry the checkpoint.');
   const executionStatus = planned.directive.kind === 'continue' ? 'degraded' : 'executed';
-  try {
-    await recordPersistentClassroomFact(services, updated, event, diagnosis, planned.directive);
-  } catch {
-    return apiError('UPSTREAM_ERROR', 503, 'Classroom fact could not be saved.');
-  }
   classroomObservationLedger.record(event, diagnosis, planned.directive, executionStatus);
   return apiSuccess({
     diagnosis: {
