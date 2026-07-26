@@ -86,6 +86,47 @@ function portListeners(port) {
   }
 }
 
+function parseWindowsJsonArray(output) {
+  const value = output.trim();
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
+function runWindowsReadOnlyQuery(command, projectRoot) {
+  if (process.platform !== 'win32') return [];
+  try {
+    const output = execFileSync('powershell.exe', ['-NoProfile', '-Command', command], {
+      encoding: 'utf8',
+      env: { ...process.env, OPENMAIC_LAN_DEMO_PROJECT_ROOT: projectRoot },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return parseWindowsJsonArray(output);
+  } catch {
+    return [];
+  }
+}
+
+function localLanAddresses(projectRoot) {
+  return runWindowsReadOnlyQuery(
+    "Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Select-Object -ExpandProperty IPAddress | ConvertTo-Json -Compress",
+    projectRoot,
+  ).filter((value) => typeof value === 'string' && isPrivateLanIpv4(value));
+}
+
+function openMaicNextProcesses(projectRoot) {
+  return runWindowsReadOnlyQuery(
+    "$projectRoot = $env:OPENMAIC_LAN_DEMO_PROJECT_ROOT; Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine -like \"*$projectRoot*\" -and $_.CommandLine -match 'next' } | Select-Object @{Name='pid'; Expression={$_.ProcessId}} | ConvertTo-Json -Compress",
+    projectRoot,
+  )
+    .map((value) => ({ pid: Number(value?.pid) }))
+    .filter((value) => Number.isSafeInteger(value.pid) && value.pid > 0);
+}
+
 function nodeSupportsNext(nodeVersion) {
   const match = /^v?(\d+)\.(\d+)\./.exec(nodeVersion);
   if (!match) return false;
@@ -105,6 +146,8 @@ export function inspectLanDemoReadiness({
   phase = 'full',
   pathExists = existsSync,
   getPortListeners = portListeners,
+  getLocalLanAddresses = localLanAddresses,
+  getOpenMaicNextProcesses = openMaicNextProcesses,
   nodeVersion = process.version,
 } = {}) {
   const errors = [];
@@ -114,6 +157,8 @@ export function inspectLanDemoReadiness({
   }
   if (!isPrivateLanIpv4(lanAddress ?? '')) {
     errors.push('LAN address must be an explicit RFC 1918 IPv4 address (10/8, 172.16/12, or 192.168/16).');
+  } else if (!getLocalLanAddresses(projectRoot).includes(lanAddress)) {
+    errors.push('LAN address is not configured on this host; choose a confirmed local private interface address.');
   }
   if (!nodeSupportsNext(nodeVersion)) errors.push('Node.js 20.9 or newer is required.');
 
@@ -149,6 +194,13 @@ export function inspectLanDemoReadiness({
     if (pathExists(path.join(projectRoot, lock))) {
       errors.push(`${lock} exists, so another Next instance may still own this OpenMAIC directory. Stop it first; this script will not terminate it.`);
     }
+  }
+  const existingNextProcesses = getOpenMaicNextProcesses(projectRoot);
+  if (existingNextProcesses.length) {
+    const pids = existingNextProcesses.map(({ pid }) => `PID ${pid}`).join(', ');
+    errors.push(
+      `An OpenMAIC Next process is already running from this directory (${pids}). Stop the intended process first; this script will not terminate it.`,
+    );
   }
   if (phase === 'full' && !pathExists(path.join(projectRoot, '.next', 'BUILD_ID'))) {
     errors.push('The production build output (.next/BUILD_ID) is missing; run corepack pnpm build first.');

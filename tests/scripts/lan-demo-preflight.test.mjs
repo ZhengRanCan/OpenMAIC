@@ -30,6 +30,8 @@ function ready(options = {}) {
     port: 3100,
     pathExists: (candidate) => (options.paths ?? basePaths).has(candidate),
     getPortListeners: () => options.listeners ?? [],
+    getLocalLanAddresses: () => options.localLanAddresses ?? ['192.168.10.24'],
+    getOpenMaicNextProcesses: () => options.nextProcesses ?? [],
     nodeVersion: 'v20.9.0',
     ...options,
   });
@@ -64,6 +66,19 @@ test('refuses an unsafe address, a missing build artifact, and an occupied port'
   assert.match(result.errors.join('\n'), /RFC 1918/);
   assert.match(result.errors.join('\n'), /BUILD_ID/);
   assert.match(result.errors.join('\n'), /PID 4123/);
+});
+
+test('refuses a private address that is not configured on this host', () => {
+  const result = ready({ lanAddress: '10.23.13.210', localLanAddresses: ['192.168.10.24'] });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /not configured on this host/);
+});
+
+test('refuses to start a second Next instance from this OpenMAIC directory', () => {
+  const result = ready({ nextProcesses: [{ pid: 4123 }] });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /PID 4123/);
+  assert.match(result.errors.join('\n'), /will not terminate it/);
 });
 
 test('refuses inherited credentials and an existing Next lock without revealing values', () => {
