@@ -15,11 +15,17 @@ describe('LAN shared classroom publishing', () => {
         name: '一次函数',
         apiKey: 'must-not-leave-host',
         provider: { baseUrl: 'https://relay.example/v1', model: 'deepseek-v4-flash' },
+        request: {
+          authorization: 'also-hidden',
+          cookie: 'also-hidden',
+          endpoint: 'https://relay.example/v1',
+          headers: { unsafe: true },
+        },
         scenes: [{ token: 'also-hidden', title: '函数图像' }],
       }),
     ).toEqual({
       name: '一次函数',
-      provider: { model: 'deepseek-v4-flash' },
+      request: {},
       scenes: [{ title: '函数图像' }],
     });
   });

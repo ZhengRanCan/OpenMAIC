@@ -5,8 +5,10 @@ import { isValidClassroomId, persistClassroom } from '@/lib/server/classroom-sto
 import type { Slide } from '@openmaic/dsl';
 
 const MANIFEST_VERSION = 1;
-const SENSITIVE_FIELD =
-  /(?:api[_-]?key|base[_-]?url|token|secret|password|credential|access[_-]?key)/i;
+// A shared classroom never needs request credentials or a provider configuration:
+// model availability is read separately from the server-managed provider catalog.
+const SHARED_FORBIDDEN_FIELD =
+  /(?:api[_-]?key|base[_-]?url|token|secret|password|credential|access[_-]?key|authorization|cookie|headers?|endpoint|proxy|provider(?:s)?(?:config)?|settings|configuration)$/i;
 
 export interface SharedClassroomSummary {
   id: string;
@@ -35,7 +37,7 @@ export function sanitizeSharedClassroom<T>(value: T): T {
 
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !SENSITIVE_FIELD.test(key))
+      .filter(([key]) => !SHARED_FORBIDDEN_FIELD.test(key))
       .map(([key, item]) => [key, sanitizeSharedClassroom(item)]),
   ) as T;
 }
