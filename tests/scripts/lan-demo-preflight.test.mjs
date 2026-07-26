@@ -8,6 +8,7 @@ import {
   parsePreflightArguments,
   parseWindowsNetstatListeners,
 } from '../../scripts/lan-demo-preflight.mjs';
+import { normalizeLanDemoArguments } from '../../scripts/lan-demo-runner.mjs';
 
 const projectRoot = path.resolve('lan-demo-fixture');
 const basePaths = new Set([
@@ -128,4 +129,15 @@ test('runs the preflight when invoked as a script', () => {
       ),
     /LAN demo preflight refused/,
   );
+});
+
+test('removes pnpm’s script argument separator before calling PowerShell', () => {
+  assert.deepEqual(
+    normalizeLanDemoArguments(['--', '-LanAddress', '10.23.13.210', '-Port', '3000', '-ConfirmLan']),
+    ['-LanAddress', '10.23.13.210', '-Port', '3000', '-ConfirmLan'],
+  );
+  assert.deepEqual(normalizeLanDemoArguments(['-LanAddress', '10.23.13.210']), [
+    '-LanAddress',
+    '10.23.13.210',
+  ]);
 });
