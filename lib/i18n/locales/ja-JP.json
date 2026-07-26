@@ -1729,6 +1729,13 @@
     "studentLabel": "デモ学習者", "studentA": "学生 A（合成）", "modeLabel": "デモモード", "readOnly": "読み取り専用、モデル設定不要", "lessonFlow": "授業の流れ", "step": "ステップ {{number}}", "safetyNotice": "このページには API キー、プロバイダー URL、Cookie、実在する学習者データ、授業イベントの書き込みは含まれません。",
     "scenes": { "warmup": { "title": "身近な場面から始める", "body": "タクシー料金の例で二つの変化量と y = kx + b の意味を確認します。" }, "graph": { "title": "グラフを読む", "body": "右上がりの直線を観察し、傾きと切片を位置に結び付けます。" }, "checkpoint": { "title": "理解を確認する", "body": "傾きと切片の意味を答え、生活に即した説明を示します。" }, "summary": { "title": "持ち帰る方法", "body": "変数の関係を見つけ、傾きと切片を決め、グラフで式を確認します。" } }
   },
+  "lanShared": {
+    "publish": "Publish to LAN",
+    "publishing": "Publishing…",
+    "publishSuccess": "Published {{count}} local classrooms",
+    "publishFailed": "Could not publish classrooms. Try again.",
+    "loadFailed": "Could not load LAN shared classrooms."
+  },
   "accessCode": {
     "title": "アクセスコードを入力",
     "placeholder": "アクセスコード",

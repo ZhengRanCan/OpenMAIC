@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -52,6 +52,7 @@ import {
   listStages,
   deleteStageData,
   renameStage,
+  loadStageData,
   getFirstSlideByStages,
   revokeThumbnailSlideMediaUrls,
 } from '@/lib/utils/stage-storage';
@@ -73,6 +74,7 @@ const log = createLogger('Home');
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
+const LAN_SHARED_MODE = process.env.NEXT_PUBLIC_OPENMAIC_LAN_SHARED_MODE === 'true';
 
 // PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
@@ -89,6 +91,11 @@ interface FormState {
 }
 
 type FusionDemoStudent = 'a' | 'b';
+type ListedClassroom = StageListItem & { shared?: boolean };
+
+interface SharedClassroomResponse extends StageListItem {
+  firstSlide?: Slide;
+}
 
 const initialFormState: FormState = {
   courseMaterials: [],
@@ -169,6 +176,9 @@ function HomePage() {
   const [fusionError, setFusionError] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
+  const [sharedClassrooms, setSharedClassrooms] = useState<SharedClassroomResponse[]>([]);
+  const [sharedThumbnails, setSharedThumbnails] = useState<Record<string, Slide>>({});
+  const [publishingShared, setPublishingShared] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -197,7 +207,7 @@ function HomePage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [themeOpen]);
 
-  const loadClassrooms = async () => {
+  const loadClassrooms = useCallback(async () => {
     try {
       const list = await listStages();
       setClassrooms(list);
@@ -208,8 +218,50 @@ function HomePage() {
       } else {
         replaceThumbnails({});
       }
+      if (LAN_SHARED_MODE) {
+        const response = await fetch('/api/lan-shared/classrooms');
+        if (!response.ok) throw new Error('Shared classrooms are unavailable.');
+        const payload = (await response.json()) as { classrooms?: SharedClassroomResponse[] };
+        const shared = payload.classrooms ?? [];
+        setSharedClassrooms(shared);
+        setSharedThumbnails(
+          Object.fromEntries(
+            shared.flatMap((classroom) =>
+              classroom.firstSlide ? [[classroom.id, classroom.firstSlide] as const] : [],
+            ),
+          ),
+        );
+      }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
+      if (LAN_SHARED_MODE) toast.error(t('lanShared.loadFailed'));
+    }
+  }, [t]);
+
+  const publishLocalClassrooms = async () => {
+    setPublishingShared(true);
+    try {
+      const localClassrooms = await listStages();
+      const results = await Promise.all(
+        localClassrooms.map(async ({ id }) => {
+          const data = await loadStageData(id);
+          if (!data) throw new Error(`Classroom ${id} is unavailable.`);
+          const response = await fetch('/api/lan-shared/classrooms', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ stage: data.stage, scenes: data.scenes }),
+          });
+          if (!response.ok) throw new Error(`Classroom ${id} could not be published.`);
+        }),
+      );
+      void results;
+      await loadClassrooms();
+      toast.success(t('lanShared.publishSuccess', { count: localClassrooms.length }));
+    } catch (err) {
+      log.error('Failed to publish shared classrooms:', err);
+      toast.error(t('lanShared.publishFailed'));
+    } finally {
+      setPublishingShared(false);
     }
   };
 
@@ -239,7 +291,7 @@ function HomePage() {
       revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
       thumbnailsRef.current = {};
     };
-  }, []);
+  }, [loadClassrooms]);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -267,16 +319,28 @@ function HomePage() {
     }
   };
 
+  const listedClassrooms = useMemo(() => {
+    if (!LAN_SHARED_MODE) return classrooms as ListedClassroom[];
+    const byId = new Map<string, ListedClassroom>();
+    for (const classroom of sharedClassrooms)
+      byId.set(classroom.id, { ...classroom, shared: true });
+    for (const classroom of classrooms) byId.set(classroom.id, classroom);
+    return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [classrooms, sharedClassrooms]);
+  const listedThumbnails = useMemo(
+    () => ({ ...sharedThumbnails, ...thumbnails }),
+    [sharedThumbnails, thumbnails],
+  );
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const filteredClassrooms = useMemo(() => {
     const q = deferredSearchQuery.trim().toLowerCase();
-    if (!q) return classrooms;
-    return classrooms.filter((c) => {
+    if (!q) return listedClassrooms;
+    return listedClassrooms.filter((c) => {
       const name = c.name?.toLowerCase() ?? '';
       const desc = c.description?.toLowerCase() ?? '';
       return name.includes(q) || desc.includes(q);
     });
-  }, [classrooms, deferredSearchQuery]);
+  }, [listedClassrooms, deferredSearchQuery]);
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -469,8 +533,7 @@ function HomePage() {
   };
 
   const isFusionDemoSupported = isSupportedFusionDemoTopic(form.requirement);
-  const canGenerate =
-    !!form.requirement.trim() && hasUsableProvider && !isPreparingFusionSession;
+  const canGenerate = !!form.requirement.trim() && hasUsableProvider && !isPreparingFusionSession;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -886,7 +949,7 @@ function HomePage() {
         </AnimatePresence>
 
         {/* ── Import buttons (empty state) ── */}
-        {classrooms.length === 0 && (
+        {listedClassrooms.length === 0 && (
           <div className="relative z-10 mt-4 flex items-center gap-4">
             <button
               onClick={triggerFileSelect}
@@ -911,7 +974,7 @@ function HomePage() {
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
-      {classrooms.length > 0 && (
+      {listedClassrooms.length > 0 && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -928,7 +991,9 @@ function HomePage() {
               >
                 <Clock className="size-3.5" />
                 {t('classroom.recentClassrooms')}
-                <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
+                <span className="text-[11px] tabular-nums opacity-60">
+                  {listedClassrooms.length}
+                </span>
                 <motion.div
                   animate={{ rotate: recentOpen ? 180 : 0 }}
                   transition={{ duration: 0.3, ease: 'easeInOut' }}
@@ -936,6 +1001,18 @@ function HomePage() {
                   <ChevronDown className="size-3.5" />
                 </motion.div>
               </button>
+
+              {LAN_SHARED_MODE && (
+                <button
+                  type="button"
+                  onClick={publishLocalClassrooms}
+                  disabled={publishingShared}
+                  className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 disabled:opacity-50 transition-colors"
+                >
+                  <Upload className="size-3" />
+                  {publishingShared ? t('lanShared.publishing') : t('lanShared.publish')}
+                </button>
+              )}
 
               {/* Search toggle — icon that expands into an input in place */}
               <AnimatePresence initial={false}>
@@ -1074,7 +1151,7 @@ function HomePage() {
                       >
                         <ClassroomCard
                           classroom={classroom}
-                          slide={thumbnails[classroom.id]}
+                          slide={listedThumbnails[classroom.id]}
                           formatDate={formatDate}
                           onDelete={handleDelete}
                           onRename={handleRename}
@@ -1082,6 +1159,7 @@ function HomePage() {
                           onConfirmDelete={() => confirmDelete(classroom.id)}
                           onCancelDelete={() => setPendingDeleteId(null)}
                           onClick={() => router.push(`/classroom/${classroom.id}`)}
+                          readOnly={classroom.shared === true}
                         />
                       </motion.div>
                     ))}
@@ -1397,6 +1475,7 @@ function ClassroomCard({
   onConfirmDelete,
   onCancelDelete,
   onClick,
+  readOnly = false,
 }: {
   classroom: StageListItem;
   slide?: Slide;
@@ -1407,6 +1486,7 @@ function ClassroomCard({
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
   onClick: () => void;
+  readOnly?: boolean;
 }) {
   const { t } = useI18n();
   const thumbRef = useRef<HTMLDivElement>(null);
@@ -1441,7 +1521,7 @@ function ClassroomCard({
   };
 
   const commitRename = () => {
-    if (!editing) return;
+    if (!editing || readOnly) return;
     const trimmed = nameDraft.trim();
     if (trimmed && trimmed !== classroom.name) {
       onRename(classroom.id, trimmed);
@@ -1503,7 +1583,7 @@ function ClassroomCard({
 
         {/* Delete — top-right, only on hover */}
         <AnimatePresence>
-          {!confirmingDelete && (
+          {!confirmingDelete && !readOnly && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1592,7 +1672,7 @@ function ClassroomCard({
             <TooltipTrigger asChild>
               <p
                 className="font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
-                onDoubleClick={startRename}
+                onDoubleClick={readOnly ? undefined : startRename}
               >
                 {classroom.name}
               </p>

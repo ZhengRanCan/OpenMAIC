@@ -1729,6 +1729,13 @@
     "studentLabel": "Демонстрационный ученик", "studentA": "Ученик A (синтетический)", "modeLabel": "Режим демонстрации", "readOnly": "Только чтение, без настройки модели", "lessonFlow": "Ход урока", "step": "Шаг {{number}}", "safetyNotice": "На этой странице нет API-ключа, адреса провайдера, cookie, реальных данных ученика или записи событий урока.",
     "scenes": { "warmup": { "title": "Начните с жизненной ситуации", "body": "На примере оплаты такси определите две изменяющиеся величины и смысл y = kx + b." }, "graph": { "title": "Прочитайте график", "body": "Наблюдайте прямую, идущую вверх вправо, и свяжите наклон и пересечение с положением." }, "checkpoint": { "title": "Проверьте понимание", "body": "Назовите значение наклона и пересечения и дайте реалистичное объяснение." }, "summary": { "title": "Полезный метод", "body": "Найдите связь переменных, определите наклон и пересечение, затем проверьте выражение по графику." } }
   },
+  "lanShared": {
+    "publish": "Publish to LAN",
+    "publishing": "Publishing…",
+    "publishSuccess": "Published {{count}} local classrooms",
+    "publishFailed": "Could not publish classrooms. Try again.",
+    "loadFailed": "Could not load LAN shared classrooms."
+  },
   "accessCode": {
     "title": "Введите код доступа",
     "placeholder": "Код доступа",

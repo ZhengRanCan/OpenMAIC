@@ -1729,6 +1729,13 @@
     "studentLabel": "Demo learner", "studentA": "Student A (synthetic)", "modeLabel": "Demo mode", "readOnly": "Read-only, no model configuration", "lessonFlow": "Lesson flow", "step": "Step {{number}}", "safetyNotice": "This page contains no API key, provider address, cookie, real learner data, or classroom-event writeback.",
     "scenes": { "warmup": { "title": "Start with a real situation", "body": "Use a taxi-fare example to identify two changing quantities and the meaning of y = kx + b." }, "graph": { "title": "Read the graph", "body": "Observe a line rising to the right and connect slope and intercept to its position." }, "checkpoint": { "title": "Check understanding", "body": "Identify what slope and intercept mean and give a plausible real-world explanation." }, "summary": { "title": "A method to keep", "body": "Find the variable relationship, determine slope and intercept, then use the graph to check the expression." } }
   },
+  "lanShared": {
+    "publish": "Publish to LAN",
+    "publishing": "Publishing…",
+    "publishSuccess": "Published {{count}} local classrooms",
+    "publishFailed": "Could not publish classrooms. Try again.",
+    "loadFailed": "Could not load LAN shared classrooms."
+  },
   "accessCode": {
     "title": "أدخل رمز الوصول",
     "placeholder": "رمز الوصول",

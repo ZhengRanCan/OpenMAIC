@@ -1729,6 +1729,13 @@
     "studentLabel": "데모 학습자", "studentA": "학생 A(합성)", "modeLabel": "데모 모드", "readOnly": "읽기 전용, 모델 설정 불필요", "lessonFlow": "수업 흐름", "step": "단계 {{number}}", "safetyNotice": "이 페이지에는 API 키, 제공자 주소, 쿠키, 실제 학습자 데이터 또는 수업 이벤트 기록이 없습니다.",
     "scenes": { "warmup": { "title": "생활 상황에서 시작하기", "body": "택시 요금 예시로 두 변화량과 y = kx + b의 의미를 확인합니다." }, "graph": { "title": "그래프 읽기", "body": "오른쪽 위로 향하는 직선을 관찰하고 기울기와 절편을 위치와 연결합니다." }, "checkpoint": { "title": "이해 확인", "body": "기울기와 절편의 뜻을 말하고 현실적인 설명을 제시합니다." }, "summary": { "title": "가져갈 방법", "body": "변수 관계를 찾고 기울기와 절편을 정한 뒤 그래프로 식을 확인합니다." } }
   },
+  "lanShared": {
+    "publish": "Publish to LAN",
+    "publishing": "Publishing…",
+    "publishSuccess": "Published {{count}} local classrooms",
+    "publishFailed": "Could not publish classrooms. Try again.",
+    "loadFailed": "Could not load LAN shared classrooms."
+  },
   "accessCode": {
     "title": "접근 코드 입력",
     "placeholder": "접근 코드",

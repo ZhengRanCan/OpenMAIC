@@ -1740,6 +1740,13 @@
       "summary": { "title": "带走的方法", "body": "先找变量关系，再确定斜率与截距，最后用图像检查表达式是否合理。" }
     }
   },
+  "lanShared": {
+    "publish": "发布到局域网",
+    "publishing": "正在发布…",
+    "publishSuccess": "已发布 {{count}} 个本地课堂",
+    "publishFailed": "发布课堂失败，请重试",
+    "loadFailed": "无法加载局域网共享课堂"
+  },
   "accessCode": {
     "title": "请输入访问码",
     "placeholder": "访问码",

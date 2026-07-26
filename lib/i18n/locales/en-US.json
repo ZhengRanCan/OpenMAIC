@@ -1740,6 +1740,13 @@
       "summary": { "title": "A method to keep", "body": "Find the variable relationship, determine slope and intercept, then use the graph to check the expression." }
     }
   },
+  "lanShared": {
+    "publish": "Publish to LAN",
+    "publishing": "Publishing…",
+    "publishSuccess": "Published {{count}} local classrooms",
+    "publishFailed": "Could not publish classrooms. Try again.",
+    "loadFailed": "Could not load LAN shared classrooms."
+  },
   "accessCode": {
     "title": "Enter Access Code",
     "placeholder": "Access code",
