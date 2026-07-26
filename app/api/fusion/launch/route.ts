@@ -5,6 +5,9 @@ import {
   ensureFusionServices,
   isProductionFusion,
 } from '@/lib/fusion/reliability/production-services';
+import { getRealProfileAndKnowledgeMap } from '@/lib/fusion/adapter/real-profile-provider';
+import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
+import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
 const COOKIE = 'openmaic_fusion_session';
 export async function POST(request: NextRequest) {
   let code = '';
@@ -48,27 +51,37 @@ export async function POST(request: NextRequest) {
   }
   try {
     const services = await ensureFusionServices();
+    // Keep the delegation material in memory only until its verified,
+    // immutable profile/map snapshots have been captured.
+    const snapshots = await getRealProfileAndKnowledgeMap(lessonSessionId, credential.token);
+    if (snapshots.profile.learnerId !== credential.learnerId)
+      return apiError('INVALID_CREDENTIALS', 401, 'Profile identity is invalid.');
     const credentialRef = await services.credentials.store(credential);
     const sessionToken = crypto.randomUUID();
-    await services.sessions.create(
-      {
-        lessonSessionId,
-        learnerId: credential.learnerId,
-        credentialRef,
-        profileSnapshot: {},
-        lessonKnowledgeMap: {},
-        sceneCatalog: {},
-        runtimeState: {},
-        degradationState: 'none',
-        snapshotCapturedAt: new Date().toISOString(),
-        expiresAt: new Date(credential.expiresAt * 1000).toISOString(),
-      },
-      sessionToken,
-    );
+    try {
+      await services.sessions.create(
+        {
+          lessonSessionId,
+          learnerId: credential.learnerId,
+          credentialRef,
+          profileSnapshot: snapshots.profile,
+          lessonKnowledgeMap: snapshots.lessonKnowledgeMap,
+          sceneCatalog: JSON.parse(JSON.stringify(DEVELOPMENT_SCENE_CATALOG)),
+          runtimeState: JSON.parse(JSON.stringify(createLessonRuntimeState())),
+          degradationState: 'none',
+          snapshotCapturedAt: new Date().toISOString(),
+          expiresAt: new Date(credential.expiresAt * 1000).toISOString(),
+        },
+        sessionToken,
+      );
+    } catch (error) {
+      await services.credentials.delete(credentialRef).catch(() => undefined);
+      throw error;
+    }
     const result = apiSuccess({ lessonSessionId, learnerId: credential.learnerId });
     result.cookies.set(COOKIE, sessionToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: 900,

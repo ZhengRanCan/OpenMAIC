@@ -1,4 +1,7 @@
-import type { SecretManagerDelegationCredentialStore } from '../credentials/secret-manager';
+import type {
+  SecretManagerDelegationCredentialStore,
+  ServiceAccessTokenProvider,
+} from '../credentials/secret-manager';
 import type { PgFusionOutboxStore } from '../outbox/postgres-store';
 import type { PgFusionSessionStore } from '../session-store/postgres';
 import type { CapabilityCircuitBreakers } from './circuit-breaker';
@@ -6,6 +9,7 @@ import { ProductionConfigurationError, readProductionFusionConfig } from './prod
 
 export interface ProductionFusionServices {
   credentials: SecretManagerDelegationCredentialStore;
+  serviceAccessTokens?: ServiceAccessTokenProvider;
   sessions: PgFusionSessionStore;
   outbox: PgFusionOutboxStore;
   circuits: CapabilityCircuitBreakers;

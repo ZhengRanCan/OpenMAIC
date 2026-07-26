@@ -50,3 +50,16 @@ export interface ServiceAccessTokenProvider {
     scopes: readonly ['classroom-event:write', 'profile-update:submit'],
   ): Promise<string>;
 }
+
+/** Resolves a local/test service token from the secret boundary, never from a DB row. */
+export class SecretManagerServiceAccessTokenProvider implements ServiceAccessTokenProvider {
+  constructor(private readonly secrets: SecretManager, private readonly ref: string) {}
+
+  async getAccessToken(
+    _scopes: readonly ['classroom-event:write', 'profile-update:submit'],
+  ): Promise<string> {
+    const token = await this.secrets.get(this.ref);
+    if (!token) throw new Error('service_account_token_unavailable');
+    return token;
+  }
+}

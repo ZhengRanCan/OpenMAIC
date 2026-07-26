@@ -33,6 +33,13 @@ export interface OutboxReceipt {
   reasonCode?: string;
 }
 
+/** Sanitized delivery state for classroom summaries; payload and credentials stay hidden. */
+export interface OutboxDeliveryState {
+  status: ProductionOutboxStatus;
+  receipt?: OutboxReceipt;
+  reasonCode?: string;
+}
+
 export interface OutboxOperatorAction {
   operatorId: string;
   reason: string;
@@ -51,6 +58,12 @@ type StoredRow = {
   attempt_count: number | string;
   lease_owner: string | null;
   lease_expires_at: string | null;
+};
+
+type DeliveryRow = {
+  status: ProductionOutboxStatus;
+  receipt: unknown;
+  last_reason_code: string | null;
 };
 
 export const FUSION_OUTBOX_PG_SCHEMA = `
@@ -144,6 +157,33 @@ export class PgFusionOutboxStore {
 
   async enqueue(message: ProductionOutboxMessage, now = new Date()): Promise<boolean> {
     return this.enqueueInTransaction(this.queryable, message, now);
+  }
+
+  async getDelivery(idempotencyKey: string): Promise<OutboxDeliveryState | undefined> {
+    const result = await this.queryable.query<DeliveryRow>(
+      `SELECT status, receipt, last_reason_code
+         FROM fusion_outbox
+        WHERE idempotency_key = $1`,
+      [idempotencyKey],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    const receipt = typeof row.receipt === 'string' ? JSON.parse(row.receipt) : row.receipt;
+    const status = receipt && typeof receipt === 'object' ? (receipt as Record<string, unknown>).status : undefined;
+    const validReceipt: OutboxReceipt | undefined =
+      status === 'accepted' || status === 'queued' || status === 'duplicate' || status === 'rejected'
+        ? {
+            status: status as OutboxReceipt['status'],
+            ...(typeof (receipt as Record<string, unknown>).reasonCode === 'string'
+              ? { reasonCode: (receipt as Record<string, string>).reasonCode }
+              : {}),
+          }
+        : undefined;
+    return {
+      status: row.status,
+      ...(validReceipt ? { receipt: validReceipt } : {}),
+      ...(row.last_reason_code ? { reasonCode: row.last_reason_code } : {}),
+    };
   }
 
   async enqueueInTransaction(

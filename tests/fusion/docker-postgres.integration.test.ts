@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +15,7 @@ describeDocker('F19 Docker PostgreSQL integration', () => {
   let services: Awaited<ReturnType<typeof configureLocalPostgresFusionServices>>['services'];
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
+    vi.stubEnv('NODE_ENV', 'test');
     const pool = new Pool({ connectionString: databaseUrl! });
     try {
       await pool.query('TRUNCATE fusion_outbox_operator_actions, fusion_outbox, fusion_sessions');

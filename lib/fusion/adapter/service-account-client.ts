@@ -20,8 +20,8 @@ export class DeepTutorServiceAccountClient {
       ]);
       const path =
         message.kind === 'classroom_event'
-          ? '/api/v1/fusion/classroom-events'
-          : '/api/v1/fusion/profile-updates';
+          ? '/api/v1/fusion/real-classroom-events'
+          : '/api/v1/fusion/real-profile-updates';
       const response = await this.fetchFn(`${this.baseUrl.replace(/\/+$/, '')}${path}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -34,7 +34,22 @@ export class DeepTutorServiceAccountClient {
           ...(message.candidateId ? { candidateId: message.candidateId } : {}),
         }),
       });
-      if (response.ok) return { status: 'accepted' };
+      if (response.ok) {
+        const receipt = (await response.json()) as { status?: unknown; reasonCode?: unknown };
+        if (receipt.status === 'accepted' || receipt.status === 'queued' || receipt.status === 'duplicate') {
+          return {
+            status: receipt.status,
+            ...(typeof receipt.reasonCode === 'string' ? { reasonCode: receipt.reasonCode } : {}),
+          };
+        }
+        if (receipt.status === 'rejected') {
+          return {
+            status: 'rejected',
+            ...(typeof receipt.reasonCode === 'string' ? { reasonCode: receipt.reasonCode } : {}),
+          };
+        }
+        throw new Error('DeepTutor returned an invalid delivery receipt');
+      }
       throw Object.assign(new Error(`DeepTutor submission failed with ${response.status}`), {
         status: response.status,
       });

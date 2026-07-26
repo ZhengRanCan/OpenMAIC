@@ -1,9 +1,13 @@
 import { CapabilityCircuitBreakers } from './circuit-breaker';
 import { Pool } from 'pg';
 import { DevelopmentFileSecretProvider } from '../credentials/development-file-secret-provider';
-import { SecretManagerDelegationCredentialStore } from '../credentials/secret-manager';
+import {
+  SecretManagerDelegationCredentialStore,
+  SecretManagerServiceAccessTokenProvider,
+} from '../credentials/secret-manager';
 import { ensureFusionOutboxSchema, PgFusionOutboxStore } from '../outbox/postgres-store';
 import { ensureFusionSessionSchema, PgFusionSessionStore } from '../session-store/postgres';
+import { ensureFusionLessonFactsSchema } from '../persistent-lesson';
 import {
   clearProductionFusionServices,
   configureProductionFusionServices,
@@ -49,10 +53,14 @@ export async function configureLocalPostgresFusionServices(options: {
   const transaction = transactionFor(pool);
   await ensureFusionSessionSchema(pool);
   await ensureFusionOutboxSchema(pool);
+  await ensureFusionLessonFactsSchema(pool);
+  const secretProvider = new DevelopmentFileSecretProvider(options.secretFile);
+  const serviceAccountRef = process.env.FUSION_LOCAL_SERVICE_ACCOUNT_REF;
   const services: ProductionFusionServices = {
-    credentials: new SecretManagerDelegationCredentialStore(
-      new DevelopmentFileSecretProvider(options.secretFile),
-    ),
+    credentials: new SecretManagerDelegationCredentialStore(secretProvider),
+    ...(serviceAccountRef
+      ? { serviceAccessTokens: new SecretManagerServiceAccessTokenProvider(secretProvider, serviceAccountRef) }
+      : {}),
     sessions: new PgFusionSessionStore(pool, transaction),
     outbox: new PgFusionOutboxStore(pool, transaction),
     circuits: new CapabilityCircuitBreakers({

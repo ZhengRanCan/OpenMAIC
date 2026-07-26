@@ -73,9 +73,9 @@ describe('F19 production launch', () => {
     vi.stubEnv('FUSION_CIRCUIT_FAILURE_THRESHOLD', '2');
     vi.stubEnv('FUSION_CIRCUIT_COOLDOWN_MS', '30000');
     const store = vi.fn(async () => 'secret://delegations/t');
-    const create = vi.fn(async () => undefined);
+    const create = vi.fn(async (_input: unknown) => undefined);
     configureProductionFusionServices({
-      credentials: { store } as never,
+      credentials: { store, delete: vi.fn() } as never,
       sessions: { create } as never,
       outbox: {} as never,
       circuits: {} as never,
@@ -83,8 +83,18 @@ describe('F19 production launch', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
-        async (_url, init) =>
-          new Response(
+        async (url, init) => {
+          const value = String(url);
+          if (value.includes('/profile?'))
+            return new Response(JSON.stringify({ schemaVersion: 'v1', learnerId: 'learner-1' }), {
+              status: 200,
+            });
+          if (value.includes('/knowledge-map?'))
+            return new Response(
+              JSON.stringify({ schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' }),
+              { status: 200 },
+            );
+          return new Response(
             JSON.stringify({
               token: 'secret',
               tokenId: 't',
@@ -100,16 +110,22 @@ describe('F19 production launch', () => {
               lessonSessionId: JSON.parse(String(init?.body)).lessonSessionId,
             }),
             { status: 200 },
-          ),
+          );
+        },
       ),
     );
     const response = await POST(request());
     expect(response.status).toBe(200);
     expect(store).toHaveBeenCalledWith(expect.objectContaining({ token: 'secret' }));
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ credentialRef: 'secret://delegations/t' }),
+      expect.objectContaining({
+        credentialRef: 'secret://delegations/t',
+        profileSnapshot: { schemaVersion: 'v1', learnerId: 'learner-1' },
+        lessonKnowledgeMap: { schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' },
+      }),
       expect.any(String),
     );
+    expect(JSON.stringify(create.mock.calls[0]?.[0])).not.toContain('"token"');
     expect(response.headers.get('set-cookie')).toMatch(/HttpOnly/i);
     expect(JSON.stringify(await response.json())).not.toContain('secret');
   });

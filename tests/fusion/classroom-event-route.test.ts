@@ -1,7 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { PGlite } from '@electric-sql/pglite';
 import { POST } from '@/app/api/fusion/classroom-events/route';
 import { ClassroomDiagnosisAdapter } from '@/lib/fusion/adapter/classroom-diagnosis-adapter';
+import { CapabilityCircuitBreakers } from '@/lib/fusion/reliability/circuit-breaker';
+import {
+  clearProductionFusionServices,
+  configureProductionFusionServices,
+} from '@/lib/fusion/reliability/production-services';
+import { ensureFusionOutboxSchema, PgFusionOutboxStore } from '@/lib/fusion/outbox/postgres-store';
+import { ensureFusionLessonFactsSchema } from '@/lib/fusion/persistent-lesson';
+import { ensureFusionSessionSchema, PgFusionSessionStore } from '@/lib/fusion/session-store/postgres';
+import type { Queryable } from '@/lib/fusion/reliability/postgres';
+import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
+import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
 
 function request(body: unknown) {
   return new NextRequest('http://openmaic.local/api/fusion/classroom-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -23,5 +35,115 @@ describe('F09 classroom event route', () => {
     vi.stubEnv('NODE_ENV', 'test'); vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'true'); vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://deeptutor.local');
     const response = await POST(request({ question: 'q', answer: 'wrong', localAssessment: { gradingMode: 'local', correctness: 'incorrect' } }));
     await expect(response.json()).resolves.toMatchObject({ success: true, diagnosis: { correctness: 'incorrect' }, directive: { kind: 'insert_remediation', targetSceneId: 'remediate-slope-concrete' } });
+  });
+});
+
+describe('F20 authoritative persistent classroom event route', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('ignores browser identity overrides and updates only the recovered session via real diagnosis', async () => {
+    const db = new PGlite();
+    await db.waitReady;
+    const queryable = db as unknown as Queryable;
+    await ensureFusionSessionSchema(queryable);
+    await ensureFusionOutboxSchema(queryable);
+    await ensureFusionLessonFactsSchema(queryable);
+    const transaction = <T>(body: (connection: Queryable) => Promise<T>): Promise<T> =>
+      db.transaction((connection) => body(connection as unknown as Queryable));
+    const sessions = new PgFusionSessionStore(queryable, transaction);
+    const outbox = new PgFusionOutboxStore(queryable, transaction);
+    const browserToken = crypto.randomUUID();
+    const lessonSessionId = 'authoritative-f20-session';
+    const learnerId = 'allowlisted-synthetic-learner';
+    await sessions.create(
+      {
+        lessonSessionId,
+        learnerId,
+        credentialRef: 'fusion/delegations/reference-only',
+        profileSnapshot: { schemaVersion: 'v1', learnerId },
+        lessonKnowledgeMap: {
+          schemaVersion: 'v1',
+          mappingId: 'integration-test-map',
+          mappingRevision: '1',
+          knowledgePoints: [
+            {
+              lessonKnowledgePointId: 'lesson-linear-function-slope',
+              authoritativeRef: { namespace: 'test', scopeId: 'lesson', id: 'slope' },
+            },
+          ],
+        },
+        sceneCatalog: JSON.parse(JSON.stringify(DEVELOPMENT_SCENE_CATALOG)),
+        runtimeState: JSON.parse(JSON.stringify(createLessonRuntimeState())),
+        degradationState: 'none',
+        snapshotCapturedAt: new Date().toISOString(),
+        expiresAt: '2030-01-01T00:00:00.000Z',
+      },
+      browserToken,
+    );
+    const services = {
+      sessions,
+      outbox,
+      credentials: {
+        get: vi.fn(async () => ({
+          token: crypto.randomUUID(),
+          tokenId: 'runtime-only',
+          learnerId,
+          audience: 'openmaic',
+          scope: ['diagnosis:request'],
+          expiresAt: 9_999_999_999,
+          lessonSessionId,
+        })),
+      },
+      circuits: new CapabilityCircuitBreakers({ failureThreshold: 2, cooldownMs: 1 }),
+    };
+    configureProductionFusionServices(services as never);
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'false');
+    let submitted: Record<string, unknown> | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        submitted = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 'v1',
+            eventId: submitted!.eventId,
+            correctness: 'incorrect',
+            diagnoses: [],
+            teachingIntent: {
+              schemaVersion: 'v1',
+              kind: 'insert_remediation',
+              targetLessonKnowledgePointIds: ['lesson-linear-function-slope'],
+              recommendedStrategy: 'development_mock_concrete_example',
+            },
+            warnings: [],
+            createdAt: new Date().toISOString(),
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+    const response = await POST(
+      new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: `openmaic_fusion_session=${browserToken}` },
+        body: JSON.stringify({
+          question: 'synthetic question',
+          answer: 'synthetic answer',
+          learnerId: 'forged-learner',
+          lessonSessionId: 'forged-session',
+          localAssessment: { gradingMode: 'synthetic', correctness: 'incorrect' },
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(submitted).toMatchObject({ lessonSessionId, lessonKnowledgePointIds: ['lesson-linear-function-slope'] });
+    expect(JSON.stringify(submitted)).not.toContain('forged-learner');
+    expect((await sessions.get(lessonSessionId))?.runtimeState).toMatchObject({
+      currentSceneId: 'remediate-slope-concrete',
+    });
+    clearProductionFusionServices(services as never);
+    await db.close();
   });
 });
