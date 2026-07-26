@@ -1722,6 +1722,24 @@
     "speed": "语速",
     "language": "语言"
   },
+  "lanDemo": {
+    "eyebrow": "OpenMAIC 局域网演示",
+    "title": "{{topic}}｜固定合成课堂",
+    "description": "这是可重复的只读演示路径，不使用浏览器本地案例、模型设置或外部服务。",
+    "studentLabel": "演示学生",
+    "studentA": "学生 A（合成）",
+    "modeLabel": "演示模式",
+    "readOnly": "只读、无需模型配置",
+    "lessonFlow": "课堂流程",
+    "step": "步骤 {{number}}",
+    "safetyNotice": "本页面不包含 API Key、Provider 地址、Cookie、真实学生数据或课堂事件写回。",
+    "scenes": {
+      "warmup": { "title": "从生活情境开始", "body": "用一次打车计费问题识别两个变化量，并写出 y = kx + b 的含义。" },
+      "graph": { "title": "读懂图像", "body": "观察直线向右上方延伸时的变化，连接斜率、截距与图像位置。" },
+      "checkpoint": { "title": "检查理解", "body": "判断斜率和截距分别表示什么，并说明一个合理的生活化解释。" },
+      "summary": { "title": "带走的方法", "body": "先找变量关系，再确定斜率与截距，最后用图像检查表达式是否合理。" }
+    }
+  },
   "accessCode": {
     "title": "请输入访问码",
     "placeholder": "访问码",

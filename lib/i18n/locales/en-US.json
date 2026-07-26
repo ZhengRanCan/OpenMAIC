@@ -1722,6 +1722,24 @@
     "speed": "Speed",
     "language": "Language"
   },
+  "lanDemo": {
+    "eyebrow": "OpenMAIC LAN Demo",
+    "title": "{{topic}} | Fixed Synthetic Classroom",
+    "description": "This repeatable, read-only path uses no browser-local cases, model settings, or external services.",
+    "studentLabel": "Demo learner",
+    "studentA": "Student A (synthetic)",
+    "modeLabel": "Demo mode",
+    "readOnly": "Read-only, no model configuration",
+    "lessonFlow": "Lesson flow",
+    "step": "Step {{number}}",
+    "safetyNotice": "This page contains no API key, provider address, cookie, real learner data, or classroom-event writeback.",
+    "scenes": {
+      "warmup": { "title": "Start with a real situation", "body": "Use a taxi-fare example to identify two changing quantities and the meaning of y = kx + b." },
+      "graph": { "title": "Read the graph", "body": "Observe a line rising to the right and connect slope and intercept to its position." },
+      "checkpoint": { "title": "Check understanding", "body": "Identify what slope and intercept mean and give a plausible real-world explanation." },
+      "summary": { "title": "A method to keep", "body": "Find the variable relationship, determine slope and intercept, then use the graph to check the expression." }
+    }
+  },
   "accessCode": {
     "title": "Enter Access Code",
     "placeholder": "Access code",

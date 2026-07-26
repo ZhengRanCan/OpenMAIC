@@ -1707,6 +1707,13 @@
     "speed": "語速",
     "language": "語言"
   },
+  "lanDemo": {
+    "eyebrow": "OpenMAIC 區域網路展示",
+    "title": "{{topic}}｜固定合成課堂",
+    "description": "這個可重複的唯讀路徑不使用瀏覽器本機案例、模型設定或外部服務。",
+    "studentLabel": "展示學生", "studentA": "學生 A（合成）", "modeLabel": "展示模式", "readOnly": "唯讀，無需模型設定", "lessonFlow": "課堂流程", "step": "步驟 {{number}}", "safetyNotice": "本頁不含 API Key、Provider 位址、Cookie、真實學生資料或課堂事件寫回。",
+    "scenes": { "warmup": { "title": "從生活情境開始", "body": "用計程車計費例子辨識兩個變化量與 y = kx + b 的意義。" }, "graph": { "title": "讀懂圖像", "body": "觀察直線向右上延伸，連結斜率、截距與圖像位置。" }, "checkpoint": { "title": "檢查理解", "body": "說明斜率與截距的意義，並提出合理的生活化解釋。" }, "summary": { "title": "帶走的方法", "body": "先找變數關係，再確定斜率與截距，最後以圖像檢查式子。" } }
+  },
   "accessCode": {
     "title": "請輸入課堂碼",
     "placeholder": "課堂碼",

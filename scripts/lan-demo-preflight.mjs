@@ -166,7 +166,7 @@ export function inspectLanDemoReadiness({
     errors,
     url:
       isPrivateLanIpv4(lanAddress ?? '') && Number.isSafeInteger(normalizedPort)
-        ? `http://${lanAddress}:${normalizedPort}`
+        ? `http://${lanAddress}:${normalizedPort}/lan-demo`
         : undefined,
   };
 }

@@ -31,7 +31,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & node ./scripts/lan-demo-preflight.mjs --lan-address $LanAddress --port $Port --phase full
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Starting the trusted-LAN demo at http://$LanAddress`:$Port"
+Write-Host "Starting the trusted-LAN demo at http://$LanAddress`:$Port/lan-demo"
 Write-Host 'Stop with Ctrl+C. Then verify from the second device that the URL is no longer reachable.'
 & corepack pnpm exec next start --hostname 0.0.0.0 --port $Port
 exit $LASTEXITCODE

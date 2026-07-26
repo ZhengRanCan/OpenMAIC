@@ -38,7 +38,7 @@ function ready(options = {}) {
 test('accepts an explicit RFC 1918 address and a built synthetic demo', () => {
   const result = ready();
   assert.equal(result.ok, true);
-  assert.equal(result.url, 'http://192.168.10.24:3100');
+  assert.equal(result.url, 'http://192.168.10.24:3100/lan-demo');
 });
 
 test('recognizes only RFC 1918 IPv4 presentation addresses', () => {

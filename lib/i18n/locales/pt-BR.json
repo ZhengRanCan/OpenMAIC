@@ -1722,6 +1722,13 @@
     "speed": "Velocidade",
     "language": "Idioma"
   },
+  "lanDemo": {
+    "eyebrow": "Demonstração LAN OpenMAIC",
+    "title": "{{topic}} | Aula sintética fixa",
+    "description": "Este percurso reproduzível e somente leitura não usa casos locais do navegador, configurações de modelo ou serviços externos.",
+    "studentLabel": "Aluno de demonstração", "studentA": "Aluno A (sintético)", "modeLabel": "Modo de demonstração", "readOnly": "Somente leitura, sem configuração de modelo", "lessonFlow": "Fluxo da aula", "step": "Etapa {{number}}", "safetyNotice": "Esta página não contém chave de API, endereço de provedor, cookie, dados reais de alunos ou gravação de eventos de aula.",
+    "scenes": { "warmup": { "title": "Comece com uma situação real", "body": "Use uma corrida de táxi para identificar duas grandezas variáveis e o significado de y = kx + b." }, "graph": { "title": "Leia o gráfico", "body": "Observe uma reta crescente e relacione inclinação e intercepto à sua posição." }, "checkpoint": { "title": "Verifique a compreensão", "body": "Identifique o significado de inclinação e intercepto e dê uma explicação realista." }, "summary": { "title": "Um método para guardar", "body": "Encontre a relação entre variáveis, determine inclinação e intercepto e use o gráfico para verificar a expressão." } }
+  },
   "accessCode": {
     "title": "Digite o Código de Acesso",
     "placeholder": "Código de acesso",
