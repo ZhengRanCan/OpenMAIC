@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
     proxyClientMaxBodySize: '200mb',
   },
   async headers() {
+    const lanDemo = process.env.OPENMAIC_LAN_DEMO_MODE === 'true';
     const extraAncestors = process.env.ALLOWED_FRAME_ANCESTORS?.trim();
     const frameAncestors = extraAncestors ? `'self' ${extraAncestors}` : "'self'";
 
@@ -27,8 +28,17 @@ const nextConfig: NextConfig = {
           ...(!extraAncestors ? [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }] : []),
           {
             key: 'Content-Security-Policy',
-            value: `frame-ancestors ${frameAncestors}`,
+            // The demo browser is deliberately limited to this OpenMAIC host;
+            // server-side provider configuration can never become a browser
+            // endpoint on a second LAN device.
+            value: `frame-ancestors ${frameAncestors}${lanDemo ? "; connect-src 'self'" : ''}`,
           },
+          ...(lanDemo
+            ? [
+                { key: 'Referrer-Policy', value: 'no-referrer' },
+                { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' },
+              ]
+            : []),
         ],
       },
     ];
