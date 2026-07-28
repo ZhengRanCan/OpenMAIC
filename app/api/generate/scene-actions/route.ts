@@ -48,9 +48,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
-    const fusionLookup = formalFusion.kind === 'resolved'
-      ? { kind: 'none' as const }
-      : lookupFusionLessonSession(body.fusionSessionId);
+    const fusionLookup =
+      formalFusion.kind === 'resolved'
+        ? { kind: 'none' as const }
+        : lookupFusionLessonSession(body.fusionSessionId);
     if (fusionLookup.kind === 'invalid') {
       return apiError(
         'INVALID_REQUEST',
@@ -108,18 +109,19 @@ export async function POST(req: NextRequest) {
       modelString,
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'scene-actions');
-    const effectiveOutline = formalFusion.kind === 'resolved'
-      ? {
-          ...outline,
-          fusionCheckpoint: {
-            checkpointId: formalFusion.context.checkpoint.checkpointId,
-            mappingId: formalFusion.context.mappingId,
-            mappingRevision: formalFusion.context.mappingRevision,
-            lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
-            remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
-          },
-        }
-      : outline;
+    const effectiveOutline =
+      formalFusion.kind === 'resolved'
+        ? {
+            ...outline,
+            fusionCheckpoint: {
+              checkpointId: formalFusion.context.checkpoint.checkpointId,
+              mappingId: formalFusion.context.mappingId,
+              mappingRevision: formalFusion.context.mappingRevision,
+              lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
+              remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
+            },
+          }
+        : outline;
     outlineTitle = effectiveOutline?.title;
     resolvedModelString = modelString;
 

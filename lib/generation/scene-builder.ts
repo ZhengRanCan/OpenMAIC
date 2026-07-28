@@ -141,18 +141,20 @@ export function buildCompleteScene(
   stageId: string,
 ): Scene | null {
   const scene = buildCompleteSceneInner(outline, content, actions, stageId);
-  return scene && {
-    ...scene,
-    outlineId: outline.id,
-    ...(outline.fusionCheckpoint
-      ? {
-          fusionCheckpoint: {
-            ...outline.fusionCheckpoint,
-            lessonKnowledgePointIds: [...outline.fusionCheckpoint.lessonKnowledgePointIds],
-          },
-        }
-      : {}),
-  };
+  return (
+    scene && {
+      ...scene,
+      outlineId: outline.id,
+      ...(outline.fusionCheckpoint
+        ? {
+            fusionCheckpoint: {
+              ...outline.fusionCheckpoint,
+              lessonKnowledgePointIds: [...outline.fusionCheckpoint.lessonKnowledgePointIds],
+            },
+          }
+        : {}),
+    }
+  );
 }
 
 function buildCompleteSceneInner(

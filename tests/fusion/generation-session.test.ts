@@ -27,7 +27,9 @@ function record(): FusionSessionRecord {
     credentialRef: 'secret://delegation/1',
     profileSnapshot: {
       learnerId: 'allowlisted-synthetic-learner',
-      knowledgeState: [{ lessonKnowledgePointId: 'point-1', dataStatus: 'insufficient_data', confidence: 0 }],
+      knowledgeState: [
+        { lessonKnowledgePointId: 'point-1', dataStatus: 'insufficient_data', confidence: 0 },
+      ],
     },
     lessonKnowledgeMap: {
       mappingId: 'map-1',
@@ -142,7 +144,11 @@ describe('F23 formal generation session', () => {
     const configured = configure(invalid);
 
     await expect(
-      freezeFormalFusionForOutline(request(), 'lesson-1', 'Explain linear functions in fifteen minutes'),
+      freezeFormalFusionForOutline(
+        request(),
+        'lesson-1',
+        'Explain linear functions in fifteen minutes',
+      ),
     ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_INVALID' });
     clearProductionFusionServices(configured.services);
   });

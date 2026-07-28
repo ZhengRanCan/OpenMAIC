@@ -308,9 +308,10 @@ export async function POST(req: NextRequest) {
     );
     // A formal session is authoritative: never combine it with the historical
     // F02 Demo projection or browser-supplied profile fields.
-    const fusionLookup = formalFusion.kind === 'resolved'
-      ? { kind: 'none' as const }
-      : lookupFusionLessonSession(body.fusionSessionId);
+    const fusionLookup =
+      formalFusion.kind === 'resolved'
+        ? { kind: 'none' as const }
+        : lookupFusionLessonSession(body.fusionSessionId);
     if (fusionLookup.kind === 'invalid') {
       return apiError(
         'INVALID_REQUEST',
@@ -340,11 +341,12 @@ export async function POST(req: NextRequest) {
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
     // Build user profile string for language inference context
-    const demoProfileText = formalFusion.kind === 'resolved'
-      ? ''
-      : requirements.userNickname || requirements.userBio
-      ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
-      : '';
+    const demoProfileText =
+      formalFusion.kind === 'resolved'
+        ? ''
+        : requirements.userNickname || requirements.userBio
+          ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
+          : '';
     const userProfileText = appendFormalTeachingPrompt(
       appendFusionTeachingPrompt(demoProfileText, fusionSession),
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
@@ -558,7 +560,8 @@ export async function POST(req: NextRequest) {
                             mappingId: formalFusion.context.mappingId,
                             mappingRevision: formalFusion.context.mappingRevision,
                             lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
-                            remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
+                            remediationStrategy:
+                              formalFusion.context.checkpoint.remediationStrategy,
                           },
                         }
                       : {}),

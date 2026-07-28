@@ -47,9 +47,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
-    const fusionLookup = formalFusion.kind === 'resolved'
-      ? { kind: 'none' as const }
-      : lookupFusionLessonSession(body.fusionSessionId);
+    const fusionLookup =
+      formalFusion.kind === 'resolved'
+        ? { kind: 'none' as const }
+        : lookupFusionLessonSession(body.fusionSessionId);
     if (fusionLookup.kind === 'invalid') {
       return apiError(
         'INVALID_REQUEST',
@@ -160,18 +161,19 @@ export async function POST(req: NextRequest) {
 
     // ── Apply fallbacks ──
     const vocationalActive = resolveVocationalActive(requirements);
-    const formalOutline = formalFusion.kind === 'resolved'
-      ? {
-          ...outline,
-          fusionCheckpoint: {
-            checkpointId: formalFusion.context.checkpoint.checkpointId,
-            mappingId: formalFusion.context.mappingId,
-            mappingRevision: formalFusion.context.mappingRevision,
-            lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
-            remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
-          },
-        }
-      : outline;
+    const formalOutline =
+      formalFusion.kind === 'resolved'
+        ? {
+            ...outline,
+            fusionCheckpoint: {
+              checkpointId: formalFusion.context.checkpoint.checkpointId,
+              mappingId: formalFusion.context.mappingId,
+              mappingRevision: formalFusion.context.mappingRevision,
+              lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
+              remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
+            },
+          }
+        : outline;
     const effectiveOutline = applyOutlineFallbacks(formalOutline, !!languageModel, {
       allowProceduralSkill: vocationalActive,
     });
@@ -206,9 +208,10 @@ export async function POST(req: NextRequest) {
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
 
-    const safeRequirements = formalFusion.kind === 'resolved' && requirements
-      ? (({ userNickname: _userNickname, userBio: _userBio, ...rest }) => rest)(requirements)
-      : requirements;
+    const safeRequirements =
+      formalFusion.kind === 'resolved' && requirements
+        ? (({ userNickname: _userNickname, userBio: _userBio, ...rest }) => rest)(requirements)
+        : requirements;
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
