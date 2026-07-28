@@ -68,6 +68,7 @@ import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { isSupportedFusionDemoTopic } from '@/lib/fusion/topic';
+import { db } from '@/lib/utils/database';
 
 const log = createLogger('Home');
 
@@ -252,6 +253,35 @@ function HomePage() {
             body: JSON.stringify({ stage: data.stage, scenes: data.scenes }),
           });
           if (!response.ok) throw new Error(`Classroom ${id} could not be published.`);
+
+          const audioIds = new Set<string>();
+          for (const scene of data.scenes) {
+            for (const action of scene.actions ?? []) {
+              if (action.type === 'speech' && action.audioId) audioIds.add(action.audioId);
+            }
+          }
+          const ids = [...audioIds];
+          const audioRecords = await db.audioFiles.bulkGet(ids);
+          await Promise.all(
+            audioRecords.flatMap((record, index) => {
+              if (!record) return [];
+              const audioId = ids[index];
+              return [
+                fetch(
+                  `/api/lan-shared/classrooms/${encodeURIComponent(id)}/audio/${encodeURIComponent(audioId)}`,
+                  {
+                    method: 'POST',
+                    headers: { 'content-type': record.blob.type || 'audio/mpeg' },
+                    body: record.blob,
+                  },
+                ).then((audioResponse) => {
+                  if (!audioResponse.ok) {
+                    throw new Error(`Audio ${audioId} for classroom ${id} could not be published.`);
+                  }
+                }),
+              ];
+            }),
+          );
         }),
       );
       void results;

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import {
   listSharedClassrooms,
   publishSharedClassroom,
   sanitizeSharedClassroom,
+  storeSharedAudio,
 } from '@/lib/lan-shared/classrooms';
 
 describe('LAN shared classroom publishing', () => {
@@ -85,6 +86,61 @@ describe('LAN shared classroom publishing', () => {
       );
 
       expect(await listSharedClassrooms(projectRoot)).toHaveLength(5);
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('writes a host audio blob and attaches its same-origin URL to the shared speech action', async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'openmaic-f22-audio-'));
+    const classroomId = 'f22-audio-classroom';
+    try {
+      const classroomDir = path.join(projectRoot, 'data', 'classrooms');
+      await mkdir(classroomDir, { recursive: true });
+      await writeFile(
+        path.join(classroomDir, `${classroomId}.json`),
+        JSON.stringify({
+          id: classroomId,
+          stage: { id: classroomId, name: '有声音的课堂' },
+          scenes: [
+            {
+              actions: [
+                { type: 'speech', audioId: 'tts_s0_intro' },
+                { type: 'speech', audioId: 'tts_s0_summary' },
+              ],
+            },
+          ],
+        }),
+      );
+
+      const [stored, summary] = await Promise.all(
+        [
+          {
+            audioId: 'tts_s0_intro',
+            contentType: 'audio/mpeg',
+            bytes: Buffer.from('audio-bytes'),
+          },
+          {
+            audioId: 'tts_s0_summary',
+            contentType: 'audio/wav',
+            bytes: Buffer.from('summary-bytes'),
+          },
+        ].map((audio) => storeSharedAudio({ classroomId, ...audio }, projectRoot)),
+      );
+
+      expect(stored.url).toBe(`/api/classroom-media/${classroomId}/audio/tts_s0_intro.mp3`);
+      await expect(
+        readFile(path.join(classroomDir, classroomId, 'audio', 'tts_s0_intro.mp3'), 'utf8'),
+      ).resolves.toBe('audio-bytes');
+      await expect(
+        readFile(path.join(classroomDir, classroomId, 'audio', 'tts_s0_summary.wav'), 'utf8'),
+      ).resolves.toBe('summary-bytes');
+      await expect(
+        readFile(path.join(classroomDir, `${classroomId}.json`), 'utf8'),
+      ).resolves.toContain(stored.url);
+      await expect(
+        readFile(path.join(classroomDir, `${classroomId}.json`), 'utf8'),
+      ).resolves.toContain(summary.url);
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }

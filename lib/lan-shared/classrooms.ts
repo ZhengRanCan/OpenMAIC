@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { isValidClassroomId, persistClassroom } from '@/lib/server/classroom-storage';
@@ -31,6 +32,16 @@ interface SharedClassroomManifest {
 // read-modify-write manifest update in one process-local queue so entries do
 // not overwrite one another or reuse the same atomic-write temporary file.
 let manifestUpdateQueue: Promise<void> = Promise.resolve();
+let audioUpdateQueue: Promise<void> = Promise.resolve();
+
+const AUDIO_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/ogg': 'ogg',
+  'audio/aac': 'aac',
+};
 
 export function isLanSharedMode(): boolean {
   return process.env.OPENMAIC_LAN_SHARED_MODE === 'true';
@@ -102,6 +113,13 @@ async function writeManifest(
   await fs.rename(temporary, target);
 }
 
+async function writeJsonAtomically(target: string, value: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  await fs.writeFile(temporary, JSON.stringify(value, null, 2), 'utf8');
+  await fs.rename(temporary, target);
+}
+
 function updateManifest(projectRoot: string, summary: SharedClassroomSummary): Promise<void> {
   const update = manifestUpdateQueue.then(async () => {
     const current = await readManifest(projectRoot);
@@ -138,4 +156,56 @@ export async function publishSharedClassroom(
   const summary = summaryFor(stage, scenes);
   await updateManifest(projectRoot, summary);
   return summary;
+}
+
+export interface StoredSharedAudio {
+  filename: string;
+  url: string;
+}
+
+export async function storeSharedAudio(
+  input: { classroomId: string; audioId: string; contentType: string; bytes: Buffer },
+  projectRoot = process.cwd(),
+): Promise<StoredSharedAudio> {
+  if (!isValidClassroomId(input.classroomId) || !isValidClassroomId(input.audioId)) {
+    throw new Error('A valid classroom ID and audio ID are required.');
+  }
+  if (!input.bytes.length) throw new Error('Audio content is required.');
+  if (input.bytes.length > 25 * 1024 * 1024) throw new Error('Audio file exceeds the 25 MB limit.');
+
+  const extension = AUDIO_EXTENSION_BY_CONTENT_TYPE[input.contentType.toLowerCase()];
+  if (!extension) throw new Error('Unsupported audio content type.');
+
+  const filename = `${input.audioId}.${extension}`;
+  const url = `/api/classroom-media/${input.classroomId}/audio/${filename}`;
+  const update = audioUpdateQueue.then(async () => {
+    const classroomsDir = path.join(projectRoot, 'data', 'classrooms');
+    const classroomPath = path.join(classroomsDir, `${input.classroomId}.json`);
+    const parsed = JSON.parse(await fs.readFile(classroomPath, 'utf8')) as {
+      scenes?: Array<{ actions?: Array<{ type?: string; audioId?: string; audioUrl?: string }> }>;
+    };
+
+    let found = false;
+    for (const scene of parsed.scenes ?? []) {
+      for (const action of scene.actions ?? []) {
+        if (action.type === 'speech' && action.audioId === input.audioId) {
+          action.audioUrl = url;
+          found = true;
+        }
+      }
+    }
+    if (!found) throw new Error('Shared classroom does not reference this audio ID.');
+
+    const audioDir = path.join(classroomsDir, input.classroomId, 'audio');
+    await fs.mkdir(audioDir, { recursive: true });
+    const audioPath = path.join(audioDir, filename);
+    const temporary = `${audioPath}.${process.pid}.${randomUUID()}.tmp`;
+    await fs.writeFile(temporary, input.bytes);
+    await fs.rename(temporary, audioPath);
+    await writeJsonAtomically(classroomPath, parsed);
+  });
+
+  audioUpdateQueue = update.catch(() => undefined);
+  await update;
+  return { filename, url };
 }
