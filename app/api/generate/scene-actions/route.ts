@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
     const pageIndex = effectiveAllOutlines.findIndex((o) => o.id === effectiveOutline.id);
     const ctx: SceneGenerationContext = {
       pageIndex: (pageIndex >= 0 ? pageIndex : 0) + 1,
-      totalPages: allOutlines.length,
+      totalPages: effectiveAllOutlines.length,
       allTitles,
       previousSpeeches: incomingPreviousSpeeches ?? [],
     };

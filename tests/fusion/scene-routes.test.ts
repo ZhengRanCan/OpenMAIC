@@ -158,6 +158,7 @@ describe('Fusion scene routes', () => {
         lessonSessionId: 'formal-session',
         fusionSessionId: fusionId,
         outline: { ...outline, id: 'formal-outline', title: 'forged topic' },
+        allOutlines: [outline, outline, outline],
         userProfile: 'forged-profile',
         languageDirective: 'forged directive',
       }) as unknown as Parameters<typeof actionsPost>[0],
@@ -169,6 +170,7 @@ describe('Fusion scene routes', () => {
     expect(mocks.generateSceneActions.mock.calls[0][0]).toMatchObject({
       title: 'Server-owned formal outline',
     });
+    expect(actionOptions.ctx.totalPages).toBe(1);
   });
 
   it('keeps ordinary generation behaviour without either Fusion session', async () => {
