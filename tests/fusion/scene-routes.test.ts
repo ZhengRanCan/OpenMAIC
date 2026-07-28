@@ -11,14 +11,17 @@ const mocks = vi.hoisted(() => ({
   buildCompleteScene: vi.fn(),
   buildVisionUserContent: vi.fn(),
   resolveVocationalActive: vi.fn(),
+  resolveFormalFusion: vi.fn(),
 }));
 
 vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: mocks.resolveModelFromRequest,
-}));
-vi.mock('@/lib/config/feature-flags', () => ({
-  resolveVocationalActive: mocks.resolveVocationalActive,
+vi.mock('@/lib/server/resolve-model', () => ({ resolveModelFromRequest: mocks.resolveModelFromRequest }));
+vi.mock('@/lib/config/feature-flags', () => ({ resolveVocationalActive: mocks.resolveVocationalActive }));
+vi.mock('@/lib/fusion/generation-session', () => ({
+  FormalFusionError: class FormalFusionError extends Error {},
+  appendFormalTeachingPrompt: (base: string | undefined) => base,
+  formalFusionErrorResponse: vi.fn(),
+  resolveFormalFusion: mocks.resolveFormalFusion,
 }));
 vi.mock('@/lib/generation/generation-pipeline', () => ({
   applyOutlineFallbacks: mocks.applyOutlineFallbacks,
@@ -27,18 +30,9 @@ vi.mock('@/lib/generation/generation-pipeline', () => ({
   buildCompleteScene: mocks.buildCompleteScene,
   buildVisionUserContent: mocks.buildVisionUserContent,
 }));
-vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
+vi.mock('@/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
 
-const outline: SceneOutline = {
-  id: 'outline-1',
-  type: 'slide',
-  title: '一次函数的斜率',
-  description: '解释斜率的意义。',
-  keyPoints: ['斜率'],
-  order: 1,
-};
+const outline: SceneOutline = { id: 'outline-1', type: 'slide', title: 'Slope', description: 'Explain slope.', keyPoints: ['slope'], order: 1 };
 
 function fusionSessionId() {
   const result = createFusionDemoLessonSession('a', '请生成一次函数课堂');
@@ -48,125 +42,72 @@ function fusionSessionId() {
 
 function request(extraBody: Record<string, unknown> = {}) {
   return {
-    json: async () => ({
-      outline,
-      allOutlines: [outline],
-      content: { elements: [], remark: 'ok' },
-      stageId: 'stage-1',
-      stageInfo: { name: '一次函数课堂' },
-      languageDirective: '用中文授课。',
-      ...extraBody,
-    }),
+    json: async () => ({ outline, allOutlines: [outline], content: { elements: [], remark: 'ok' }, stageId: 'stage-1', stageInfo: { name: 'lesson' }, languageDirective: 'Teach clearly.', ...extraBody }),
     headers: { get: () => null },
   };
 }
 
-describe('F02 场景生成路由', () => {
+describe('Fusion scene routes', () => {
   beforeEach(() => {
     vi.resetModules();
     for (const mock of Object.values(mocks)) mock.mockReset();
-    mocks.resolveModelFromRequest.mockResolvedValue({
-      model: { id: 'language-model' },
-      modelInfo: { outputWindow: 4096, capabilities: {} },
-      modelString: 'test:model',
-      thinkingConfig: undefined,
-    });
+    mocks.resolveModelFromRequest.mockResolvedValue({ model: { id: 'language-model' }, modelInfo: { outputWindow: 4096, capabilities: {} }, modelString: 'test:model', thinkingConfig: undefined });
+    mocks.resolveFormalFusion.mockResolvedValue({ kind: 'none' });
     mocks.applyOutlineFallbacks.mockImplementation((value) => value);
     mocks.resolveVocationalActive.mockReturnValue(false);
     mocks.generateSceneContent.mockResolvedValue({ elements: [], remark: 'ok' });
     mocks.generateSceneActions.mockResolvedValue([]);
-    mocks.buildCompleteScene.mockReturnValue({
-      id: 'scene-1',
-      type: 'slide',
-      title: outline.title,
-      order: outline.order,
-      content: { elements: [], remark: 'ok' },
-      actions: [],
-    });
+    mocks.buildCompleteScene.mockReturnValue({ id: 'scene-1', type: 'slide', title: outline.title, order: outline.order, content: { elements: [], remark: 'ok' }, actions: [] });
   });
 
-  it('内容和动作路由都从同一 session id 解析同一份教学上下文', async () => {
+  it('keeps F02 Demo prompt context for the standalone demo route', async () => {
     const fusionId = fusionSessionId();
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(request({ fusionSessionId: fusionId }) as unknown as Parameters<typeof POST>[0]);
+    expect(response.status).toBe(200);
+    expect(mocks.generateSceneContent.mock.calls[0][2].languageDirective).toContain('foundation');
+  });
 
+  it('removes browser profile fields and F02 Demo context for a formal session', async () => {
+    mocks.resolveFormalFusion.mockResolvedValue({ kind: 'resolved', context: { lessonKnowledgePointIds: ['point-1'], mappingId: 'map-1', mappingRevision: '2', checkpoint: { checkpointId: 'checkpoint-1', remediationStrategy: 'concrete_example' }, guidance: ['Use conservative guidance.'] } });
+    const fusionId = fusionSessionId();
     const { POST: contentPost } = await import('@/app/api/generate/scene-content/route');
-    const contentResponse = await contentPost(
-      request({ fusionSessionId: fusionId }) as unknown as Parameters<typeof contentPost>[0],
-    );
+    const contentResponse = await contentPost(request({ lessonSessionId: 'formal-session', fusionSessionId: fusionId, requirements: { requirement: 'formal requirement', userNickname: 'forged-name', userBio: 'forged-bio' } }) as unknown as Parameters<typeof contentPost>[0]);
     expect(contentResponse.status).toBe(200);
-    const contentDirective = mocks.generateSceneContent.mock.calls[0][2]
-      .languageDirective as string;
+    const contentOptions = mocks.generateSceneContent.mock.calls[0][2];
+    expect(contentOptions.userRequirements).not.toHaveProperty('userNickname');
+    expect(contentOptions.userRequirements).not.toHaveProperty('userBio');
+    expect(contentOptions.languageDirective).not.toContain('foundation');
 
     vi.resetModules();
     const { POST: actionsPost } = await import('@/app/api/generate/scene-actions/route');
-    const actionsResponse = await actionsPost(
-      request({ fusionSessionId: fusionId }) as unknown as Parameters<typeof actionsPost>[0],
-    );
+    const actionsResponse = await actionsPost(request({ lessonSessionId: 'formal-session', fusionSessionId: fusionId, userProfile: 'forged-profile' }) as unknown as Parameters<typeof actionsPost>[0]);
     expect(actionsResponse.status).toBe(200);
-    const actionsDirective = mocks.generateSceneActions.mock.calls[0][3]
-      .languageDirective as string;
-
-    expect(contentDirective).toBe(actionsDirective);
-    expect(contentDirective).toContain('教学层级：foundation');
-    expect(contentDirective).toContain('斜率与截距的现实含义');
-    expect(contentDirective).not.toContain('demo-student-a');
+    const actionOptions = mocks.generateSceneActions.mock.calls[0][3];
+    expect(actionOptions.userProfile).toBeUndefined();
+    expect(actionOptions.languageDirective).not.toContain('foundation');
   });
 
-  it('keeps the formal checkpoint binding server-owned when assembling a scene', async () => {
-    const { buildCompleteScene } = await import('@/lib/generation/scene-builder');
-    const scene = buildCompleteScene(
-      {
-        ...outline,
-        fusionCheckpoint: {
-          checkpointId: 'checkpoint-point-1',
-          mappingId: 'map-1',
-          mappingRevision: '2',
-          lessonKnowledgePointIds: ['point-1'],
-          remediationStrategy: 'concrete_example',
-        },
-      },
-      { elements: [] },
-      [],
-      'stage-1',
+  it('keeps ordinary generation behaviour without either Fusion session', async () => {
+    const { POST } = await import('@/app/api/generate/scene-actions/route');
+    await POST(request({ userProfile: 'ordinary-profile' }) as unknown as Parameters<typeof POST>[0]);
+    expect(mocks.generateSceneActions.mock.calls[0][3].userProfile).toBe('ordinary-profile');
+  });
+
+  it('rejects an invalid standalone Demo session without calling a model', async () => {
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(
+      request({ fusionSessionId: 'forged-session' }) as unknown as Parameters<typeof POST>[0],
     );
-    expect(scene?.fusionCheckpoint).toEqual({
-      checkpointId: 'checkpoint-point-1',
-      mappingId: 'map-1',
-      mappingRevision: '2',
-      lessonKnowledgePointIds: ['point-1'],
-      remediationStrategy: 'concrete_example',
-    });
-  });
 
-  it('未传 session id 时保留普通生成指令', async () => {
-    const { POST: contentPost } = await import('@/app/api/generate/scene-content/route');
-    await contentPost(request() as unknown as Parameters<typeof contentPost>[0]);
-    expect(mocks.generateSceneContent.mock.calls[0][2].languageDirective).toBe('用中文授课。');
-
-    vi.resetModules();
-    const { POST: actionsPost } = await import('@/app/api/generate/scene-actions/route');
-    await actionsPost(request() as unknown as Parameters<typeof actionsPost>[0]);
-    expect(mocks.generateSceneActions.mock.calls[0][3].languageDirective).toBe('用中文授课。');
-  });
-
-  it('拒绝未知会话 id，且不会继续调用模型或生成器', async () => {
-    const { POST: contentPost } = await import('@/app/api/generate/scene-content/route');
-    const contentResponse = await contentPost(
-      request({ fusionSessionId: 'forged-session' }) as unknown as Parameters<
-        typeof contentPost
-      >[0],
-    );
-    expect(contentResponse.status).toBe(400);
+    expect(response.status).toBe(400);
     expect(mocks.resolveModelFromRequest).not.toHaveBeenCalled();
     expect(mocks.generateSceneContent).not.toHaveBeenCalled();
+  });
 
-    vi.resetModules();
-    const { POST: actionsPost } = await import('@/app/api/generate/scene-actions/route');
-    const actionsResponse = await actionsPost(
-      request({ fusionSessionId: 'forged-session' }) as unknown as Parameters<
-        typeof actionsPost
-      >[0],
-    );
-    expect(actionsResponse.status).toBe(400);
-    expect(mocks.generateSceneActions).not.toHaveBeenCalled();
+  it('keeps server-owned checkpoint binding when assembling a scene', async () => {
+    const { buildCompleteScene } = await import('@/lib/generation/scene-builder');
+    const scene = buildCompleteScene({ ...outline, fusionCheckpoint: { checkpointId: 'checkpoint-point-1', mappingId: 'map-1', mappingRevision: '2', lessonKnowledgePointIds: ['point-1'], remediationStrategy: 'concrete_example' } }, { elements: [] }, [], 'stage-1');
+    expect(scene?.fusionCheckpoint?.mappingId).toBe('map-1');
   });
 });

@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
   let resolvedModelString: string | undefined;
   try {
     const body = await req.json();
-    const fusionLookup = lookupFusionLessonSession(body.fusionSessionId);
+    const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
+    const fusionLookup = formalFusion.kind === 'resolved'
+      ? { kind: 'none' as const }
+      : lookupFusionLessonSession(body.fusionSessionId);
     if (fusionLookup.kind === 'invalid') {
       return apiError(
         'INVALID_REQUEST',
@@ -55,7 +58,6 @@ export async function POST(req: NextRequest) {
       );
     }
     const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
-    const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
     const {
       outline: rawOutline,
       allOutlines,
@@ -204,6 +206,9 @@ export async function POST(req: NextRequest) {
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
 
+    const safeRequirements = formalFusion.kind === 'resolved' && requirements
+      ? (({ userNickname: _userNickname, userBio: _userBio, ...rest }) => rest)(requirements)
+      : requirements;
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
@@ -214,7 +219,7 @@ export async function POST(req: NextRequest) {
       languageDirective: effectiveLanguageDirective,
       thinkingConfig,
       targetLanguage: userLocale || undefined,
-      userRequirements: requirements,
+      userRequirements: safeRequirements,
       allowProceduralSkill: vocationalActive,
     });
 

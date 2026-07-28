@@ -298,18 +298,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // The browser can only nominate an opaque id. Resolve the frozen, reviewed
-    // projection again on the server; never accept client-supplied prompt text.
-    const fusionLookup = lookupFusionLessonSession(body.fusionSessionId);
-    if (fusionLookup.kind === 'invalid') {
-      return apiError(
-        'INVALID_REQUEST',
-        400,
-        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
-      );
-    }
-    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
-
     if (!body.requirements) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
@@ -318,6 +306,19 @@ export async function POST(req: NextRequest) {
       body.lessonSessionId,
       body.requirements.requirement,
     );
+    // A formal session is authoritative: never combine it with the historical
+    // F02 Demo projection or browser-supplied profile fields.
+    const fusionLookup = formalFusion.kind === 'resolved'
+      ? { kind: 'none' as const }
+      : lookupFusionLessonSession(body.fusionSessionId);
+    if (fusionLookup.kind === 'invalid') {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
+      );
+    }
+    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
 
     // Get API configuration from request headers/body
     const {
@@ -339,7 +340,9 @@ export async function POST(req: NextRequest) {
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
     // Build user profile string for language inference context
-    const demoProfileText = requirements.userNickname || requirements.userBio
+    const demoProfileText = formalFusion.kind === 'resolved'
+      ? ''
+      : requirements.userNickname || requirements.userBio
       ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
       : '';
     const userProfileText = appendFormalTeachingPrompt(
