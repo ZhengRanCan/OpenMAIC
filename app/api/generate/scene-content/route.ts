@@ -100,7 +100,19 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    const outline: SceneOutline = { ...rawOutline };
+    if (formalFusion.kind === 'resolved' && !formalFusion.outlines) {
+      throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+    }
+    const outline: SceneOutline =
+      formalFusion.kind === 'resolved'
+        ? (() => {
+            const stored = formalFusion.outlines?.find(
+              (candidate) => candidate.id === rawOutline.id,
+            );
+            if (!stored) throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+            return { ...stored };
+          })()
+        : { ...rawOutline };
 
     // ── Model resolution from request headers/body ──
     // Route per scene-content type (e.g. `scene-content:quiz`); getStageModel
@@ -160,7 +172,11 @@ export async function POST(req: NextRequest) {
     };
 
     // ── Apply fallbacks ──
-    const vocationalActive = resolveVocationalActive(requirements);
+    const safeRequirements =
+      formalFusion.kind === 'resolved'
+        ? { requirement: formalFusion.context.lessonRequirement }
+        : requirements;
+    const vocationalActive = resolveVocationalActive(safeRequirements);
     const formalOutline =
       formalFusion.kind === 'resolved'
         ? {
@@ -204,21 +220,18 @@ export async function POST(req: NextRequest) {
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
     const effectiveLanguageDirective = appendFormalTeachingPrompt(
-      appendFusionTeachingPrompt(languageDirective, fusionSession),
+      formalFusion.kind === 'resolved'
+        ? undefined
+        : appendFusionTeachingPrompt(languageDirective, fusionSession),
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
-
-    const safeRequirements =
-      formalFusion.kind === 'resolved' && requirements
-        ? (({ userNickname: _userNickname, userBio: _userBio, ...rest }) => rest)(requirements)
-        : requirements;
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
       languageModel: effectiveOutline.type === 'pbl' ? languageModel : undefined,
       visionEnabled: hasVision,
       generatedMediaMapping,
-      agents,
+      agents: formalFusion.kind === 'resolved' ? undefined : agents,
       languageDirective: effectiveLanguageDirective,
       thinkingConfig,
       targetLanguage: userLocale || undefined,

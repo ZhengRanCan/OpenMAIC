@@ -104,15 +104,28 @@ describe('Fusion scene routes', () => {
   });
 
   it('removes browser profile fields and F02 Demo context for a formal session', async () => {
+    const formalOutline = {
+      ...outline,
+      id: 'formal-outline',
+      title: 'Server-owned formal outline',
+      description: 'Use the frozen requirement.',
+    };
     mocks.resolveFormalFusion.mockResolvedValue({
       kind: 'resolved',
       context: {
+        lessonRequirement: 'Frozen formal requirement',
         lessonKnowledgePointIds: ['point-1'],
         mappingId: 'map-1',
         mappingRevision: '2',
-        checkpoint: { checkpointId: 'checkpoint-1', remediationStrategy: 'concrete_example' },
+        checkpoint: {
+          checkpointId: 'checkpoint-1',
+          sceneId: 'checkpoint-scene',
+          remediationSceneId: 'remediation-scene',
+          remediationStrategy: 'concrete_example',
+        },
         guidance: ['Use conservative guidance.'],
       },
+      outlines: [formalOutline],
     });
     const fusionId = fusionSessionId();
     const { POST: contentPost } = await import('@/app/api/generate/scene-content/route');
@@ -120,8 +133,9 @@ describe('Fusion scene routes', () => {
       request({
         lessonSessionId: 'formal-session',
         fusionSessionId: fusionId,
+        outline: { ...outline, id: 'formal-outline', title: 'forged topic' },
         requirements: {
-          requirement: 'formal requirement',
+          requirement: 'forged requirement',
           userNickname: 'forged-name',
           userBio: 'forged-bio',
         },
@@ -131,7 +145,11 @@ describe('Fusion scene routes', () => {
     const contentOptions = mocks.generateSceneContent.mock.calls[0][2];
     expect(contentOptions.userRequirements).not.toHaveProperty('userNickname');
     expect(contentOptions.userRequirements).not.toHaveProperty('userBio');
-    expect(contentOptions.languageDirective).not.toContain('foundation');
+    expect(contentOptions.userRequirements).toEqual({ requirement: 'Frozen formal requirement' });
+    expect(contentOptions.languageDirective).toBeUndefined();
+    expect(mocks.generateSceneContent.mock.calls[0][0]).toMatchObject({
+      title: 'Server-owned formal outline',
+    });
 
     vi.resetModules();
     const { POST: actionsPost } = await import('@/app/api/generate/scene-actions/route');
@@ -139,13 +157,18 @@ describe('Fusion scene routes', () => {
       request({
         lessonSessionId: 'formal-session',
         fusionSessionId: fusionId,
+        outline: { ...outline, id: 'formal-outline', title: 'forged topic' },
         userProfile: 'forged-profile',
+        languageDirective: 'forged directive',
       }) as unknown as Parameters<typeof actionsPost>[0],
     );
     expect(actionsResponse.status).toBe(200);
     const actionOptions = mocks.generateSceneActions.mock.calls[0][3];
     expect(actionOptions.userProfile).toBeUndefined();
-    expect(actionOptions.languageDirective).not.toContain('foundation');
+    expect(actionOptions.languageDirective).toBeUndefined();
+    expect(mocks.generateSceneActions.mock.calls[0][0]).toMatchObject({
+      title: 'Server-owned formal outline',
+    });
   });
 
   it('keeps ordinary generation behaviour without either Fusion session', async () => {

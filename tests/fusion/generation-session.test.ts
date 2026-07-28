@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import {
   appendFormalTeachingPrompt,
+  completeFormalLessonOutlines,
   FormalFusionError,
   freezeFormalFusionForOutline,
+  persistFormalLessonOutlines,
   resolveFormalFusion,
 } from '@/lib/fusion/generation-session';
 import {
@@ -12,6 +14,9 @@ import {
   type ProductionFusionServices,
 } from '@/lib/fusion/reliability/production-services';
 import type { FusionSessionRecord } from '@/lib/fusion/session-store/types';
+import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
+import { planSceneDirective } from '@/lib/fusion/scene-directive-planner';
+import type { SceneCatalog } from '@/lib/fusion/scene-catalog';
 
 function request(cookie = 'browser-token') {
   return new NextRequest('http://openmaic.local/api/generate/scene-outlines-stream', {
@@ -106,6 +111,8 @@ describe('F23 formal generation session', () => {
       mappingRevision: '2',
       checkpoint: {
         checkpointId: 'catalog-checkpoint-1',
+        sceneId: 'checkpoint-1',
+        remediationSceneId: 'remediation-1',
         remediationStrategy: 'catalog_concrete_example',
       },
     });
@@ -116,8 +123,41 @@ describe('F23 formal generation session', () => {
     expect(prompt).not.toContain('secret://');
     expect(configured.sessions.compareAndSet).toHaveBeenCalledTimes(1);
 
+    const outlines = completeFormalLessonOutlines(frozen.context, [
+      {
+        id: 'teach-1',
+        type: 'slide',
+        title: 'Server generated teaching scene',
+        description: 'Teach the frozen requirement.',
+        keyPoints: ['point-1'],
+        order: 1,
+      },
+    ]);
+    expect(outlines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'checkpoint-1',
+          type: 'quiz',
+          fusionCheckpoint: expect.objectContaining({ checkpointId: 'catalog-checkpoint-1' }),
+        }),
+        expect.objectContaining({ id: 'remediation-1' }),
+      ]),
+    );
+    const directive = planSceneDirective(
+      {
+        kind: 'insert_remediation',
+        targetLessonKnowledgePointIds: ['point-1'],
+        recommendedStrategy: 'catalog_concrete_example',
+      },
+      'event-1',
+      record().sceneCatalog as unknown as SceneCatalog,
+      createLessonRuntimeState('checkpoint-1'),
+    );
+    expect(directive.directive.targetSceneId).toBe('remediation-1');
+    expect(outlines.map((outline) => outline.id)).toContain(directive.directive.targetSceneId);
+    await persistFormalLessonOutlines(request(), frozen, outlines);
     const reused = await resolveFormalFusion(request(), 'lesson-1');
-    expect(reused).toMatchObject({ kind: 'resolved', context: frozen.context });
+    expect(reused).toMatchObject({ kind: 'resolved', context: frozen.context, outlines });
     await expect(
       freezeFormalFusionForOutline(request(), 'lesson-1', 'Forged replacement topic'),
     ).rejects.toMatchObject({ code: 'FUSION_SESSION_ALREADY_GENERATED' });

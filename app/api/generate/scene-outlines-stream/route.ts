@@ -47,6 +47,8 @@ import {
   formalFusionErrorResponse,
   FormalFusionError,
   freezeFormalFusionForOutline,
+  completeFormalLessonOutlines,
+  persistFormalLessonOutlines,
 } from '@/lib/fusion/generation-session';
 const log = createLogger('Outlines Stream');
 
@@ -338,7 +340,11 @@ export async function POST(req: NextRequest) {
       researchContext?: string;
       agents?: AgentInfo[];
     };
-    requirementSnippet = requirements?.requirement?.substring(0, 60);
+    const effectiveRequirements =
+      formalFusion.kind === 'resolved'
+        ? { requirement: formalFusion.context.lessonRequirement }
+        : requirements;
+    requirementSnippet = effectiveRequirements.requirement.substring(0, 60);
 
     // Build user profile string for language inference context
     const demoProfileText =
@@ -393,11 +399,13 @@ export async function POST(req: NextRequest) {
     const hasSourceImages = (pdfImages?.length ?? 0) > 0;
 
     // Build teacher context from agents (if available)
-    const teacherContext = formatTeacherPersonaForPrompt(agents);
+    const teacherContext = formatTeacherPersonaForPrompt(
+      formalFusion.kind === 'resolved' ? undefined : agents,
+    );
 
     // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
-    const interactiveMode = requirements.interactiveMode ?? false;
-    const taskEngineMode = resolveVocationalActive(requirements);
+    const interactiveMode = effectiveRequirements.interactiveMode ?? false;
+    const taskEngineMode = resolveVocationalActive(effectiveRequirements);
     const promptId = taskEngineMode
       ? PROMPT_IDS.TASK_ENGINE_OUTLINES
       : interactiveMode
@@ -405,7 +413,7 @@ export async function POST(req: NextRequest) {
         : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
 
     const prompts = buildPrompt(promptId, {
-      requirement: requirements.requirement,
+      requirement: effectiveRequirements.requirement,
       pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
       availableImages: availableImagesText,
       researchContext: researchContext || 'None',
@@ -422,7 +430,7 @@ export async function POST(req: NextRequest) {
     }
 
     log.info(
-      `Generating outlines: "${requirements.requirement.substring(0, 50)}" [model=${modelString}]`,
+      `Generating outlines: "${effectiveRequirements.requirement.substring(0, 50)}" [model=${modelString}]`,
     );
 
     // Create SSE stream with heartbeat to prevent connection timeout
@@ -553,21 +561,9 @@ export async function POST(req: NextRequest) {
                   const enrichedBase = {
                     ...outline,
                     order: parsedOutlines.length + 1,
-                    ...(formalFusion.kind === 'resolved' && parsedOutlines.length === 0
-                      ? {
-                          fusionCheckpoint: {
-                            checkpointId: formalFusion.context.checkpoint.checkpointId,
-                            mappingId: formalFusion.context.mappingId,
-                            mappingRevision: formalFusion.context.mappingRevision,
-                            lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
-                            remediationStrategy:
-                              formalFusion.context.checkpoint.remediationStrategy,
-                          },
-                        }
-                      : {}),
                   };
                   const normalized = taskEngineMode
-                    ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
+                    ? normalizeTaskEngineOutline(enrichedBase, effectiveRequirements.requirement)
                     : sanitizeNonTaskEngineOutline(enrichedBase);
                   const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
                   parsedOutlines.push(enriched);
@@ -643,10 +639,27 @@ export async function POST(req: NextRequest) {
           if (parsedOutlines.length > 0) {
             // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
             const uniquifiedOutlines = uniquifyMediaElementIds(parsedOutlines);
+            const finalOutlines =
+              formalFusion.kind === 'resolved'
+                ? completeFormalLessonOutlines(formalFusion.context, uniquifiedOutlines)
+                : uniquifiedOutlines;
+            if (formalFusion.kind === 'resolved') {
+              await persistFormalLessonOutlines(req, formalFusion, finalOutlines);
+              const emittedIds = new Set(parsedOutlines.map((outline) => outline.id));
+              for (const outline of finalOutlines) {
+                if (emittedIds.has(outline.id)) continue;
+                const event = JSON.stringify({
+                  type: 'outline',
+                  data: outline,
+                  index: outline.order - 1,
+                });
+                controller.enqueue(encoder.encode(`data: ${event}\n\n`));
+              }
+            }
             // Send done event with all outlines
             const doneEvent = JSON.stringify({
               type: 'done',
-              outlines: uniquifiedOutlines,
+              outlines: finalOutlines,
               languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
               courseTitle: courseTitle || undefined,
               taskEngineMode,

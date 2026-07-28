@@ -101,6 +101,9 @@ export async function POST(req: NextRequest) {
     if (!stageId) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
+    if (formalFusion.kind === 'resolved' && !formalFusion.outlines) {
+      throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+    }
 
     // ── Model resolution from request headers/body ──
     const {
@@ -111,16 +114,11 @@ export async function POST(req: NextRequest) {
     } = await resolveModelFromRequest(req, body, 'scene-actions');
     const effectiveOutline =
       formalFusion.kind === 'resolved'
-        ? {
-            ...outline,
-            fusionCheckpoint: {
-              checkpointId: formalFusion.context.checkpoint.checkpointId,
-              mappingId: formalFusion.context.mappingId,
-              mappingRevision: formalFusion.context.mappingRevision,
-              lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
-              remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
-            },
-          }
+        ? (() => {
+            const stored = formalFusion.outlines?.find((candidate) => candidate.id === outline.id);
+            if (!stored) throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+            return stored;
+          })()
         : outline;
     outlineTitle = effectiveOutline?.title;
     resolvedModelString = modelString;
@@ -170,8 +168,10 @@ export async function POST(req: NextRequest) {
     };
 
     // ── Build cross-scene context ──
-    const allTitles = allOutlines.map((o) => o.title);
-    const pageIndex = allOutlines.findIndex((o) => o.id === outline.id);
+    const effectiveAllOutlines =
+      formalFusion.kind === 'resolved' ? (formalFusion.outlines ?? []) : allOutlines;
+    const allTitles = effectiveAllOutlines.map((o) => o.title);
+    const pageIndex = effectiveAllOutlines.findIndex((o) => o.id === effectiveOutline.id);
     const ctx: SceneGenerationContext = {
       pageIndex: (pageIndex >= 0 ? pageIndex : 0) + 1,
       totalPages: allOutlines.length,
@@ -179,7 +179,9 @@ export async function POST(req: NextRequest) {
       previousSpeeches: incomingPreviousSpeeches ?? [],
     };
     const effectiveLanguageDirective = appendFormalTeachingPrompt(
-      appendFusionTeachingPrompt(languageDirective, fusionSession),
+      formalFusion.kind === 'resolved'
+        ? undefined
+        : appendFusionTeachingPrompt(languageDirective, fusionSession),
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
 
@@ -188,7 +190,7 @@ export async function POST(req: NextRequest) {
 
     const actions = await generateSceneActions(effectiveOutline, content, aiCall, {
       ctx,
-      agents,
+      agents: formalFusion.kind === 'resolved' ? undefined : agents,
       userProfile: formalFusion.kind === 'resolved' ? undefined : userProfile,
       languageDirective: effectiveLanguageDirective,
     });

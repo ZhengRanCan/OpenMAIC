@@ -9,7 +9,12 @@ export interface FrozenTeachingContext {
   mappingId: string;
   mappingRevision: string;
   guidance: string[];
-  checkpoint: { checkpointId: string; remediationStrategy: string };
+  checkpoint: {
+    checkpointId: string;
+    sceneId: string;
+    remediationSceneId: string;
+    remediationStrategy: string;
+  };
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -75,8 +80,15 @@ function checkpointFromCatalog(
   );
   if (!object(remediation)) return undefined;
   const remediationStrategy = strings(remediation.teachingStrategyTags)[0];
-  return remediationStrategy
-    ? { checkpointId: checkpoint.checkpointId, remediationStrategy }
+  return remediationStrategy &&
+    typeof checkpoint.sceneId === 'string' &&
+    typeof remediation.sceneId === 'string'
+    ? {
+        checkpointId: checkpoint.checkpointId,
+        sceneId: checkpoint.sceneId,
+        remediationSceneId: remediation.sceneId,
+        remediationStrategy,
+      }
     : undefined;
 }
 
@@ -136,6 +148,8 @@ export function parseFrozenTeachingContext(value: unknown): FrozenTeachingContex
   if (
     !object(value.checkpoint) ||
     !safeText(value.checkpoint.checkpointId, 120) ||
+    !safeText(value.checkpoint.sceneId, 120) ||
+    !safeText(value.checkpoint.remediationSceneId, 120) ||
     !safeText(value.checkpoint.remediationStrategy, 120)
   )
     return undefined;
@@ -150,6 +164,8 @@ export function parseFrozenTeachingContext(value: unknown): FrozenTeachingContex
     guidance: strings(value.guidance).slice(0, 3),
     checkpoint: {
       checkpointId: safeText(value.checkpoint.checkpointId, 120),
+      sceneId: safeText(value.checkpoint.sceneId, 120),
+      remediationSceneId: safeText(value.checkpoint.remediationSceneId, 120),
       remediationStrategy: safeText(value.checkpoint.remediationStrategy, 120),
     },
   };

@@ -16,6 +16,8 @@ export interface FusionSessionRecord {
   lessonKnowledgeMap: FusionJsonObject;
   /** Frozen on the first formal outline request. Never populated from browser snapshots. */
   generationContext?: FusionJsonObject;
+  /** Server-owned outlines from the sole formal generation request. */
+  generatedOutlines?: FusionJsonObject[];
   sceneCatalog: FusionJsonObject;
   runtimeState: FusionJsonObject;
   degradationState: string;
