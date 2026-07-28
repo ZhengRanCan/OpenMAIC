@@ -195,11 +195,15 @@ export function completeFormalLessonOutlines(
       keyPoints: [...outline.keyPoints],
       order: index + 1,
     }));
+  const localizedFallback = base[0] ?? {
+    title: context.lessonRequirement,
+    description: context.lessonRequirement,
+  };
   const checkpoint: SceneOutline = {
     id: context.checkpoint.sceneId,
     type: 'quiz',
-    title: 'Knowledge checkpoint',
-    description: 'Check the frozen lesson requirement before continuing.',
+    title: localizedFallback.title,
+    description: localizedFallback.description,
     keyPoints: [...context.lessonKnowledgePointIds],
     order: base.length + 1,
     quizConfig: { questionCount: 1, difficulty: 'easy', questionTypes: ['single'] },
@@ -214,8 +218,8 @@ export function completeFormalLessonOutlines(
   const remediation: SceneOutline = {
     id: context.checkpoint.remediationSceneId,
     type: 'slide',
-    title: 'Guided remediation',
-    description: 'Give one concrete, bounded explanation when the checkpoint needs remediation.',
+    title: localizedFallback.title,
+    description: localizedFallback.description,
     keyPoints: [...context.lessonKnowledgePointIds],
     order: base.length + 2,
   };
