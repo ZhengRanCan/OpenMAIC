@@ -42,6 +42,12 @@ import {
   appendFusionTeachingPrompt,
   lookupFusionLessonSession,
 } from '@/lib/fusion/session-catalog';
+import {
+  appendFormalTeachingPrompt,
+  formalFusionErrorResponse,
+  FormalFusionError,
+  freezeFormalFusionForOutline,
+} from '@/lib/fusion/generation-session';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -304,6 +310,15 @@ export async function POST(req: NextRequest) {
     }
     const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
 
+    if (!body.requirements) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
+    }
+    const formalFusion = await freezeFormalFusionForOutline(
+      req,
+      body.lessonSessionId,
+      body.requirements.requirement,
+    );
+
     // Get API configuration from request headers/body
     const {
       model: languageModel,
@@ -312,10 +327,6 @@ export async function POST(req: NextRequest) {
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'scene-outlines-stream');
     resolvedModelString = modelString;
-
-    if (!body.requirements) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
-    }
 
     const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents } = body as {
       requirements: UserRequirements;
@@ -328,11 +339,12 @@ export async function POST(req: NextRequest) {
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
     // Build user profile string for language inference context
-    const userProfileText = appendFusionTeachingPrompt(
-      requirements.userNickname || requirements.userBio
-        ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
-        : '',
-      fusionSession,
+    const demoProfileText = requirements.userNickname || requirements.userBio
+      ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
+      : '';
+    const userProfileText = appendFormalTeachingPrompt(
+      appendFusionTeachingPrompt(demoProfileText, fusionSession),
+      formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
 
     // Detect vision capability
@@ -536,6 +548,17 @@ export async function POST(req: NextRequest) {
                   const enrichedBase = {
                     ...outline,
                     order: parsedOutlines.length + 1,
+                    ...(formalFusion.kind === 'resolved' && parsedOutlines.length === 0
+                      ? {
+                          fusionCheckpoint: {
+                            checkpointId: formalFusion.context.checkpoint.checkpointId,
+                            mappingId: formalFusion.context.mappingId,
+                            mappingRevision: formalFusion.context.mappingRevision,
+                            lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
+                            remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
+                          },
+                        }
+                      : {}),
                   };
                   const normalized = taskEngineMode
                     ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
@@ -660,6 +683,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof FormalFusionError) return formalFusionErrorResponse(error);
     log.error(
       `Outline streaming failed [requirement="${requirementSnippet ?? 'unknown'}...", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

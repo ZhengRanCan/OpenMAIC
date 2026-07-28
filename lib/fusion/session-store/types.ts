@@ -14,6 +14,8 @@ export interface FusionSessionRecord {
   credentialRef: string;
   profileSnapshot: FusionJsonObject;
   lessonKnowledgeMap: FusionJsonObject;
+  /** Frozen on the first formal outline request. Never populated from browser snapshots. */
+  generationContext?: FusionJsonObject;
   sceneCatalog: FusionJsonObject;
   runtimeState: FusionJsonObject;
   degradationState: string;

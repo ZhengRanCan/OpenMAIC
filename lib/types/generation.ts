@@ -166,6 +166,14 @@ export interface SceneOutline {
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
+  /** Server-owned formal Fusion metadata. Browser input never authorizes or overrides it. */
+  fusionCheckpoint?: {
+    checkpointId: string;
+    mappingId: string;
+    mappingRevision: string;
+    lessonKnowledgePointIds: string[];
+    remediationStrategy: string;
+  };
 }
 
 // ==================== Stage 3 Output: Generated Content ====================

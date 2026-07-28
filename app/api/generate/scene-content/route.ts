@@ -30,6 +30,12 @@ import {
   appendFusionTeachingPrompt,
   lookupFusionLessonSession,
 } from '@/lib/fusion/session-catalog';
+import {
+  appendFormalTeachingPrompt,
+  formalFusionErrorResponse,
+  FormalFusionError,
+  resolveFormalFusion,
+} from '@/lib/fusion/generation-session';
 
 const log = createLogger('Scene Content API');
 
@@ -49,6 +55,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
+    const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
     const {
       outline: rawOutline,
       allOutlines,
@@ -151,7 +158,19 @@ export async function POST(req: NextRequest) {
 
     // ── Apply fallbacks ──
     const vocationalActive = resolveVocationalActive(requirements);
-    const effectiveOutline = applyOutlineFallbacks(outline, !!languageModel, {
+    const formalOutline = formalFusion.kind === 'resolved'
+      ? {
+          ...outline,
+          fusionCheckpoint: {
+            checkpointId: formalFusion.context.checkpoint.checkpointId,
+            mappingId: formalFusion.context.mappingId,
+            mappingRevision: formalFusion.context.mappingRevision,
+            lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
+            remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
+          },
+        }
+      : outline;
+    const effectiveOutline = applyOutlineFallbacks(formalOutline, !!languageModel, {
       allowProceduralSkill: vocationalActive,
     });
 
@@ -180,7 +199,10 @@ export async function POST(req: NextRequest) {
     );
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
-    const effectiveLanguageDirective = appendFusionTeachingPrompt(languageDirective, fusionSession);
+    const effectiveLanguageDirective = appendFormalTeachingPrompt(
+      appendFusionTeachingPrompt(languageDirective, fusionSession),
+      formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
+    );
 
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
@@ -210,6 +232,7 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ content, effectiveOutline });
   } catch (error) {
+    if (error instanceof FormalFusionError) return formalFusionErrorResponse(error);
     log.error(
       `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

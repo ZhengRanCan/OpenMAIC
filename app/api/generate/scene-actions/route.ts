@@ -31,6 +31,12 @@ import {
   appendFusionTeachingPrompt,
   lookupFusionLessonSession,
 } from '@/lib/fusion/session-catalog';
+import {
+  appendFormalTeachingPrompt,
+  formalFusionErrorResponse,
+  FormalFusionError,
+  resolveFormalFusion,
+} from '@/lib/fusion/generation-session';
 
 const log = createLogger('Scene Actions API');
 
@@ -50,6 +56,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
+    const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
     const {
       outline,
       allOutlines,
@@ -99,7 +106,19 @@ export async function POST(req: NextRequest) {
       modelString,
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'scene-actions');
-    outlineTitle = outline?.title;
+    const effectiveOutline = formalFusion.kind === 'resolved'
+      ? {
+          ...outline,
+          fusionCheckpoint: {
+            checkpointId: formalFusion.context.checkpoint.checkpointId,
+            mappingId: formalFusion.context.mappingId,
+            mappingRevision: formalFusion.context.mappingRevision,
+            lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
+            remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
+          },
+        }
+      : outline;
+    outlineTitle = effectiveOutline?.title;
     resolvedModelString = modelString;
 
     // Detect vision capability
@@ -155,12 +174,15 @@ export async function POST(req: NextRequest) {
       allTitles,
       previousSpeeches: incomingPreviousSpeeches ?? [],
     };
-    const effectiveLanguageDirective = appendFusionTeachingPrompt(languageDirective, fusionSession);
+    const effectiveLanguageDirective = appendFormalTeachingPrompt(
+      appendFusionTeachingPrompt(languageDirective, fusionSession),
+      formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
+    );
 
     // ── Generate actions ──
     log.info(`Generating actions: "${outline.title}" (${outline.type}) [model=${modelString}]`);
 
-    const actions = await generateSceneActions(outline, content, aiCall, {
+    const actions = await generateSceneActions(effectiveOutline, content, aiCall, {
       ctx,
       agents,
       userProfile,
@@ -170,7 +192,7 @@ export async function POST(req: NextRequest) {
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 
     // ── Build complete scene ──
-    const scene = buildCompleteScene(outline, content, actions, stageId);
+    const scene = buildCompleteScene(effectiveOutline, content, actions, stageId);
 
     if (!scene) {
       log.error(`Failed to build scene: "${outline.title}"`);
@@ -189,6 +211,7 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
   } catch (error) {
+    if (error instanceof FormalFusionError) return formalFusionErrorResponse(error);
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,
