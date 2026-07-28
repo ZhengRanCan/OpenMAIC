@@ -65,4 +65,28 @@ describe('LAN shared classroom publishing', () => {
       await rm(projectRoot, { recursive: true, force: true });
     }
   });
+
+  it('keeps every classroom when a host publishes its local catalog concurrently', async () => {
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'openmaic-f22-concurrent-'));
+    const persist = vi.fn().mockResolvedValue({});
+    try {
+      await Promise.all(
+        Array.from({ length: 5 }, (_, index) =>
+          publishSharedClassroom(
+            {
+              baseUrl: 'http://localhost:3000',
+              stage: { id: `f22-concurrent-${index}`, name: `课堂 ${index}` } as never,
+              scenes: [],
+            },
+            projectRoot,
+            persist,
+          ),
+        ),
+      );
+
+      expect(await listSharedClassrooms(projectRoot)).toHaveLength(5);
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
 });

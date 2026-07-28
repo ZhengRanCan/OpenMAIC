@@ -27,6 +27,11 @@ interface SharedClassroomManifest {
   classrooms: SharedClassroomSummary[];
 }
 
+// The home page publishes the whole local catalog concurrently. Keep the
+// read-modify-write manifest update in one process-local queue so entries do
+// not overwrite one another or reuse the same atomic-write temporary file.
+let manifestUpdateQueue: Promise<void> = Promise.resolve();
+
 export function isLanSharedMode(): boolean {
   return process.env.OPENMAIC_LAN_SHARED_MODE === 'true';
 }
@@ -97,6 +102,19 @@ async function writeManifest(
   await fs.rename(temporary, target);
 }
 
+function updateManifest(projectRoot: string, summary: SharedClassroomSummary): Promise<void> {
+  const update = manifestUpdateQueue.then(async () => {
+    const current = await readManifest(projectRoot);
+    const classrooms = current.classrooms.filter((item) => item.id !== summary.id);
+    classrooms.unshift(summary);
+    await writeManifest(projectRoot, { version: MANIFEST_VERSION, classrooms });
+  });
+
+  // A failed request must not permanently block subsequent publishers.
+  manifestUpdateQueue = update.catch(() => undefined);
+  return update;
+}
+
 export async function listSharedClassrooms(
   projectRoot = process.cwd(),
 ): Promise<SharedClassroomSummary[]> {
@@ -118,9 +136,6 @@ export async function publishSharedClassroom(
   await persist({ id: stage.id, stage, scenes }, input.baseUrl);
 
   const summary = summaryFor(stage, scenes);
-  const current = await readManifest(projectRoot);
-  const classrooms = current.classrooms.filter((item) => item.id !== summary.id);
-  classrooms.unshift(summary);
-  await writeManifest(projectRoot, { version: MANIFEST_VERSION, classrooms });
+  await updateManifest(projectRoot, summary);
   return summary;
 }
