@@ -34,7 +34,24 @@ function record(): FusionSessionRecord {
       mappingRevision: '2',
       knowledgePoints: [{ lessonKnowledgePointId: 'point-1', mappingStatus: 'mapped' }],
     },
-    sceneCatalog: {},
+    sceneCatalog: {
+      catalogId: 'catalog-1',
+      entries: [
+        {
+          sceneId: 'checkpoint-1',
+          role: 'checkpoint',
+          checkpointId: 'catalog-checkpoint-1',
+          lessonKnowledgePointIds: ['point-1'],
+        },
+        {
+          sceneId: 'remediation-1',
+          role: 'remediation',
+          remediationForCheckpointId: 'catalog-checkpoint-1',
+          lessonKnowledgePointIds: ['point-1'],
+          teachingStrategyTags: ['catalog_concrete_example'],
+        },
+      ],
+    },
     runtimeState: {},
     degradationState: 'none',
     snapshotCapturedAt: '2026-07-28T00:00:00.000Z',
@@ -85,7 +102,10 @@ describe('F23 formal generation session', () => {
       lessonKnowledgePointIds: ['point-1'],
       mappingId: 'map-1',
       mappingRevision: '2',
-      checkpoint: { remediationStrategy: 'concrete_example' },
+      checkpoint: {
+        checkpointId: 'catalog-checkpoint-1',
+        remediationStrategy: 'catalog_concrete_example',
+      },
     });
     expect(frozen.context.guidance).toContain('Do not infer mastery from missing data.');
     const prompt = appendFormalTeachingPrompt('', frozen.context);
@@ -112,6 +132,18 @@ describe('F23 formal generation session', () => {
     await expect(resolveFormalFusion(request(), 'lesson-2')).rejects.toMatchObject({
       code: 'FUSION_SESSION_MISMATCH',
     } satisfies Partial<FormalFusionError>);
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('rejects a session whose frozen Catalog cannot pair a mapped checkpoint with remediation', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    const invalid = record();
+    invalid.sceneCatalog = { entries: [] };
+    const configured = configure(invalid);
+
+    await expect(
+      freezeFormalFusionForOutline(request(), 'lesson-1', 'Explain linear functions in fifteen minutes'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_INVALID' });
     clearProductionFusionServices(configured.services);
   });
 });

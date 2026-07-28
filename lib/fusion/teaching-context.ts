@@ -38,12 +38,39 @@ function mappedPointIds(map: FusionJsonObject): string[] {
   });
 }
 
+function checkpointFromCatalog(
+  catalog: FusionJsonObject,
+  lessonKnowledgePointIds: string[],
+): FrozenTeachingContext['checkpoint'] | undefined {
+  const entries = Array.isArray(catalog.entries) ? catalog.entries : [];
+  const checkpoint = entries.find((entry) =>
+    object(entry) &&
+    entry.role === 'checkpoint' &&
+    typeof entry.checkpointId === 'string' &&
+    strings(entry.lessonKnowledgePointIds).some((point) => lessonKnowledgePointIds.includes(point)),
+  );
+  if (!object(checkpoint) || typeof checkpoint.checkpointId !== 'string') return undefined;
+  const remediation = entries.find((entry) =>
+    object(entry) &&
+    entry.role === 'remediation' &&
+    entry.remediationForCheckpointId === checkpoint.checkpointId &&
+    strings(entry.lessonKnowledgePointIds).some((point) => lessonKnowledgePointIds.includes(point)) &&
+    strings(entry.teachingStrategyTags).length > 0,
+  );
+  if (!object(remediation)) return undefined;
+  const remediationStrategy = strings(remediation.teachingStrategyTags)[0];
+  return remediationStrategy
+    ? { checkpointId: checkpoint.checkpointId, remediationStrategy }
+    : undefined;
+}
+
 export function createFrozenTeachingContext(record: FusionSessionRecord, requirement: unknown): FrozenTeachingContext {
   const lessonRequirement = safeText(requirement);
   const mappingId = safeText(record.lessonKnowledgeMap.mappingId, 120);
   const mappingRevision = safeText(record.lessonKnowledgeMap.mappingRevision, 120);
   const lessonKnowledgePointIds = mappedPointIds(record.lessonKnowledgeMap);
-  if (!lessonRequirement || !mappingId || !mappingRevision || !lessonKnowledgePointIds.length) {
+  const checkpoint = checkpointFromCatalog(record.sceneCatalog, lessonKnowledgePointIds);
+  if (!lessonRequirement || !mappingId || !mappingRevision || !lessonKnowledgePointIds.length || !checkpoint) {
     throw new Error('FUSION_CONTEXT_INVALID');
   }
   const profileStates = Array.isArray(record.profileSnapshot.knowledgeState)
@@ -59,10 +86,7 @@ export function createFrozenTeachingContext(record: FusionSessionRecord, require
     guidance: insufficient
       ? ['Start with necessary prerequisites.', 'Use a short, low-stakes checkpoint.', 'Do not infer mastery from missing data.']
       : ['Use a concise progression.', 'Use one mapped checkpoint.', 'Keep remediation concrete and bounded.'],
-    checkpoint: {
-      checkpointId: `checkpoint-${lessonKnowledgePointIds[0]}`,
-      remediationStrategy: 'concrete_example',
-    },
+    checkpoint,
   };
 }
 
