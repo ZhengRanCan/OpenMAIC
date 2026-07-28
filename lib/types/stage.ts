@@ -113,6 +113,14 @@ export type AppScene = DslScene<Action, SceneContent> & {
    * scene-derived outline.
    */
   outlineId?: string;
+  /** Server-owned formal Fusion checkpoint binding, when this Scene belongs to a formal lesson. */
+  fusionCheckpoint?: {
+    checkpointId: string;
+    mappingId: string;
+    mappingRevision: string;
+    lessonKnowledgePointIds: string[];
+    remediationStrategy: string;
+  };
 };
 export type Scene = AppScene;
 

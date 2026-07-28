@@ -111,6 +111,32 @@ describe('F02 场景生成路由', () => {
     expect(contentDirective).not.toContain('demo-student-a');
   });
 
+  it('keeps the formal checkpoint binding server-owned when assembling a scene', async () => {
+    const { buildCompleteScene } = await import('@/lib/generation/scene-builder');
+    const scene = buildCompleteScene(
+      {
+        ...outline,
+        fusionCheckpoint: {
+          checkpointId: 'checkpoint-point-1',
+          mappingId: 'map-1',
+          mappingRevision: '2',
+          lessonKnowledgePointIds: ['point-1'],
+          remediationStrategy: 'concrete_example',
+        },
+      },
+      { elements: [] },
+      [],
+      'stage-1',
+    );
+    expect(scene?.fusionCheckpoint).toEqual({
+      checkpointId: 'checkpoint-point-1',
+      mappingId: 'map-1',
+      mappingRevision: '2',
+      lessonKnowledgePointIds: ['point-1'],
+      remediationStrategy: 'concrete_example',
+    });
+  });
+
   it('未传 session id 时保留普通生成指令', async () => {
     const { POST: contentPost } = await import('@/app/api/generate/scene-content/route');
     await contentPost(request() as unknown as Parameters<typeof contentPost>[0]);
