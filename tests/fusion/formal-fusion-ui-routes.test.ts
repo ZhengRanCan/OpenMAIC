@@ -40,8 +40,9 @@ describe('F24 formal Fusion connection route', () => {
     expect(JSON.stringify(body)).not.toContain('deeptutor.internal');
   });
 
-  it('does not enable the local entry when the explicit switch is absent', async () => {
+  it('does not enable the local entry when the explicit switch is false', async () => {
     vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('FUSION_DEVELOPMENT_UI_ENABLED', 'false');
     vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://deeptutor.internal');
     vi.stubGlobal(
       'fetch',

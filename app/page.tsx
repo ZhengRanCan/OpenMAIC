@@ -100,6 +100,20 @@ type FormalFusionConnection = {
   developmentUiEnabled: boolean;
 };
 
+type FormalFusionLearner = 'a' | 'b' | 'unknown';
+
+function formalFusionLearnerFromId(learnerId: string): FormalFusionLearner {
+  if (learnerId === 'f24-synthetic-a') return 'a';
+  if (learnerId === 'f24-synthetic-b') return 'b';
+  return 'unknown';
+}
+
+function formalFusionLearnerTranslationKey(learner: FormalFusionLearner): string {
+  if (learner === 'a') return 'home.formalFusion.learnerA';
+  if (learner === 'b') return 'home.formalFusion.learnerB';
+  return 'home.formalFusion.learnerUnknown';
+}
+
 interface SharedClassroomResponse extends StageListItem {
   firstSlide?: Slide;
 }
@@ -184,6 +198,7 @@ function HomePage() {
   const [formalFusionConnection, setFormalFusionConnection] =
     useState<FormalFusionConnection | null>(null);
   const [formalLessonSessionId, setFormalLessonSessionId] = useState<string | null>(null);
+  const [formalFusionLearner, setFormalFusionLearner] = useState<FormalFusionLearner | null>(null);
   const [isTestingFormalFusion, setIsTestingFormalFusion] = useState(false);
   const [isConnectingFormalFusion, setIsConnectingFormalFusion] = useState(false);
   const [formalFusionError, setFormalFusionError] = useState<string | null>(null);
@@ -394,6 +409,7 @@ function HomePage() {
       // A formal session freezes a profile/map snapshot for one course request.
       // Editing that request requires an explicit fresh local launch.
       setFormalLessonSessionId(null);
+      setFormalFusionLearner(null);
       setFormalFusionError(null);
     }
     try {
@@ -466,11 +482,20 @@ function HomePage() {
         typeof launchData === 'object' && launchData !== null && 'lessonSessionId' in launchData
           ? (launchData as { lessonSessionId?: unknown }).lessonSessionId
           : undefined;
-      if (!launchResponse.ok || typeof lessonSessionId !== 'string') {
+      const learnerId =
+        typeof launchData === 'object' && launchData !== null && 'learnerId' in launchData
+          ? (launchData as { learnerId?: unknown }).learnerId
+          : undefined;
+      if (
+        !launchResponse.ok ||
+        typeof lessonSessionId !== 'string' ||
+        typeof learnerId !== 'string'
+      ) {
         throw new Error('Formal Fusion session was not created');
       }
 
       setFormalLessonSessionId(lessonSessionId);
+      setFormalFusionLearner(formalFusionLearnerFromId(learnerId));
       setSelectedFusionDemo(null);
       setFusionError(false);
       setError(null);
@@ -882,6 +907,17 @@ function HomePage() {
                 )}
               </div>
 
+              {formalLessonSessionId && formalFusionLearner && (
+                <p
+                  className="mt-1 text-[11px] font-medium text-cyan-800 dark:text-cyan-100"
+                  role="status"
+                >
+                  {t('home.formalFusion.connectedLearner', {
+                    learner: t(formalFusionLearnerTranslationKey(formalFusionLearner)),
+                  })}
+                </p>
+              )}
+
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -965,6 +1001,7 @@ function HomePage() {
                       onClick={() => {
                         setSelectedFusionDemo(demoStudent);
                         setFormalLessonSessionId(null);
+                        setFormalFusionLearner(null);
                         setFormalFusionError(null);
                         setFusionError(false);
                         setError(null);
