@@ -157,7 +157,10 @@ function GenerationPreviewContent() {
   const isReviewingOutlines = session?.previewPhase === 'review';
 
   const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
-    if (session?.fusionSessionId && failure.errorCode === 'INVALID_REQUEST') {
+    if (
+      (session?.fusionSessionId || session?.lessonSessionId) &&
+      failure.errorCode === 'INVALID_REQUEST'
+    ) {
       return t('generation.fusionSessionUnavailable');
     }
 
@@ -611,6 +614,7 @@ function GenerationPreviewContent() {
                 imageMapping,
                 researchContext: currentSession.researchContext,
                 fusionSessionId: currentSession.fusionSessionId,
+                lessonSessionId: currentSession.lessonSessionId,
               }),
             ),
             signal,
@@ -619,7 +623,8 @@ function GenerationPreviewContent() {
               if (!res.ok) {
                 return res.json().then((d) => {
                   const isFusionSessionError =
-                    currentSession.fusionSessionId && d?.errorCode === 'INVALID_REQUEST';
+                    (currentSession.fusionSessionId || currentSession.lessonSessionId) &&
+                    d?.errorCode === 'INVALID_REQUEST';
                   const responseError =
                     typeof d?.error === 'string' ? d.error : t('generation.outlineGenerateFailed');
                   reject(
@@ -991,6 +996,7 @@ function GenerationPreviewContent() {
           languageDirective,
           requirements: currentSession.requirements,
           fusionSessionId: currentSession.fusionSessionId,
+          lessonSessionId: currentSession.lessonSessionId,
         },
         signal,
         FOREGROUND_SCENE_RETRY_OPTIONS,
@@ -1015,6 +1021,7 @@ function GenerationPreviewContent() {
           userProfile,
           languageDirective,
           fusionSessionId: currentSession.fusionSessionId,
+          lessonSessionId: currentSession.lessonSessionId,
         },
         signal,
         FOREGROUND_SCENE_RETRY_OPTIONS,
@@ -1089,6 +1096,7 @@ function GenerationPreviewContent() {
           userProfile,
           languageDirective,
           fusionSessionId: currentSession.fusionSessionId,
+          lessonSessionId: currentSession.lessonSessionId,
         }),
       );
 

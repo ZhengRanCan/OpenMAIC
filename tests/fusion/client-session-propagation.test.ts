@@ -111,4 +111,43 @@ describe('F02 客户端会话传递', () => {
     expect(JSON.stringify([contentBody, actionsBody])).not.toContain('promptText');
     expect(JSON.stringify([contentBody, actionsBody])).not.toContain('demo-student-a');
   });
+
+  it('formal session id follows content and action requests without profile data', async () => {
+    const lessonSessionId = 'formal-session-opaque-id';
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse({ success: true, content: { elements: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ success: true, scene: { id: 'scene-1' } }));
+
+    const { fetchSceneActions, fetchSceneContent } =
+      await import('@/lib/hooks/use-scene-generator');
+    await fetchSceneContent(
+      {
+        outline,
+        allOutlines: [outline],
+        stageId: 'stage-1',
+        stageInfo: { name: '一次函数课堂' },
+        lessonSessionId,
+      },
+      undefined,
+      { maxRetries: 0 },
+    );
+    await fetchSceneActions(
+      {
+        outline,
+        allOutlines: [outline],
+        content: { elements: [] },
+        stageId: 'stage-1',
+        lessonSessionId,
+      },
+      undefined,
+      { maxRetries: 0 },
+    );
+
+    const contentBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    const actionsBody = JSON.parse(mockFetch.mock.calls[1][1].body as string);
+    expect(contentBody.lessonSessionId).toBe(lessonSessionId);
+    expect(actionsBody.lessonSessionId).toBe(lessonSessionId);
+    expect(JSON.stringify([contentBody, actionsBody])).not.toContain('profileSnapshot');
+    expect(JSON.stringify([contentBody, actionsBody])).not.toContain('delegationToken');
+  });
 });

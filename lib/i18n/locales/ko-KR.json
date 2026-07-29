@@ -22,6 +22,20 @@
       "unavailable": "데모 프로필을 일시적으로 사용할 수 없습니다. 다시 시도하거나 끄고 일반 생성하세요.",
       "retry": "다시 시도",
       "normalGeneration": "끄고 일반 생성"
+    },
+    "formalFusion": {
+      "badge": "Local test",
+      "title": "Formal DeepTutor connection",
+      "description": "Tests the server-configured DeepTutor service, then creates a one-course formal Fusion session for the current local synthetic learner.",
+      "testConnection": "Test connection",
+      "testing": "Testing…",
+      "connectCurrentLearner": "Connect current test learner",
+      "connecting": "Connecting…",
+      "connected": "Connected",
+      "reconnectHint": "Changing the course request requires a fresh connection.",
+      "configRequired": "The server has no DeepTutor connection configured.",
+      "developmentRequired": "The local development connection entry is disabled.",
+      "unavailable": "DeepTutor is unavailable or its Fusion API is incompatible."
     }
   },
   "toolbar": {
@@ -1726,8 +1740,31 @@
     "eyebrow": "OpenMAIC LAN 데모",
     "title": "{{topic}} | 고정 합성 수업",
     "description": "이 반복 가능한 읽기 전용 경로는 브라우저의 로컬 사례, 모델 설정 또는 외부 서비스를 사용하지 않습니다.",
-    "studentLabel": "데모 학습자", "studentA": "학생 A(합성)", "modeLabel": "데모 모드", "readOnly": "읽기 전용, 모델 설정 불필요", "lessonFlow": "수업 흐름", "step": "단계 {{number}}", "safetyNotice": "이 페이지에는 API 키, 제공자 주소, 쿠키, 실제 학습자 데이터 또는 수업 이벤트 기록이 없습니다.",
-    "scenes": { "warmup": { "title": "생활 상황에서 시작하기", "body": "택시 요금 예시로 두 변화량과 y = kx + b의 의미를 확인합니다." }, "graph": { "title": "그래프 읽기", "body": "오른쪽 위로 향하는 직선을 관찰하고 기울기와 절편을 위치와 연결합니다." }, "checkpoint": { "title": "이해 확인", "body": "기울기와 절편의 뜻을 말하고 현실적인 설명을 제시합니다." }, "summary": { "title": "가져갈 방법", "body": "변수 관계를 찾고 기울기와 절편을 정한 뒤 그래프로 식을 확인합니다." } }
+    "studentLabel": "데모 학습자",
+    "studentA": "학생 A(합성)",
+    "modeLabel": "데모 모드",
+    "readOnly": "읽기 전용, 모델 설정 불필요",
+    "lessonFlow": "수업 흐름",
+    "step": "단계 {{number}}",
+    "safetyNotice": "이 페이지에는 API 키, 제공자 주소, 쿠키, 실제 학습자 데이터 또는 수업 이벤트 기록이 없습니다.",
+    "scenes": {
+      "warmup": {
+        "title": "생활 상황에서 시작하기",
+        "body": "택시 요금 예시로 두 변화량과 y = kx + b의 의미를 확인합니다."
+      },
+      "graph": {
+        "title": "그래프 읽기",
+        "body": "오른쪽 위로 향하는 직선을 관찰하고 기울기와 절편을 위치와 연결합니다."
+      },
+      "checkpoint": {
+        "title": "이해 확인",
+        "body": "기울기와 절편의 뜻을 말하고 현실적인 설명을 제시합니다."
+      },
+      "summary": {
+        "title": "가져갈 방법",
+        "body": "변수 관계를 찾고 기울기와 절편을 정한 뒤 그래프로 식을 확인합니다."
+      }
+    }
   },
   "lanShared": {
     "publish": "Publish to LAN",

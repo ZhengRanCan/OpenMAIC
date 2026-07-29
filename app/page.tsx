@@ -94,6 +94,12 @@ interface FormState {
 type FusionDemoStudent = 'a' | 'b';
 type ListedClassroom = StageListItem & { shared?: boolean };
 
+type FormalFusionConnection = {
+  configured: boolean;
+  reachable: boolean;
+  developmentUiEnabled: boolean;
+};
+
 interface SharedClassroomResponse extends StageListItem {
   firstSlide?: Slide;
 }
@@ -175,6 +181,12 @@ function HomePage() {
   const [selectedFusionDemo, setSelectedFusionDemo] = useState<FusionDemoStudent | null>(null);
   const [isPreparingFusionSession, setIsPreparingFusionSession] = useState(false);
   const [fusionError, setFusionError] = useState(false);
+  const [formalFusionConnection, setFormalFusionConnection] =
+    useState<FormalFusionConnection | null>(null);
+  const [formalLessonSessionId, setFormalLessonSessionId] = useState<string | null>(null);
+  const [isTestingFormalFusion, setIsTestingFormalFusion] = useState(false);
+  const [isConnectingFormalFusion, setIsConnectingFormalFusion] = useState(false);
+  const [formalFusionError, setFormalFusionError] = useState<string | null>(null);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [sharedClassrooms, setSharedClassrooms] = useState<SharedClassroomResponse[]>([]);
@@ -378,6 +390,12 @@ function HomePage() {
       setSelectedFusionDemo(null);
       setFusionError(false);
     }
+    if (field === 'requirement') {
+      // A formal session freezes a profile/map snapshot for one course request.
+      // Editing that request requires an explicit fresh local launch.
+      setFormalLessonSessionId(null);
+      setFormalFusionError(null);
+    }
     try {
       if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
       if (field === 'interactiveMode')
@@ -385,6 +403,82 @@ function HomePage() {
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
+    }
+  };
+
+  const handleTestFormalFusionConnection = async () => {
+    setIsTestingFormalFusion(true);
+    setFormalFusionError(null);
+    try {
+      const response = await fetch('/api/fusion/connection', { cache: 'no-store' });
+      const data: unknown = await response.json().catch(() => null);
+      const connection =
+        typeof data === 'object' && data !== null && 'configured' in data
+          ? (data as Partial<FormalFusionConnection>)
+          : null;
+      if (
+        !response.ok ||
+        !connection ||
+        typeof connection.configured !== 'boolean' ||
+        typeof connection.reachable !== 'boolean' ||
+        typeof connection.developmentUiEnabled !== 'boolean'
+      ) {
+        throw new Error('Fusion connection check failed');
+      }
+      setFormalFusionConnection(connection as FormalFusionConnection);
+      if (!connection.configured) setFormalFusionError(t('home.formalFusion.configRequired'));
+      else if (!connection.reachable) setFormalFusionError(t('home.formalFusion.unavailable'));
+      else if (!connection.developmentUiEnabled)
+        setFormalFusionError(t('home.formalFusion.developmentRequired'));
+    } catch (err) {
+      log.warn('Unable to test the formal Fusion connection:', err);
+      setFormalFusionConnection(null);
+      setFormalFusionError(t('home.formalFusion.unavailable'));
+    } finally {
+      setIsTestingFormalFusion(false);
+    }
+  };
+
+  const handleConnectFormalFusion = async () => {
+    setIsConnectingFormalFusion(true);
+    setFormalFusionError(null);
+    try {
+      const issueResponse = await fetch('/api/fusion/dev-launch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const issueData: unknown = await issueResponse.json().catch(() => null);
+      const classroomLaunchCode =
+        typeof issueData === 'object' && issueData !== null && 'classroomLaunchCode' in issueData
+          ? (issueData as { classroomLaunchCode?: unknown }).classroomLaunchCode
+          : undefined;
+      if (!issueResponse.ok || typeof classroomLaunchCode !== 'string') {
+        throw new Error('Development launch code was not issued');
+      }
+
+      const launchResponse = await fetch('/api/fusion/launch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ classroomLaunchCode }),
+      });
+      const launchData: unknown = await launchResponse.json().catch(() => null);
+      const lessonSessionId =
+        typeof launchData === 'object' && launchData !== null && 'lessonSessionId' in launchData
+          ? (launchData as { lessonSessionId?: unknown }).lessonSessionId
+          : undefined;
+      if (!launchResponse.ok || typeof lessonSessionId !== 'string') {
+        throw new Error('Formal Fusion session was not created');
+      }
+
+      setFormalLessonSessionId(lessonSessionId);
+      setSelectedFusionDemo(null);
+      setFusionError(false);
+      setError(null);
+    } catch (err) {
+      log.warn('Unable to create the formal Fusion session:', err);
+      setFormalFusionError(t('home.formalFusion.unavailable'));
+    } finally {
+      setIsConnectingFormalFusion(false);
     }
   };
 
@@ -431,6 +525,7 @@ function HomePage() {
 
     try {
       let fusionSessionId: string | undefined;
+      const lessonSessionId = formalLessonSessionId ?? undefined;
       if (selectedFusionDemo) {
         setIsPreparingFusionSession(true);
         try {
@@ -467,7 +562,7 @@ function HomePage() {
         requirement: form.requirement,
         // 演示会话只允许向模型传递经审阅的教学策略和课程请求；不能把本地
         // 昵称或简介与合成演示画像混在一起。普通生成维持原有行为。
-        ...(selectedFusionDemo
+        ...(selectedFusionDemo || lessonSessionId
           ? {}
           : {
               userNickname: userProfile.nickname || undefined,
@@ -527,6 +622,7 @@ function HomePage() {
       const sessionState = {
         sessionId: nanoid(),
         fusionSessionId,
+        lessonSessionId,
         requirements,
         pdfText: '',
         pdfImages: [],
@@ -563,7 +659,11 @@ function HomePage() {
   };
 
   const isFusionDemoSupported = isSupportedFusionDemoTopic(form.requirement);
-  const canGenerate = !!form.requirement.trim() && hasUsableProvider && !isPreparingFusionSession;
+  const canGenerate =
+    !!form.requirement.trim() &&
+    hasUsableProvider &&
+    !isPreparingFusionSession &&
+    !isConnectingFormalFusion;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -755,6 +855,71 @@ function HomePage() {
               rows={4}
             />
 
+            {/* F24: a server-configured, development-only formal Fusion entry. */}
+            <div
+              className="mx-3 mb-2 rounded-xl border border-cyan-200/70 bg-cyan-50/60 p-3 dark:border-cyan-900/70 dark:bg-cyan-950/20"
+              role="group"
+              aria-label={t('home.formalFusion.title')}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700 dark:bg-cyan-900/60 dark:text-cyan-200">
+                      {t('home.formalFusion.badge')}
+                    </span>
+                    <p className="text-xs font-medium text-cyan-950 dark:text-cyan-100">
+                      {t('home.formalFusion.title')}
+                    </p>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    {t('home.formalFusion.description')}
+                  </p>
+                </div>
+                {formalLessonSessionId && (
+                  <span className="shrink-0 rounded-full border border-cyan-300/80 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-cyan-700 dark:border-cyan-700 dark:bg-cyan-950/70 dark:text-cyan-200">
+                    {t('home.formalFusion.connected')}
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleTestFormalFusionConnection()}
+                  disabled={isTestingFormalFusion || isConnectingFormalFusion}
+                  className="rounded-md border border-cyan-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-cyan-800 hover:bg-cyan-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-cyan-800 dark:bg-cyan-950/70 dark:text-cyan-100"
+                >
+                  {isTestingFormalFusion
+                    ? t('home.formalFusion.testing')
+                    : t('home.formalFusion.testConnection')}
+                </button>
+                {formalFusionConnection?.reachable &&
+                  formalFusionConnection.developmentUiEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => void handleConnectFormalFusion()}
+                      disabled={isConnectingFormalFusion || isTestingFormalFusion}
+                      className="rounded-md bg-cyan-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isConnectingFormalFusion
+                        ? t('home.formalFusion.connecting')
+                        : t('home.formalFusion.connectCurrentLearner')}
+                    </button>
+                  )}
+                {formalLessonSessionId && (
+                  <p className="text-[11px] text-muted-foreground" role="status">
+                    {t('home.formalFusion.reconnectHint')}
+                  </p>
+                )}
+              </div>
+
+              {formalFusionError && (
+                <p className="mt-2 text-[11px] text-destructive" role="alert">
+                  {formalFusionError}
+                </p>
+              )}
+            </div>
+
             {/* F02：只在支持的课题中启用经审阅的离线演示画像。 */}
             <div
               className="mx-3 mb-2 rounded-xl border border-violet-200/70 bg-violet-50/60 p-3 dark:border-violet-900/70 dark:bg-violet-950/20"
@@ -799,6 +964,8 @@ function HomePage() {
                       disabled={!isFusionDemoSupported || isPreparingFusionSession}
                       onClick={() => {
                         setSelectedFusionDemo(demoStudent);
+                        setFormalLessonSessionId(null);
+                        setFormalFusionError(null);
                         setFusionError(false);
                         setError(null);
                       }}

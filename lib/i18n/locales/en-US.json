@@ -22,6 +22,20 @@
       "unavailable": "The demo profile is temporarily unavailable. Retry, or turn it off and generate normally.",
       "retry": "Retry",
       "normalGeneration": "Turn off and generate normally"
+    },
+    "formalFusion": {
+      "badge": "Local test",
+      "title": "Formal DeepTutor connection",
+      "description": "Tests the server-configured DeepTutor service, then creates a one-course formal Fusion session for the current local synthetic learner.",
+      "testConnection": "Test connection",
+      "testing": "Testing…",
+      "connectCurrentLearner": "Connect current test learner",
+      "connecting": "Connecting…",
+      "connected": "Connected",
+      "reconnectHint": "Changing the course request requires a fresh connection.",
+      "configRequired": "The server has no DeepTutor connection configured.",
+      "developmentRequired": "The local development connection entry is disabled.",
+      "unavailable": "DeepTutor is unavailable or its Fusion API is incompatible."
     }
   },
   "toolbar": {
@@ -1734,10 +1748,22 @@
     "step": "Step {{number}}",
     "safetyNotice": "This page contains no API key, provider address, cookie, real learner data, or classroom-event writeback.",
     "scenes": {
-      "warmup": { "title": "Start with a real situation", "body": "Use a taxi-fare example to identify two changing quantities and the meaning of y = kx + b." },
-      "graph": { "title": "Read the graph", "body": "Observe a line rising to the right and connect slope and intercept to its position." },
-      "checkpoint": { "title": "Check understanding", "body": "Identify what slope and intercept mean and give a plausible real-world explanation." },
-      "summary": { "title": "A method to keep", "body": "Find the variable relationship, determine slope and intercept, then use the graph to check the expression." }
+      "warmup": {
+        "title": "Start with a real situation",
+        "body": "Use a taxi-fare example to identify two changing quantities and the meaning of y = kx + b."
+      },
+      "graph": {
+        "title": "Read the graph",
+        "body": "Observe a line rising to the right and connect slope and intercept to its position."
+      },
+      "checkpoint": {
+        "title": "Check understanding",
+        "body": "Identify what slope and intercept mean and give a plausible real-world explanation."
+      },
+      "summary": {
+        "title": "A method to keep",
+        "body": "Find the variable relationship, determine slope and intercept, then use the graph to check the expression."
+      }
     }
   },
   "lanShared": {

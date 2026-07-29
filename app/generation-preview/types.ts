@@ -13,6 +13,8 @@ export interface GenerationSessionState {
   sessionId: string;
   /** Opaque server-side FusionLessonSession handle; never contains profile text. */
   fusionSessionId?: string;
+  /** Opaque formal Fusion session id paired with an HttpOnly browser cookie. */
+  lessonSessionId?: string;
   requirements: UserRequirements;
   pdfText: string;
   documentSources?: SessionDocumentSource[];

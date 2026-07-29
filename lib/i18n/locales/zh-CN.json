@@ -22,6 +22,20 @@
       "unavailable": "演示画像暂时不可用。你可以重试，或关闭画像后按普通方式生成。",
       "retry": "重试",
       "normalGeneration": "关闭画像，普通生成"
+    },
+    "formalFusion": {
+      "badge": "本地测试",
+      "title": "正式 DeepTutor 连接",
+      "description": "测试服务器预配置的 DeepTutor 服务，然后为当前本地合成学习者创建一门课的正式 Fusion 会话。",
+      "testConnection": "测试连接",
+      "testing": "正在测试…",
+      "connectCurrentLearner": "连接当前测试学习者",
+      "connecting": "正在连接…",
+      "connected": "已连接",
+      "reconnectHint": "修改课程要求后需要重新连接。",
+      "configRequired": "服务器尚未配置 DeepTutor 连接。",
+      "developmentRequired": "本地开发连接入口未启用。",
+      "unavailable": "DeepTutor 不可用，或其 Fusion API 不兼容。"
     }
   },
   "toolbar": {
@@ -1734,10 +1748,22 @@
     "step": "步骤 {{number}}",
     "safetyNotice": "本页面不包含 API Key、Provider 地址、Cookie、真实学生数据或课堂事件写回。",
     "scenes": {
-      "warmup": { "title": "从生活情境开始", "body": "用一次打车计费问题识别两个变化量，并写出 y = kx + b 的含义。" },
-      "graph": { "title": "读懂图像", "body": "观察直线向右上方延伸时的变化，连接斜率、截距与图像位置。" },
-      "checkpoint": { "title": "检查理解", "body": "判断斜率和截距分别表示什么，并说明一个合理的生活化解释。" },
-      "summary": { "title": "带走的方法", "body": "先找变量关系，再确定斜率与截距，最后用图像检查表达式是否合理。" }
+      "warmup": {
+        "title": "从生活情境开始",
+        "body": "用一次打车计费问题识别两个变化量，并写出 y = kx + b 的含义。"
+      },
+      "graph": {
+        "title": "读懂图像",
+        "body": "观察直线向右上方延伸时的变化，连接斜率、截距与图像位置。"
+      },
+      "checkpoint": {
+        "title": "检查理解",
+        "body": "判断斜率和截距分别表示什么，并说明一个合理的生活化解释。"
+      },
+      "summary": {
+        "title": "带走的方法",
+        "body": "先找变量关系，再确定斜率与截距，最后用图像检查表达式是否合理。"
+      }
     }
   },
   "lanShared": {

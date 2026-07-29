@@ -22,6 +22,20 @@
       "unavailable": "Демонстрационный профиль временно недоступен. Повторите попытку или отключите его для обычной генерации.",
       "retry": "Повторить",
       "normalGeneration": "Отключить и сгенерировать обычно"
+    },
+    "formalFusion": {
+      "badge": "Local test",
+      "title": "Formal DeepTutor connection",
+      "description": "Tests the server-configured DeepTutor service, then creates a one-course formal Fusion session for the current local synthetic learner.",
+      "testConnection": "Test connection",
+      "testing": "Testing…",
+      "connectCurrentLearner": "Connect current test learner",
+      "connecting": "Connecting…",
+      "connected": "Connected",
+      "reconnectHint": "Changing the course request requires a fresh connection.",
+      "configRequired": "The server has no DeepTutor connection configured.",
+      "developmentRequired": "The local development connection entry is disabled.",
+      "unavailable": "DeepTutor is unavailable or its Fusion API is incompatible."
     }
   },
   "toolbar": {
@@ -1726,8 +1740,31 @@
     "eyebrow": "LAN-демо OpenMAIC",
     "title": "{{topic}} | Фиксированный синтетический урок",
     "description": "Этот повторяемый путь только для чтения не использует локальные примеры браузера, настройки моделей или внешние сервисы.",
-    "studentLabel": "Демонстрационный ученик", "studentA": "Ученик A (синтетический)", "modeLabel": "Режим демонстрации", "readOnly": "Только чтение, без настройки модели", "lessonFlow": "Ход урока", "step": "Шаг {{number}}", "safetyNotice": "На этой странице нет API-ключа, адреса провайдера, cookie, реальных данных ученика или записи событий урока.",
-    "scenes": { "warmup": { "title": "Начните с жизненной ситуации", "body": "На примере оплаты такси определите две изменяющиеся величины и смысл y = kx + b." }, "graph": { "title": "Прочитайте график", "body": "Наблюдайте прямую, идущую вверх вправо, и свяжите наклон и пересечение с положением." }, "checkpoint": { "title": "Проверьте понимание", "body": "Назовите значение наклона и пересечения и дайте реалистичное объяснение." }, "summary": { "title": "Полезный метод", "body": "Найдите связь переменных, определите наклон и пересечение, затем проверьте выражение по графику." } }
+    "studentLabel": "Демонстрационный ученик",
+    "studentA": "Ученик A (синтетический)",
+    "modeLabel": "Режим демонстрации",
+    "readOnly": "Только чтение, без настройки модели",
+    "lessonFlow": "Ход урока",
+    "step": "Шаг {{number}}",
+    "safetyNotice": "На этой странице нет API-ключа, адреса провайдера, cookie, реальных данных ученика или записи событий урока.",
+    "scenes": {
+      "warmup": {
+        "title": "Начните с жизненной ситуации",
+        "body": "На примере оплаты такси определите две изменяющиеся величины и смысл y = kx + b."
+      },
+      "graph": {
+        "title": "Прочитайте график",
+        "body": "Наблюдайте прямую, идущую вверх вправо, и свяжите наклон и пересечение с положением."
+      },
+      "checkpoint": {
+        "title": "Проверьте понимание",
+        "body": "Назовите значение наклона и пересечения и дайте реалистичное объяснение."
+      },
+      "summary": {
+        "title": "Полезный метод",
+        "body": "Найдите связь переменных, определите наклон и пересечение, затем проверьте выражение по графику."
+      }
+    }
   },
   "lanShared": {
     "publish": "Publish to LAN",

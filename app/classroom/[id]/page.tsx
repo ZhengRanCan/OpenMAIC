@@ -145,6 +145,7 @@ export default function ClassroomDetailPage() {
           userProfile: params.userProfile,
           languageDirective: params.languageDirective || stage.languageDirective,
           fusionSessionId: params.fusionSessionId,
+          lessonSessionId: params.lessonSessionId,
         });
       });
     } else if (outlines.length > 0 && stage) {

@@ -143,6 +143,8 @@ export async function fetchSceneContent(
     requirements?: UserRequirements;
     /** Opaque F02 session id; the server resolves its teaching context. */
     fusionSessionId?: string;
+    /** Opaque formal F23 session id; the server validates its paired cookie. */
+    lessonSessionId?: string;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneContentResult>,
@@ -194,6 +196,8 @@ export async function fetchSceneActions(
     languageDirective?: string;
     /** Opaque F02 session id; the server resolves its teaching context. */
     fusionSessionId?: string;
+    /** Opaque formal F23 session id; the server validates its paired cookie. */
+    lessonSessionId?: string;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneActionsResult>,
@@ -420,6 +424,8 @@ export interface GenerationParams {
   languageDirective?: string;
   /** Opaque F02 session id carried through every remaining scene. */
   fusionSessionId?: string;
+  /** Opaque formal F23 session id carried through every remaining scene. */
+  lessonSessionId?: string;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -525,6 +531,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               agents: params.agents,
               languageDirective: params.languageDirective,
               fusionSessionId: params.fusionSessionId,
+              lessonSessionId: params.lessonSessionId,
             },
             signal,
           );
@@ -621,6 +628,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               userProfile: params.userProfile,
               languageDirective: params.languageDirective,
               fusionSessionId: params.fusionSessionId,
+              lessonSessionId: params.lessonSessionId,
             },
             signal,
           );
@@ -773,6 +781,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             agents: params.agents,
             languageDirective: params.languageDirective,
             fusionSessionId: params.fusionSessionId,
+            lessonSessionId: params.lessonSessionId,
           },
           signal,
         );
@@ -802,6 +811,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             userProfile: params.userProfile,
             languageDirective: params.languageDirective,
             fusionSessionId: params.fusionSessionId,
+            lessonSessionId: params.lessonSessionId,
           },
           signal,
         );
