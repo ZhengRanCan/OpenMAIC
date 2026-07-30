@@ -93,6 +93,7 @@ interface FormState {
 
 type FusionDemoStudent = 'a' | 'b';
 type ListedClassroom = StageListItem & { shared?: boolean };
+type ClassroomTimeField = 'updatedAt' | 'createdAt';
 
 type FormalFusionConnection = {
   configured: boolean;
@@ -132,6 +133,7 @@ function HomePage() {
   const router = useRouter();
   const showVocationalTestUi = shouldShowVocationalTestUi();
   const [form, setForm] = useState<FormState>(initialFormState);
+  const [classroomTimeField, setClassroomTimeField] = useState<ClassroomTimeField>('updatedAt');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
     import('@/lib/types/settings').SettingsSection | undefined
@@ -377,13 +379,19 @@ function HomePage() {
   };
 
   const listedClassrooms = useMemo(() => {
-    if (!LAN_SHARED_MODE) return classrooms as ListedClassroom[];
     const byId = new Map<string, ListedClassroom>();
-    for (const classroom of sharedClassrooms)
-      byId.set(classroom.id, { ...classroom, shared: true });
+    if (LAN_SHARED_MODE) {
+      for (const classroom of sharedClassrooms)
+        byId.set(classroom.id, { ...classroom, shared: true });
+    }
     for (const classroom of classrooms) byId.set(classroom.id, classroom);
-    return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [classrooms, sharedClassrooms]);
+    return [...byId.values()].sort(
+      (a, b) =>
+        b[classroomTimeField] - a[classroomTimeField] ||
+        b.updatedAt - a.updatedAt ||
+        a.id.localeCompare(b.id),
+    );
+  }, [classrooms, classroomTimeField, sharedClassrooms]);
   const listedThumbnails = useMemo(
     () => ({ ...sharedThumbnails, ...thumbnails }),
     [sharedThumbnails, thumbnails],
@@ -671,17 +679,15 @@ function HomePage() {
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return t('classroom.today');
-    if (diffDays === 1) return t('classroom.yesterday');
-    if (diffDays < 7) return `${diffDays} ${t('classroom.daysAgo')}`;
-    return date.toLocaleDateString();
-  };
+  const formatClassroomTimestamp = (timestamp: number) =>
+    new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(timestamp));
 
   const isFusionDemoSupported = isSupportedFusionDemoTopic(form.requirement);
   const canGenerate =
@@ -1236,6 +1242,37 @@ function HomePage() {
                 </motion.div>
               </button>
 
+              <div
+                role="group"
+                aria-label={t('classroom.timeOrderAriaLabel')}
+                className="flex items-center rounded-full bg-muted/40 p-0.5 text-[11px]"
+              >
+                {(['updatedAt', 'createdAt'] as const).map((field) => {
+                  const selected = classroomTimeField === field;
+                  const label = t(
+                    field === 'updatedAt'
+                      ? 'classroom.sortByUpdatedAt'
+                      : 'classroom.sortByCreatedAt',
+                  );
+                  return (
+                    <button
+                      key={field}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setClassroomTimeField(field)}
+                      className={cn(
+                        'rounded-full px-2 py-0.5 transition-colors',
+                        selected
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground/65 hover:text-foreground/80',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
               {LAN_SHARED_MODE && (
                 <button
                   type="button"
@@ -1386,7 +1423,8 @@ function HomePage() {
                         <ClassroomCard
                           classroom={classroom}
                           slide={listedThumbnails[classroom.id]}
-                          formatDate={formatDate}
+                          classroomTimeField={classroomTimeField}
+                          formatTimestamp={formatClassroomTimestamp}
                           onDelete={handleDelete}
                           onRename={handleRename}
                           confirmingDelete={pendingDeleteId === classroom.id}
@@ -1702,7 +1740,8 @@ function GreetingBar() {
 function ClassroomCard({
   classroom,
   slide,
-  formatDate,
+  classroomTimeField,
+  formatTimestamp,
   onDelete,
   onRename,
   confirmingDelete,
@@ -1713,7 +1752,8 @@ function ClassroomCard({
 }: {
   classroom: StageListItem;
   slide?: Slide;
-  formatDate: (ts: number) => string;
+  classroomTimeField: ClassroomTimeField;
+  formatTimestamp: (ts: number) => string;
   onDelete: (id: string, e: React.MouseEvent) => void;
   onRename: (id: string, newName: string) => void;
   confirmingDelete: boolean;
@@ -1747,6 +1787,13 @@ function ClassroomCard({
   const showModeBadge = classroom.interactiveMode || isTaskEngineMode;
   const ModeBadgeIcon = isTaskEngineMode ? Sparkles : Atom;
   const modeBadgeLabel = isTaskEngineMode ? 'Vocational Mode' : t('toolbar.interactiveModeLabel');
+  const displayedTimestamp = classroom[classroomTimeField];
+  const displayedTimestampLabel = t(
+    classroomTimeField === 'updatedAt' ? 'classroom.updatedAt' : 'classroom.createdAt',
+  );
+  const classroomTimestampTitle = `${t('classroom.createdAt')}: ${formatTimestamp(
+    classroom.createdAt,
+  )}\n${t('classroom.updatedAt')}: ${formatTimestamp(classroom.updatedAt)}`;
 
   const startRename = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1882,8 +1929,12 @@ function ClassroomCard({
 
       {/* Info — outside the thumbnail */}
       <div className="mt-2.5 px-1 flex items-center gap-2">
-        <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
-          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
+        <span
+          title={classroomTimestampTitle}
+          className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400"
+        >
+          {classroom.sceneCount} {t('classroom.slides')} · {displayedTimestampLabel}{' '}
+          {formatTimestamp(displayedTimestamp)}
         </span>
         {editing ? (
           <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
