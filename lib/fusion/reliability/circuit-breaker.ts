@@ -1,5 +1,6 @@
 export type FusionCapability =
   | 'profile-read'
+  | 'preclass-context-read'
   | 'diagnosis'
   | 'classroom-event-write'
   | 'profile-update-submit';

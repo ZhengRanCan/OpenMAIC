@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
   const credential = await response.json();
   const scopes = [
     'profile:read',
+    'preclass-context:read',
     'diagnosis:request',
     'classroom-event:write',
     'profile-update:submit',
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     credential.audience !== 'openmaic' ||
     credential.lessonSessionId !== lessonSessionId ||
     !Array.isArray(credential.scope) ||
-    credential.scope.length !== 4 ||
+    credential.scope.length !== scopes.length ||
     !scopes.every((scope) => credential.scope.includes(scope)) ||
     typeof credential.expiresAt !== 'number' ||
     credential.expiresAt <= Math.floor(Date.now() / 1000) ||
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     return apiError('INVALID_CREDENTIALS', 401, 'Delegation is invalid.');
   if (!isProductionFusion()) {
     storeDelegation(credential);
-    return apiSuccess({ lessonSessionId, learnerId: credential.learnerId });
+    return apiSuccess({ lessonSessionId });
   }
   try {
     const services = await ensureFusionServices();
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
       await services.credentials.delete(credentialRef).catch(() => undefined);
       throw error;
     }
-    const result = apiSuccess({ lessonSessionId, learnerId: credential.learnerId });
+    const result = apiSuccess({ lessonSessionId });
     result.cookies.set(COOKIE, sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

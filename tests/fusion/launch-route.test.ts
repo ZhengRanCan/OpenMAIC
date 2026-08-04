@@ -8,7 +8,9 @@ const request = () =>
     body: JSON.stringify({ classroomLaunchCode: 'code' }),
   });
 describe('F16 launch route', () => {
-  it('never returns delegation token', async () => {
+  it('never returns delegation or learner identity to the browser', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', '');
     vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
     vi.stubGlobal(
       'fetch',
@@ -22,6 +24,7 @@ describe('F16 launch route', () => {
             audience: 'openmaic',
             scope: [
               'profile:read',
+              'preclass-context:read',
               'diagnosis:request',
               'classroom-event:write',
               'profile-update:submit',
@@ -34,10 +37,12 @@ describe('F16 launch route', () => {
       }),
     );
     const body = await (await POST(request())).json();
-    expect(body.learnerId).toBe('learner-1');
     expect(JSON.stringify(body)).not.toContain('secret');
+    expect(JSON.stringify(body)).not.toContain('learner-1');
   });
   it('rejects invalid audience, scope, expiry or session binding', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', '');
     vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
     vi.stubGlobal(
       'fetch',
@@ -82,37 +87,36 @@ describe('F19 production launch', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi.fn(
-        async (url, init) => {
-          const value = String(url);
-          if (value.includes('/profile?'))
-            return new Response(JSON.stringify({ schemaVersion: 'v1', learnerId: 'learner-1' }), {
-              status: 200,
-            });
-          if (value.includes('/knowledge-map?'))
-            return new Response(
-              JSON.stringify({ schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' }),
-              { status: 200 },
-            );
+      vi.fn(async (url, init) => {
+        const value = String(url);
+        if (value.includes('/profile?'))
+          return new Response(JSON.stringify({ schemaVersion: 'v1', learnerId: 'learner-1' }), {
+            status: 200,
+          });
+        if (value.includes('/knowledge-map?'))
           return new Response(
-            JSON.stringify({
-              token: 'secret',
-              tokenId: 't',
-              learnerId: 'learner-1',
-              audience: 'openmaic',
-              scope: [
-                'profile:read',
-                'diagnosis:request',
-                'classroom-event:write',
-                'profile-update:submit',
-              ],
-              expiresAt: 9999999999,
-              lessonSessionId: JSON.parse(String(init?.body)).lessonSessionId,
-            }),
+            JSON.stringify({ schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' }),
             { status: 200 },
           );
-        },
-      ),
+        return new Response(
+          JSON.stringify({
+            token: 'secret',
+            tokenId: 't',
+            learnerId: 'learner-1',
+            audience: 'openmaic',
+            scope: [
+              'profile:read',
+              'preclass-context:read',
+              'diagnosis:request',
+              'classroom-event:write',
+              'profile-update:submit',
+            ],
+            expiresAt: 9999999999,
+            lessonSessionId: JSON.parse(String(init?.body)).lessonSessionId,
+          }),
+          { status: 200 },
+        );
+      }),
     );
     const response = await POST(request());
     expect(response.status).toBe(200);

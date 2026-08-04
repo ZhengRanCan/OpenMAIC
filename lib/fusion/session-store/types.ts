@@ -1,3 +1,10 @@
+import type {
+  FrozenLessonGenerationContext,
+  LessonSemanticRequest,
+  PreClassTeachingContextProposal,
+  SemanticResolution,
+} from '../preclass-contracts';
+
 export type FusionJson =
   | null
   | boolean
@@ -6,6 +13,26 @@ export type FusionJson =
   | FusionJson[]
   | { [key: string]: FusionJson };
 export type FusionJsonObject = { [key: string]: FusionJson };
+
+/**
+ * F42's additive, server-only shadow record.  It deliberately has its own
+ * schema version so existing v1 session data remains readable unchanged.
+ */
+export interface PreClassContextShadow {
+  schemaVersion: 'preclass-context-shadow-v1';
+  status: 'captured' | 'provider_failed';
+  observedAt: string;
+  semanticRequest?: LessonSemanticRequest;
+  proposal?: PreClassTeachingContextProposal;
+  resolution?: SemanticResolution;
+  frozenContext?: FrozenLessonGenerationContext;
+  comparison: {
+    topic: 'match' | 'mismatch' | 'unavailable';
+    knowledgeScope: 'match' | 'mismatch' | 'unavailable';
+    errorType: 'match' | 'mismatch';
+  };
+  errorCode?: string;
+}
 
 export interface FusionSessionRecord {
   schemaVersion: 'v1';
@@ -16,6 +43,8 @@ export interface FusionSessionRecord {
   lessonKnowledgeMap: FusionJsonObject;
   /** Frozen on the first formal outline request. Never populated from browser snapshots. */
   generationContext?: FusionJsonObject;
+  /** F42 observation only. Formal generation must not read this until F43. */
+  preClassContextShadow?: PreClassContextShadow;
   /** Server-owned outlines from the sole formal generation request. */
   generatedOutlines?: FusionJsonObject[];
   sceneCatalog: FusionJsonObject;

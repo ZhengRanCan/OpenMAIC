@@ -50,6 +50,10 @@ import {
   completeFormalLessonOutlines,
   persistFormalLessonOutlines,
 } from '@/lib/fusion/generation-session';
+import {
+  isPreClassContextShadowEnabled,
+  recordPreClassContextShadow,
+} from '@/lib/fusion/adapter/preclass-context-provider';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -308,6 +312,13 @@ export async function POST(req: NextRequest) {
       body.lessonSessionId,
       body.requirements.requirement,
     );
+    if (formalFusion.kind === 'resolved' && isPreClassContextShadowEnabled()) {
+      // F42 is observation-only: a provider or persistence failure is retained
+      // as a shadow outcome where possible and must never alter legacy output.
+      await recordPreClassContextShadow(formalFusion.record, formalFusion.context).catch(
+        () => undefined,
+      );
+    }
     // A formal session is authoritative: never combine it with the historical
     // F02 Demo projection or browser-supplied profile fields.
     const fusionLookup =
