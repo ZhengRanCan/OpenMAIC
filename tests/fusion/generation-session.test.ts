@@ -14,9 +14,6 @@ import {
   type ProductionFusionServices,
 } from '@/lib/fusion/reliability/production-services';
 import type { FusionSessionRecord } from '@/lib/fusion/session-store/types';
-import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
-import { planSceneDirective } from '@/lib/fusion/scene-directive-planner';
-import type { SceneCatalog } from '@/lib/fusion/scene-catalog';
 
 function request(cookie = 'browser-token') {
   return new NextRequest('http://openmaic.local/api/generate/scene-outlines-stream', {
@@ -79,22 +76,74 @@ function configure(current: FusionSessionRecord) {
     }),
   };
   const services = {
-    credentials: {},
+    credentials: {
+      get: vi.fn(async () => ({ token: 'delegation-secret', scope: ['preclass-context:read'] })),
+    },
     sessions,
     outbox: {},
-    circuits: {},
+    circuits: { run: vi.fn(async (_capability, operation) => operation()) },
   } as unknown as ProductionFusionServices;
   configureProductionFusionServices(services);
   return { services, sessions, current: () => current };
 }
 
+function responseFor(body: string) {
+  const request = JSON.parse(body) as {
+    schemaVersion: string;
+    semanticRequestId: string;
+    semanticRequestRevision: string;
+    semanticRequestDigest: string;
+    normalizedTopic: string;
+    normalizedLearningObjectives: string[];
+    authorizedKnowledgeScope: { namespace: string; scopeId: string };
+  };
+  return {
+    schemaVersion: request.schemaVersion,
+    proposalId: 'proposal-1',
+    basedOnSemanticRequestId: request.semanticRequestId,
+    basedOnSemanticRequestRevision: request.semanticRequestRevision,
+    semanticRequestDigest: request.semanticRequestDigest,
+    resolutionStatus: 'ready',
+    interpretedLessonSemantics: {
+      normalizedTopic: request.normalizedTopic,
+      normalizedLearningObjectives: request.normalizedLearningObjectives,
+    },
+    lessonKnowledgeMap: {
+      mappingId: 'semantic-map-1',
+      mappingRevision: '1',
+      knowledgeRefs: [
+        {
+          namespace: request.authorizedKnowledgeScope.namespace,
+          scopeId: request.authorizedKnowledgeScope.scopeId,
+          id: 'semantic-point-1',
+        },
+      ],
+    },
+    learnerCognitiveProjection: { projectionRevision: '1', signals: ['insufficient_data'] },
+    teachingGuidance: { guidanceRevision: '1', recommendedApproaches: ['worked-example'] },
+    sourceRevisions: ['fixture'],
+    clarificationIssues: [],
+    warnings: [],
+    createdAt: '2026-08-04T00:00:00.000Z',
+  };
+}
+
 describe('F23 formal generation session', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it('freezes one minimal context from the authoritative Cookie session and never renders identity', async () => {
     vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          new Response(JSON.stringify(responseFor(String(init?.body))), { status: 200 }),
+      ),
+    );
     const configured = configure(record());
 
     const frozen = await freezeFormalFusionForOutline(
@@ -106,19 +155,15 @@ describe('F23 formal generation session', () => {
     expect(frozen.kind).toBe('resolved');
     if (frozen.kind !== 'resolved') return;
     expect(frozen.context).toMatchObject({
-      lessonKnowledgePointIds: ['point-1'],
-      mappingId: 'map-1',
-      mappingRevision: '2',
-      checkpoint: {
-        checkpointId: 'catalog-checkpoint-1',
-        sceneId: 'checkpoint-1',
-        remediationSceneId: 'remediation-1',
-        remediationStrategy: 'catalog_concrete_example',
+      semanticRequest: { normalizedTopic: 'Explain linear functions in fifteen minutes' },
+      proposal: {
+        lessonKnowledgeMap: { mappingId: 'semantic-map-1', mappingRevision: '1' },
+        learnerCognitiveProjection: { signals: ['insufficient_data'] },
       },
     });
-    expect(frozen.context.guidance).toContain('Do not infer mastery from missing data.');
     const prompt = appendFormalTeachingPrompt('', frozen.context);
     expect(prompt).toContain('mapped checkpoint');
+    expect(prompt).toContain('worked-example');
     expect(prompt).not.toContain('allowlisted-synthetic-learner');
     expect(prompt).not.toContain('secret://');
     expect(configured.sessions.compareAndSet).toHaveBeenCalledTimes(1);
@@ -136,25 +181,13 @@ describe('F23 formal generation session', () => {
     expect(outlines).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'checkpoint-1',
+          id: expect.stringContaining('fusion-checkpoint-scene-'),
           type: 'quiz',
-          fusionCheckpoint: expect.objectContaining({ checkpointId: 'catalog-checkpoint-1' }),
+          fusionCheckpoint: expect.objectContaining({ mappingId: 'semantic-map-1' }),
         }),
-        expect.objectContaining({ id: 'remediation-1' }),
+        expect.objectContaining({ id: expect.stringContaining('fusion-remediation-scene-') }),
       ]),
     );
-    const directive = planSceneDirective(
-      {
-        kind: 'insert_remediation',
-        targetLessonKnowledgePointIds: ['point-1'],
-        recommendedStrategy: 'catalog_concrete_example',
-      },
-      'event-1',
-      record().sceneCatalog as unknown as SceneCatalog,
-      createLessonRuntimeState('checkpoint-1'),
-    );
-    expect(directive.directive.targetSceneId).toBe('remediation-1');
-    expect(outlines.map((outline) => outline.id)).toContain(directive.directive.targetSceneId);
     await persistFormalLessonOutlines(request(), frozen, outlines);
     const reused = await resolveFormalFusion(request(), 'lesson-1');
     expect(reused).toMatchObject({ kind: 'resolved', context: frozen.context, outlines });
@@ -177,19 +210,77 @@ describe('F23 formal generation session', () => {
     clearProductionFusionServices(configured.services);
   });
 
-  it('rejects a session whose frozen Catalog cannot pair a mapped checkpoint with remediation', async () => {
+  it('surfaces non-ready semantic outcomes without touching the legacy snapshots or silently retrying', async () => {
     vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          new Response(
+            JSON.stringify({
+              ...responseFor(String(init?.body)),
+              resolutionStatus: 'needs_clarification',
+              clarificationIssues: ['objective_missing'],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    const configured = configure(record());
+
+    await expect(
+      freezeFormalFusionForOutline(request(), 'lesson-1', 'A requirement that needs clarification'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_NEEDS_CLARIFICATION' });
+    expect(configured.sessions.compareAndSet).toHaveBeenCalledTimes(1);
+    expect(configured.current().generationContext).toBeUndefined();
+    expect(configured.current().frozenLessonGenerationContext).toBeUndefined();
+    expect(configured.current().preClassResolution).toMatchObject({
+      status: 'needs_clarification',
+    });
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('fails closed when a ready proposal supplies a Map outside the authorized semantic scope', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        const proposal = responseFor(String(init?.body));
+        proposal.lessonKnowledgeMap.knowledgeRefs[0].scopeId = 'wrong-scope';
+        return new Response(JSON.stringify(proposal), { status: 200 });
+      }),
+    );
+    const configured = configure(record());
+
+    await expect(
+      freezeFormalFusionForOutline(request(), 'lesson-1', 'A bounded requirement'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_INVALID' });
+    expect(configured.sessions.compareAndSet).not.toHaveBeenCalled();
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('does not read the legacy Catalog when compiling a semantic checkpoint', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          new Response(JSON.stringify(responseFor(String(init?.body))), { status: 200 }),
+      ),
+    );
     const invalid = record();
     invalid.sceneCatalog = { entries: [] };
     const configured = configure(invalid);
 
-    await expect(
-      freezeFormalFusionForOutline(
-        request(),
-        'lesson-1',
-        'Explain linear functions in fifteen minutes',
-      ),
-    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_INVALID' });
+    const frozen = await freezeFormalFusionForOutline(
+      request(),
+      'lesson-1',
+      'Explain linear functions in fifteen minutes',
+    );
+    expect(frozen.kind).toBe('resolved');
     clearProductionFusionServices(configured.services);
   });
 });

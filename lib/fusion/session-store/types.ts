@@ -45,6 +45,10 @@ export interface FusionSessionRecord {
   generationContext?: FusionJsonObject;
   /** F42 observation only. Formal generation must not read this until F43. */
   preClassContextShadow?: PreClassContextShadow;
+  /** F43's sole formal pre-class semantic root. It never shares fields with the legacy context. */
+  frozenLessonGenerationContext?: FusionJsonObject;
+  /** A non-ready F43 outcome is durable so repeated outline requests cannot silently retry it. */
+  preClassResolution?: FusionJsonObject;
   /** Server-owned outlines from the sole formal generation request. */
   generatedOutlines?: FusionJsonObject[];
   sceneCatalog: FusionJsonObject;

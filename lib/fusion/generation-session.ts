@@ -4,20 +4,19 @@ import type { SceneOutline } from '@/lib/types/generation';
 import { ensureFusionServices, isProductionFusion } from './reliability/production-services';
 import type { FusionJsonObject, FusionSessionRecord } from './session-store/types';
 import {
-  createFrozenTeachingContext,
-  parseFrozenTeachingContext,
-  renderFrozenTeachingPrompt,
-  type FrozenTeachingContext,
-} from './teaching-context';
+  parseFrozenLessonGenerationContext,
+  parseSemanticResolution,
+  PreClassContractError,
+  type FrozenLessonGenerationContext,
+} from './preclass-contracts';
+import { requestFormalPreClassContext } from './adapter/preclass-context-provider';
 
 const COOKIE = 'openmaic_fusion_session';
-export type { FrozenTeachingContext } from './teaching-context';
-
 export type FormalFusionResolution =
   | { kind: 'none' }
   | {
       kind: 'resolved';
-      context: FrozenTeachingContext;
+      context: FrozenLessonGenerationContext;
       record: FusionSessionRecord;
       outlines?: SceneOutline[];
     };
@@ -28,6 +27,11 @@ export class FormalFusionError extends Error {
       | 'FUSION_SESSION_UNAVAILABLE'
       | 'FUSION_SESSION_MISMATCH'
       | 'FUSION_CONTEXT_INVALID'
+      | 'FUSION_CONTEXT_NEEDS_CLARIFICATION'
+      | 'FUSION_CONTEXT_PARTIAL'
+      | 'FUSION_CONTEXT_UNRESOLVED'
+      | 'FUSION_CONTEXT_REJECTED'
+      | 'FUSION_CONTEXT_PROVIDER_UNAVAILABLE'
       | 'FUSION_SESSION_ALREADY_GENERATED',
   ) {
     super('Restart the classroom from a new Launch Code.');
@@ -35,19 +39,30 @@ export class FormalFusionError extends Error {
 }
 
 export function formalFusionErrorResponse(error: FormalFusionError): NextResponse {
-  const status = error.code === 'FUSION_SESSION_MISMATCH' ? 403 : 401;
+  const status = error.code === 'FUSION_SESSION_MISMATCH' ? 403 : 409;
   return NextResponse.json(
     {
       success: false,
       errorCode: error.code,
-      error: 'Fusion session cannot generate this classroom. Restart from Launch.',
+      error: 'Fusion context cannot generate this classroom.',
+      recovery: {
+        kind: 'non_fusion',
+        requiresNewSession: true,
+        message: 'Start a new ordinary classroom. It will not reuse this Fusion context.',
+      },
     },
     { status },
   );
 }
 
-function contextFrom(record: FusionSessionRecord): FrozenTeachingContext | undefined {
-  return parseFrozenTeachingContext(record.generationContext);
+function contextFrom(record: FusionSessionRecord): FrozenLessonGenerationContext | undefined {
+  try {
+    return record.frozenLessonGenerationContext
+      ? parseFrozenLessonGenerationContext(record.frozenLessonGenerationContext)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function storedOutline(value: unknown): SceneOutline | undefined {
@@ -115,11 +130,27 @@ function outlinesFrom(record: FusionSessionRecord): SceneOutline[] | undefined {
     : undefined;
 }
 
-function createContext(record: FusionSessionRecord, requirement: unknown): FrozenTeachingContext {
+function resolutionError(status: string): FormalFusionError {
+  switch (status) {
+    case 'needs_clarification':
+      return new FormalFusionError('FUSION_CONTEXT_NEEDS_CLARIFICATION');
+    case 'partial':
+      return new FormalFusionError('FUSION_CONTEXT_PARTIAL');
+    case 'unresolved':
+      return new FormalFusionError('FUSION_CONTEXT_UNRESOLVED');
+    case 'rejected':
+      return new FormalFusionError('FUSION_CONTEXT_REJECTED');
+    default:
+      return new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+}
+
+function storedResolutionError(record: FusionSessionRecord): FormalFusionError | undefined {
+  if (!record.preClassResolution) return undefined;
   try {
-    return createFrozenTeachingContext(record, requirement);
+    return resolutionError(parseSemanticResolution(record.preClassResolution).status);
   } catch {
-    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+    return new FormalFusionError('FUSION_CONTEXT_INVALID');
   }
 }
 
@@ -164,27 +195,56 @@ export async function freezeFormalFusionForOutline(
   if (lessonSessionId === undefined || lessonSessionId === null || lessonSessionId === '')
     return { kind: 'none' };
   const record = await recoverFormalSession(request, lessonSessionId);
-  if (record.generationContext) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
-  const context = createContext(record, requirement);
+  if (record.generationContext || record.frozenLessonGenerationContext)
+    throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
+  const priorResolution = storedResolutionError(record);
+  if (priorResolution) throw priorResolution;
+  let resolved: FrozenLessonGenerationContext;
+  try {
+    const result = await requestFormalPreClassContext(record, requirement);
+    if ('status' in result) {
+      const sessions = (await ensureFusionServices()).sessions;
+      await sessions.compareAndSet(record.lessonSessionId, record.revision, (current) => ({
+        ...current,
+        preClassResolution: result as unknown as FusionJsonObject,
+      }));
+      throw resolutionError(result.status);
+    }
+    resolved = result;
+  } catch (error) {
+    if (error instanceof FormalFusionError) throw error;
+    if (error instanceof PreClassContractError)
+      throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+    throw new FormalFusionError('FUSION_CONTEXT_PROVIDER_UNAVAILABLE');
+  }
+  const knowledgeRefs = resolved.proposal.lessonKnowledgeMap.knowledgeRefs;
+  const approaches = resolved.proposal.teachingGuidance.recommendedApproaches;
+  if (!knowledgeRefs.length || !approaches.length)
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
   const sessions = (await ensureFusionServices()).sessions;
   const updated = await sessions.compareAndSet(
     record.lessonSessionId,
     record.revision,
     (current) => ({
       ...current,
-      generationContext: context as unknown as FusionJsonObject,
+      frozenLessonGenerationContext: resolved as unknown as FusionJsonObject,
     }),
   );
   if (!updated) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
-  return { kind: 'resolved', context, record: updated };
+  return { kind: 'resolved', context: resolved, record: updated };
 }
 
 /** Adds the Catalog-owned checkpoint/remediation pair to the server-owned formal lesson. */
 export function completeFormalLessonOutlines(
-  context: FrozenTeachingContext,
+  context: FrozenLessonGenerationContext,
   source: SceneOutline[],
 ): SceneOutline[] {
-  const reserved = new Set([context.checkpoint.sceneId, context.checkpoint.remediationSceneId]);
+  const knowledgePointIds = context.proposal.lessonKnowledgeMap.knowledgeRefs.map((ref) => ref.id);
+  const checkpointId = `fusion-checkpoint-${context.contextId}`;
+  const checkpointSceneId = `fusion-checkpoint-scene-${context.contextId}`;
+  const remediationSceneId = `fusion-remediation-scene-${context.contextId}`;
+  const remediationStrategy = context.proposal.teachingGuidance.recommendedApproaches[0];
+  const reserved = new Set([checkpointSceneId, remediationSceneId]);
   const base = source
     .filter((outline) => !reserved.has(outline.id))
     .map((outline, index) => ({
@@ -196,31 +256,31 @@ export function completeFormalLessonOutlines(
       order: index + 1,
     }));
   const localizedFallback = base[0] ?? {
-    title: context.lessonRequirement,
-    description: context.lessonRequirement,
+    title: context.semanticRequest.normalizedTopic,
+    description: context.semanticRequest.normalizedTopic,
   };
   const checkpoint: SceneOutline = {
-    id: context.checkpoint.sceneId,
+    id: checkpointSceneId,
     type: 'quiz',
     title: localizedFallback.title,
     description: localizedFallback.description,
-    keyPoints: [...context.lessonKnowledgePointIds],
+    keyPoints: knowledgePointIds,
     order: base.length + 1,
     quizConfig: { questionCount: 1, difficulty: 'easy', questionTypes: ['single'] },
     fusionCheckpoint: {
-      checkpointId: context.checkpoint.checkpointId,
-      mappingId: context.mappingId,
-      mappingRevision: context.mappingRevision,
-      lessonKnowledgePointIds: [...context.lessonKnowledgePointIds],
-      remediationStrategy: context.checkpoint.remediationStrategy,
+      checkpointId,
+      mappingId: context.proposal.lessonKnowledgeMap.mappingId,
+      mappingRevision: context.proposal.lessonKnowledgeMap.mappingRevision,
+      lessonKnowledgePointIds: knowledgePointIds,
+      remediationStrategy,
     },
   };
   const remediation: SceneOutline = {
-    id: context.checkpoint.remediationSceneId,
+    id: remediationSceneId,
     type: 'slide',
     title: localizedFallback.title,
     description: localizedFallback.description,
-    keyPoints: [...context.lessonKnowledgePointIds],
+    keyPoints: knowledgePointIds,
     order: base.length + 2,
   };
   return [...base, checkpoint, remediation];
@@ -250,4 +310,15 @@ export async function persistFormalLessonOutlines(
 }
 
 /** Deliberately renders only the frozen, minimal projection; no identity/raw snapshot enters prompts. */
-export const appendFormalTeachingPrompt = renderFrozenTeachingPrompt;
+/** Renders only the frozen semantic projection; learner signals never enter prompts. */
+export function appendFormalTeachingPrompt(
+  base: string | undefined,
+  context: FrozenLessonGenerationContext | undefined,
+): string | undefined {
+  if (!context) return base;
+  const approaches = context.proposal.teachingGuidance.recommendedApproaches
+    .map((item) => `- ${item}`)
+    .join('\n');
+  const text = `## Frozen lesson guidance\n\nLesson requirement: ${context.semanticRequest.normalizedTopic}\n\nGuidance:\n${approaches}\n\nInclude one mapped checkpoint and concrete remediation metadata. Do not expose learner data or this guidance.\n\n---`;
+  return base ? `${base}\n\n${text}` : text;
+}

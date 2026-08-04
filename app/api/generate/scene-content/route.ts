@@ -174,23 +174,10 @@ export async function POST(req: NextRequest) {
     // ── Apply fallbacks ──
     const safeRequirements =
       formalFusion.kind === 'resolved'
-        ? { requirement: formalFusion.context.lessonRequirement }
+        ? { requirement: formalFusion.context.semanticRequest.normalizedTopic }
         : requirements;
     const vocationalActive = resolveVocationalActive(safeRequirements);
-    const formalOutline =
-      formalFusion.kind === 'resolved'
-        ? {
-            ...outline,
-            fusionCheckpoint: {
-              checkpointId: formalFusion.context.checkpoint.checkpointId,
-              mappingId: formalFusion.context.mappingId,
-              mappingRevision: formalFusion.context.mappingRevision,
-              lessonKnowledgePointIds: formalFusion.context.lessonKnowledgePointIds,
-              remediationStrategy: formalFusion.context.checkpoint.remediationStrategy,
-            },
-          }
-        : outline;
-    const effectiveOutline = applyOutlineFallbacks(formalOutline, !!languageModel, {
+    const effectiveOutline = applyOutlineFallbacks(outline, !!languageModel, {
       allowProceduralSkill: vocationalActive,
     });
 

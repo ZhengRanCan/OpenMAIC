@@ -113,17 +113,8 @@ describe('Fusion scene routes', () => {
     mocks.resolveFormalFusion.mockResolvedValue({
       kind: 'resolved',
       context: {
-        lessonRequirement: 'Frozen formal requirement',
-        lessonKnowledgePointIds: ['point-1'],
-        mappingId: 'map-1',
-        mappingRevision: '2',
-        checkpoint: {
-          checkpointId: 'checkpoint-1',
-          sceneId: 'checkpoint-scene',
-          remediationSceneId: 'remediation-scene',
-          remediationStrategy: 'concrete_example',
-        },
-        guidance: ['Use conservative guidance.'],
+        semanticRequest: { normalizedTopic: 'Frozen formal requirement' },
+        proposal: { teachingGuidance: { recommendedApproaches: ['conservative-guidance'] } },
       },
       outlines: [formalOutline],
     });

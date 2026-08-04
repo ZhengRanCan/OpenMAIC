@@ -20,6 +20,52 @@ import type { FrozenTeachingContext } from '../teaching-context';
 const SHADOW_VERSION = 'preclass-context-shadow-v1' as const;
 const SHADOW_SCOPE = 'preclass-context:read';
 
+function normalizedRequirement(requirement: unknown): string {
+  if (typeof requirement !== 'string') throw new PreClassContractError('invalid_requirement');
+  const normalized = requirement
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized || normalized.length > 512)
+    throw new PreClassContractError('invalid_requirement');
+  return normalized.normalize('NFC');
+}
+
+/**
+ * The formal request deliberately starts with no locally inferred Profile or
+ * Map.  Knowledge scope is resolved by DeepTutor under the scoped delegation;
+ * the response must still return a complete, in-scope Map before it can freeze.
+ */
+export function buildFormalLessonSemanticRequest(
+  record: FusionSessionRecord,
+  requirement: unknown,
+): LessonSemanticRequest {
+  const draft: LessonSemanticRequest = {
+    schemaVersion: PRECLASS_CONTRACT_VERSION,
+    semanticRequestId: `preclass-${randomUUID()}`,
+    semanticRequestRevision: '1',
+    lessonSessionId: record.lessonSessionId,
+    semanticRequestDigest:
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    normalizedTopic: normalizedRequirement(requirement),
+    normalizedLearningObjectives: [normalizedRequirement(requirement)],
+    authorizedKnowledgeScope: {
+      namespace: 'deeptutor',
+      scopeId: `lesson-${record.lessonSessionId}`,
+      allowedKnowledgeRefs: [],
+    },
+    audienceSemantics: { audienceType: 'classroom', language: 'und' },
+    teachingConstraints: { durationMinutes: 15, maxSceneCount: 16 },
+    requestedKnowledgeRefs: [],
+    sourceMaterialRefs: [],
+    warnings: [],
+  };
+  return parseLessonSemanticRequest({
+    ...draft,
+    semanticRequestDigest: computeSemanticRequestDigest(draft),
+  });
+}
+
 export function isPreClassContextShadowEnabled(
   env: { FUSION_PRECLASS_CONTEXT_SHADOW_ENABLED?: string } = process.env as {
     FUSION_PRECLASS_CONTEXT_SHADOW_ENABLED?: string;
@@ -164,6 +210,45 @@ async function requestProposal(
     });
     if (!response.ok) throw new PreClassContractError('provider_unavailable');
     return parsePreClassTeachingContextProposal(parseStrictJson(await response.text()), request);
+  });
+}
+
+export async function requestFormalPreClassContext(
+  record: FusionSessionRecord,
+  requirement: unknown,
+  fetchFn: typeof fetch = fetch,
+): Promise<FrozenLessonGenerationContext | SemanticResolution> {
+  const request = buildFormalLessonSemanticRequest(record, requirement);
+  const proposal = await requestProposal(record, request, fetchFn);
+  const resolution = parseSemanticResolution(
+    {
+      schemaVersion: PRECLASS_CONTRACT_VERSION,
+      semanticRequestId: request.semanticRequestId,
+      semanticRequestRevision: request.semanticRequestRevision,
+      semanticRequestDigest: request.semanticRequestDigest,
+      status: proposal.resolutionStatus,
+      clarificationIssues: proposal.clarificationIssues,
+    },
+    request,
+  );
+  if (resolution.status !== 'ready') return resolution;
+  if (
+    !proposal.lessonKnowledgeMap.knowledgeRefs.length ||
+    proposal.lessonKnowledgeMap.knowledgeRefs.some(
+      (ref) =>
+        ref.namespace !== request.authorizedKnowledgeScope.namespace ||
+        ref.scopeId !== request.authorizedKnowledgeScope.scopeId,
+    )
+  ) {
+    throw new PreClassContractError('map_outside_authorized_scope');
+  }
+  return parseFrozenLessonGenerationContext({
+    schemaVersion: PRECLASS_CONTRACT_VERSION,
+    contextId: `frozen-${randomUUID()}`,
+    semanticRequest: request,
+    proposal,
+    resolution,
+    frozenAt: new Date().toISOString(),
   });
 }
 
