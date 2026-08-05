@@ -43,7 +43,11 @@ export async function POST(request: NextRequest) {
     credential.expiresAt <= Math.floor(Date.now() / 1000) ||
     typeof credential.token !== 'string' ||
     typeof credential.tokenId !== 'string' ||
-    typeof credential.learnerId !== 'string'
+    typeof credential.learnerId !== 'string' ||
+    typeof credential.courseScopeId !== 'string' ||
+    !credential.courseScopeId ||
+    typeof credential.courseScopeRevision !== 'string' ||
+    !credential.courseScopeRevision
   )
     return apiError('INVALID_CREDENTIALS', 401, 'Delegation is invalid.');
   if (!isProductionFusion()) {
@@ -65,6 +69,10 @@ export async function POST(request: NextRequest) {
           lessonSessionId,
           learnerId: credential.learnerId,
           credentialRef,
+          courseScopeRef: {
+            scopeId: credential.courseScopeId,
+            revision: credential.courseScopeRevision,
+          },
           profileSnapshot: snapshots.profile,
           lessonKnowledgeMap: snapshots.lessonKnowledgeMap,
           sceneCatalog: JSON.parse(JSON.stringify(DEVELOPMENT_SCENE_CATALOG)),

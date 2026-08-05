@@ -39,6 +39,8 @@ export interface FusionSessionRecord {
   lessonSessionId: string;
   learnerId: string;
   credentialRef: string;
+  /** Immutable DeepTutor scope reference derived from the authenticated launch exchange. */
+  courseScopeRef?: { scopeId: string; revision: string };
   profileSnapshot: FusionJsonObject;
   lessonKnowledgeMap: FusionJsonObject;
   /** Frozen on the first formal outline request. Never populated from browser snapshots. */

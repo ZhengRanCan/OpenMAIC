@@ -27,6 +27,7 @@ function record(): FusionSessionRecord {
     lessonSessionId: 'lesson-1',
     learnerId: 'allowlisted-synthetic-learner',
     credentialRef: 'secret://delegation/1',
+    courseScopeRef: { scopeId: 'course-1', revision: 'r1' },
     profileSnapshot: {
       learnerId: 'allowlisted-synthetic-learner',
       knowledgeState: [

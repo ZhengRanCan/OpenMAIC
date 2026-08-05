@@ -40,6 +40,8 @@ export function buildFormalLessonSemanticRequest(
   record: FusionSessionRecord,
   requirement: unknown,
 ): LessonSemanticRequest {
+  if (!record.courseScopeRef?.scopeId || !record.courseScopeRef.revision)
+    throw new PreClassContractError('course_scope_unavailable');
   const draft: LessonSemanticRequest = {
     schemaVersion: PRECLASS_CONTRACT_VERSION,
     semanticRequestId: `preclass-${randomUUID()}`,
@@ -51,7 +53,7 @@ export function buildFormalLessonSemanticRequest(
     normalizedLearningObjectives: [normalizedRequirement(requirement)],
     authorizedKnowledgeScope: {
       namespace: 'deeptutor',
-      scopeId: `lesson-${record.lessonSessionId}`,
+      scopeId: record.courseScopeRef.scopeId,
       allowedKnowledgeRefs: [],
     },
     audienceSemantics: { audienceType: 'classroom', language: 'und' },

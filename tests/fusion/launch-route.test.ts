@@ -20,6 +20,8 @@ describe('F16 launch route', () => {
           JSON.stringify({
             token: 'secret',
             tokenId: 't',
+            courseScopeId: 'course-1',
+            courseScopeRevision: 'r1',
             learnerId: 'learner-1',
             audience: 'openmaic',
             scope: [
@@ -52,6 +54,8 @@ describe('F16 launch route', () => {
             JSON.stringify({
               token: 'secret',
               tokenId: 't',
+              courseScopeId: 'course-1',
+              courseScopeRevision: 'r1',
               learnerId: 'learner-1',
               audience: 'wrong',
               scope: [],
@@ -102,6 +106,8 @@ describe('F19 production launch', () => {
           JSON.stringify({
             token: 'secret',
             tokenId: 't',
+            courseScopeId: 'course-1',
+            courseScopeRevision: 'r1',
             learnerId: 'learner-1',
             audience: 'openmaic',
             scope: [
@@ -124,6 +130,7 @@ describe('F19 production launch', () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         credentialRef: 'secret://delegations/t',
+        courseScopeRef: { scopeId: 'course-1', revision: 'r1' },
         profileSnapshot: { schemaVersion: 'v1', learnerId: 'learner-1' },
         lessonKnowledgeMap: { schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' },
       }),

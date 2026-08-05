@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildFormalLessonSemanticRequest,
   isPreClassContextShadowEnabled,
   recordPreClassContextShadow,
 } from '@/lib/fusion/adapter/preclass-context-provider';
@@ -17,6 +18,7 @@ function record(): FusionSessionRecord {
     lessonSessionId: 'lesson-1',
     learnerId: 'learner-must-not-enter-shadow',
     credentialRef: 'secret://delegation/1',
+    courseScopeRef: { scopeId: 'course-1', revision: 'r1' },
     profileSnapshot: { learnerId: 'learner-must-not-enter-shadow' },
     lessonKnowledgeMap: {},
     sceneCatalog: {},
@@ -44,6 +46,17 @@ const legacy: FrozenTeachingContext = {
     remediationStrategy: 'legacy-strategy',
   },
 };
+
+it('builds formal scope only from the immutable launch-derived reference', () => {
+  const request = buildFormalLessonSemanticRequest(record(), 'Explain linear functions');
+  expect(request.authorizedKnowledgeScope).toMatchObject({
+    namespace: 'deeptutor',
+    scopeId: 'course-1',
+  });
+  expect(() =>
+    buildFormalLessonSemanticRequest({ ...record(), courseScopeRef: undefined }, 'Explain'),
+  ).toThrow('course_scope_unavailable');
+});
 
 function configure(current: FusionSessionRecord, scopes = ['preclass-context:read']) {
   const sessions = {
