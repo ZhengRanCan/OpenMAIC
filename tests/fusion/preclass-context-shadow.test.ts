@@ -157,7 +157,7 @@ describe('F42 pre-class Context shadow', () => {
 
   it('records provider failures explicitly and never substitutes the legacy path as a mock response', async () => {
     vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
-    const configured = configure(record(), ['profile:read']);
+    const configured = configure(record(), ['diagnosis:request']);
     const fetchFn = vi.fn();
 
     const updated = await recordPreClassContextShadow(record(), legacy, fetchFn);

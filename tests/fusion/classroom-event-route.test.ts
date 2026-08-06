@@ -10,31 +10,82 @@ import {
 } from '@/lib/fusion/reliability/production-services';
 import { ensureFusionOutboxSchema, PgFusionOutboxStore } from '@/lib/fusion/outbox/postgres-store';
 import { ensureFusionLessonFactsSchema } from '@/lib/fusion/persistent-lesson';
-import { ensureFusionSessionSchema, PgFusionSessionStore } from '@/lib/fusion/session-store/postgres';
+import {
+  ensureFusionSessionSchema,
+  PgFusionSessionStore,
+} from '@/lib/fusion/session-store/postgres';
 import type { Queryable } from '@/lib/fusion/reliability/postgres';
 import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
 import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
 
 function request(body: unknown) {
-  return new NextRequest('http://openmaic.local/api/fusion/classroom-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 describe('F09 classroom event route', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it('rejects malformed browser facts without accepting learner overrides', async () => {
-    const response = await POST(request({ question: 'q', localAssessment: { gradingMode: 'local' }, learnerId: 'forged' }));
+    const response = await POST(
+      request({ question: 'q', localAssessment: { gradingMode: 'local' }, learnerId: 'forged' }),
+    );
     expect(response.status).toBe(400);
   });
   it('degrades safely when diagnosis is unavailable', async () => {
-    vi.stubEnv('NODE_ENV', 'test'); vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'true'); vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', '');
-    const response = await POST(request({ question: '2 + 2 = ?', answer: '3', localAssessment: { gradingMode: 'local', correctness: 'incorrect' } }));
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'true');
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', '');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', '');
+    const response = await POST(
+      request({
+        question: '2 + 2 = ?',
+        answer: '3',
+        localAssessment: { gradingMode: 'local', correctness: 'incorrect' },
+      }),
+    );
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ success: true, diagnosis: null, reasonCode: 'diagnosis_unavailable', continue: true });
+    expect(await response.json()).toMatchObject({
+      success: true,
+      diagnosis: null,
+      reasonCode: 'diagnosis_unavailable',
+      continue: true,
+    });
   });
   it('plans a remediation directive for an incorrect F08 diagnosis without leaking transport details', async () => {
-    vi.spyOn(ClassroomDiagnosisAdapter.prototype, 'diagnoseCheckpoint').mockResolvedValue({ schemaVersion: 'v1', eventId: 'ignored', correctness: 'incorrect', diagnoses: [], teachingIntent: { schemaVersion: 'v1', kind: 'insert_remediation', targetLessonKnowledgePointIds: ['lesson-linear-function-slope'], recommendedStrategy: 'development_mock_concrete_example' }, warnings: [], createdAt: '2026-07-24T00:00:00Z' });
-    vi.stubEnv('NODE_ENV', 'test'); vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'true'); vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://deeptutor.local');
-    const response = await POST(request({ question: 'q', answer: 'wrong', localAssessment: { gradingMode: 'local', correctness: 'incorrect' } }));
-    await expect(response.json()).resolves.toMatchObject({ success: true, diagnosis: { correctness: 'incorrect' }, directive: { kind: 'insert_remediation', targetSceneId: 'remediate-slope-concrete' } });
+    vi.spyOn(ClassroomDiagnosisAdapter.prototype, 'diagnoseCheckpoint').mockResolvedValue({
+      schemaVersion: 'v1',
+      eventId: 'ignored',
+      correctness: 'incorrect',
+      diagnoses: [],
+      teachingIntent: {
+        schemaVersion: 'v1',
+        kind: 'insert_remediation',
+        targetLessonKnowledgePointIds: ['lesson-linear-function-slope'],
+        recommendedStrategy: 'development_mock_concrete_example',
+      },
+      warnings: [],
+      createdAt: '2026-07-24T00:00:00Z',
+    });
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'true');
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', '');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://deeptutor.local');
+    const response = await POST(
+      request({
+        question: 'q',
+        answer: 'wrong',
+        localAssessment: { gradingMode: 'local', correctness: 'incorrect' },
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      diagnosis: { correctness: 'incorrect' },
+      directive: { kind: 'insert_remediation', targetSceneId: 'remediate-slope-concrete' },
+    });
   });
 });
 
@@ -127,7 +178,10 @@ describe('F20 authoritative persistent classroom event route', () => {
     const response = await POST(
       new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Cookie: `openmaic_fusion_session=${browserToken}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `openmaic_fusion_session=${browserToken}`,
+        },
         body: JSON.stringify({
           question: 'synthetic question',
           answer: 'synthetic answer',
@@ -138,7 +192,10 @@ describe('F20 authoritative persistent classroom event route', () => {
       }),
     );
     expect(response.status).toBe(200);
-    expect(submitted).toMatchObject({ lessonSessionId, lessonKnowledgePointIds: ['lesson-linear-function-slope'] });
+    expect(submitted).toMatchObject({
+      lessonSessionId,
+      lessonKnowledgePointIds: ['lesson-linear-function-slope'],
+    });
     expect(JSON.stringify(submitted)).not.toContain('forged-learner');
     expect((await sessions.get(lessonSessionId))?.runtimeState).toMatchObject({
       currentSceneId: 'remediate-slope-concrete',
@@ -180,10 +237,12 @@ describe('F20 authoritative persistent classroom event route', () => {
           schemaVersion: 'v1',
           mappingId: 'integration-test-map',
           mappingRevision: '1',
-          knowledgePoints: [{
-            lessonKnowledgePointId: 'lesson-linear-function-slope',
-            authoritativeRef: { namespace: 'test', scopeId: 'lesson', id: 'slope' },
-          }],
+          knowledgePoints: [
+            {
+              lessonKnowledgePointId: 'lesson-linear-function-slope',
+              authoritativeRef: { namespace: 'test', scopeId: 'lesson', id: 'slope' },
+            },
+          ],
         },
         sceneCatalog: JSON.parse(JSON.stringify(DEVELOPMENT_SCENE_CATALOG)),
         runtimeState: JSON.parse(JSON.stringify(initialRuntime)),
@@ -216,31 +275,39 @@ describe('F20 authoritative persistent classroom event route', () => {
       'fetch',
       vi.fn(async (_url, init) => {
         const event = JSON.parse(String(init?.body));
-        return new Response(JSON.stringify({
-          schemaVersion: 'v1',
-          eventId: event.eventId,
-          correctness: 'incorrect',
-          diagnoses: [],
-          teachingIntent: {
+        return new Response(
+          JSON.stringify({
             schemaVersion: 'v1',
-            kind: 'insert_remediation',
-            targetLessonKnowledgePointIds: ['lesson-linear-function-slope'],
-            recommendedStrategy: 'development_mock_concrete_example',
-          },
-          warnings: [],
-          createdAt: new Date().toISOString(),
-        }), { status: 200 });
+            eventId: event.eventId,
+            correctness: 'incorrect',
+            diagnoses: [],
+            teachingIntent: {
+              schemaVersion: 'v1',
+              kind: 'insert_remediation',
+              targetLessonKnowledgePointIds: ['lesson-linear-function-slope'],
+              recommendedStrategy: 'development_mock_concrete_example',
+            },
+            warnings: [],
+            createdAt: new Date().toISOString(),
+          }),
+          { status: 200 },
+        );
       }),
     );
-    const response = await POST(new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: `openmaic_fusion_session=${browserToken}` },
-      body: JSON.stringify({
-        question: 'synthetic question',
-        answer: 'synthetic answer',
-        localAssessment: { gradingMode: 'synthetic', correctness: 'incorrect' },
+    const response = await POST(
+      new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: `openmaic_fusion_session=${browserToken}`,
+        },
+        body: JSON.stringify({
+          question: 'synthetic question',
+          answer: 'synthetic answer',
+          localAssessment: { gradingMode: 'synthetic', correctness: 'incorrect' },
+        }),
       }),
-    }));
+    );
     expect(response.status).toBe(503);
     await expect(sessions.get(lessonSessionId)).resolves.toMatchObject({
       revision: 0,

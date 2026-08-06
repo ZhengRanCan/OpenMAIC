@@ -5,8 +5,6 @@ import {
   ensureFusionServices,
   isProductionFusion,
 } from '@/lib/fusion/reliability/production-services';
-import { getRealProfileAndKnowledgeMap } from '@/lib/fusion/adapter/real-profile-provider';
-import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
 import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
 const COOKIE = 'openmaic_fusion_session';
 export async function POST(request: NextRequest) {
@@ -27,7 +25,6 @@ export async function POST(request: NextRequest) {
     return apiError('INVALID_CREDENTIALS', 401, 'Launch code is invalid or expired.');
   const credential = await response.json();
   const scopes = [
-    'profile:read',
     'preclass-context:read',
     'diagnosis:request',
     'classroom-event:write',
@@ -56,11 +53,6 @@ export async function POST(request: NextRequest) {
   }
   try {
     const services = await ensureFusionServices();
-    // Keep the delegation material in memory only until its verified,
-    // immutable profile/map snapshots have been captured.
-    const snapshots = await getRealProfileAndKnowledgeMap(lessonSessionId, credential.token);
-    if (snapshots.profile.learnerId !== credential.learnerId)
-      return apiError('INVALID_CREDENTIALS', 401, 'Profile identity is invalid.');
     const credentialRef = await services.credentials.store(credential);
     const sessionToken = crypto.randomUUID();
     try {
@@ -73,12 +65,11 @@ export async function POST(request: NextRequest) {
             scopeId: credential.courseScopeId,
             revision: credential.courseScopeRevision,
           },
-          profileSnapshot: snapshots.profile,
-          lessonKnowledgeMap: snapshots.lessonKnowledgeMap,
-          sceneCatalog: JSON.parse(JSON.stringify(DEVELOPMENT_SCENE_CATALOG)),
+          // F45: formal pre-class semantics are resolved later by the signed
+          // LessonSemanticRequest route. Legacy profile/map/catalog snapshots
+          // are no longer captured for new sessions.
           runtimeState: JSON.parse(JSON.stringify(createLessonRuntimeState())),
           degradationState: 'none',
-          snapshotCapturedAt: new Date().toISOString(),
           expiresAt: new Date(credential.expiresAt * 1000).toISOString(),
         },
         sessionToken,

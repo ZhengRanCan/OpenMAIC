@@ -1,5 +1,37 @@
-import { randomUUID } from 'node:crypto'; import { findDelegation } from '@/lib/fusion/identity/delegation-store';
-export interface FusionSessionRecord { lessonSessionId:string; learnerId:string; credentialRef:string; profileSnapshot:Record<string,never>; lessonKnowledgeMap:Record<string,never>; sceneCatalog:Record<string,never>; runtimeState:Record<string,never>; degradationState:string; revision:number; expiresAt:number; }
-const records=new Map<string,FusionSessionRecord>(); const cookies=new Map<string,string>();
-export function createSession(lessonSessionId:string): string | undefined { const credential=findDelegation(lessonSessionId); if(!credential) return undefined; const token=randomUUID(); records.set(lessonSessionId,{lessonSessionId,learnerId:credential.learnerId,credentialRef:`credential_${credential.tokenId}`,profileSnapshot:{},lessonKnowledgeMap:{},sceneCatalog:{},runtimeState:{},degradationState:'none',revision:0,expiresAt:credential.expiresAt}); cookies.set(token,lessonSessionId); return token; }
-export function recoverSession(token:string|undefined): FusionSessionRecord | undefined { const id=token&&cookies.get(token); const record=id&&records.get(id); return record&&record.expiresAt>Math.floor(Date.now()/1000)?record:undefined; }
+import { randomUUID } from 'node:crypto';
+import { findDelegation } from '@/lib/fusion/identity/delegation-store';
+export interface FusionSessionRecord {
+  lessonSessionId: string;
+  learnerId: string;
+  credentialRef: string;
+  profileSnapshot?: Record<string, never>;
+  lessonKnowledgeMap?: Record<string, never>;
+  sceneCatalog?: Record<string, never>;
+  runtimeState: Record<string, never>;
+  degradationState: string;
+  revision: number;
+  expiresAt: number;
+}
+const records = new Map<string, FusionSessionRecord>();
+const cookies = new Map<string, string>();
+export function createSession(lessonSessionId: string): string | undefined {
+  const credential = findDelegation(lessonSessionId);
+  if (!credential) return undefined;
+  const token = randomUUID();
+  records.set(lessonSessionId, {
+    lessonSessionId,
+    learnerId: credential.learnerId,
+    credentialRef: `credential_${credential.tokenId}`,
+    runtimeState: {},
+    degradationState: 'none',
+    revision: 0,
+    expiresAt: credential.expiresAt,
+  });
+  cookies.set(token, lessonSessionId);
+  return token;
+}
+export function recoverSession(token: string | undefined): FusionSessionRecord | undefined {
+  const id = token && cookies.get(token);
+  const record = id && records.get(id);
+  return record && record.expiresAt > Math.floor(Date.now() / 1000) ? record : undefined;
+}

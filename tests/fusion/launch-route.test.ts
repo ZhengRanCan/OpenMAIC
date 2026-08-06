@@ -25,7 +25,6 @@ describe('F16 launch route', () => {
             learnerId: 'learner-1',
             audience: 'openmaic',
             scope: [
-              'profile:read',
               'preclass-context:read',
               'diagnosis:request',
               'classroom-event:write',
@@ -93,15 +92,6 @@ describe('F19 production launch', () => {
       'fetch',
       vi.fn(async (url, init) => {
         const value = String(url);
-        if (value.includes('/profile?'))
-          return new Response(JSON.stringify({ schemaVersion: 'v1', learnerId: 'learner-1' }), {
-            status: 200,
-          });
-        if (value.includes('/knowledge-map?'))
-          return new Response(
-            JSON.stringify({ schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' }),
-            { status: 200 },
-          );
         return new Response(
           JSON.stringify({
             token: 'secret',
@@ -111,7 +101,6 @@ describe('F19 production launch', () => {
             learnerId: 'learner-1',
             audience: 'openmaic',
             scope: [
-              'profile:read',
               'preclass-context:read',
               'diagnosis:request',
               'classroom-event:write',
@@ -131,12 +120,12 @@ describe('F19 production launch', () => {
       expect.objectContaining({
         credentialRef: 'secret://delegations/t',
         courseScopeRef: { scopeId: 'course-1', revision: 'r1' },
-        profileSnapshot: { schemaVersion: 'v1', learnerId: 'learner-1' },
-        lessonKnowledgeMap: { schemaVersion: 'v1', mappingId: 'map', mappingRevision: '1' },
       }),
       expect.any(String),
     );
     expect(JSON.stringify(create.mock.calls[0]?.[0])).not.toContain('"token"');
+    expect(JSON.stringify(create.mock.calls[0]?.[0])).not.toContain('profile text');
+    expect(JSON.stringify(create.mock.calls[0]?.[0])).not.toContain('knowledge map payload');
     expect(response.headers.get('set-cookie')).toMatch(/HttpOnly/i);
     expect(JSON.stringify(await response.json())).not.toContain('secret');
   });

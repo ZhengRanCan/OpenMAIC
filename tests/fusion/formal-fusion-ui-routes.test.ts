@@ -21,8 +21,7 @@ describe('F24 formal Fusion connection route', () => {
               paths: {
                 '/api/v1/fusion/launch-codes': {},
                 '/api/v1/fusion/launch/exchange': {},
-                '/api/v1/fusion/profile': {},
-                '/api/v1/fusion/knowledge-map': {},
+                '/api/v1/fusion/pre-class/context': {},
               },
             }),
           ),
@@ -53,8 +52,7 @@ describe('F24 formal Fusion connection route', () => {
               paths: {
                 '/api/v1/fusion/launch-codes': {},
                 '/api/v1/fusion/launch/exchange': {},
-                '/api/v1/fusion/profile': {},
-                '/api/v1/fusion/knowledge-map': {},
+                '/api/v1/fusion/pre-class/context': {},
               },
             }),
           ),

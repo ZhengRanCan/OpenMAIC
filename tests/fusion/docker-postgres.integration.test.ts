@@ -46,7 +46,7 @@ describeDocker('F19 Docker PostgreSQL integration', () => {
       tokenId: `local-token-${runId}`,
       learnerId: 'learner-1',
       audience: 'openmaic',
-      scope: ['profile:read'],
+      scope: ['diagnosis:request'],
       expiresAt: 9_999_999_999,
       lessonSessionId,
     });

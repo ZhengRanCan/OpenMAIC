@@ -71,23 +71,51 @@ export async function recordPersistentClassroomFactInTransaction(
   );
 }
 
-function mapReferences(session: FusionSessionRecord): Map<string, { namespace: string; scopeId: string; id: string }> {
-  const map = session.lessonKnowledgeMap as { knowledgePoints?: unknown };
+function mapReferences(
+  session: FusionSessionRecord,
+): Map<string, { namespace: string; scopeId: string; id: string }> {
+  const legacyMap = session.lessonKnowledgeMap as { knowledgePoints?: unknown } | undefined;
+  const formalMap = (
+    session.frozenLessonGenerationContext as
+      | { proposal?: { lessonKnowledgeMap?: unknown } }
+      | undefined
+  )?.proposal?.lessonKnowledgeMap;
   const result = new Map<string, { namespace: string; scopeId: string; id: string }>();
-  if (!Array.isArray(map.knowledgePoints)) return result;
-  for (const point of map.knowledgePoints) {
-    if (!point || typeof point !== 'object') continue;
-    const typed = point as Record<string, unknown>;
-    const ref = typed.authoritativeRef;
-    if (
-      typeof typed.lessonKnowledgePointId === 'string' &&
-      ref &&
-      typeof ref === 'object' &&
-      typeof (ref as Record<string, unknown>).namespace === 'string' &&
-      typeof (ref as Record<string, unknown>).scopeId === 'string' &&
-      typeof (ref as Record<string, unknown>).id === 'string'
-    ) {
-      result.set(typed.lessonKnowledgePointId, ref as { namespace: string; scopeId: string; id: string });
+  if (legacyMap && Array.isArray(legacyMap.knowledgePoints)) {
+    for (const point of legacyMap.knowledgePoints) {
+      if (!point || typeof point !== 'object') continue;
+      const typed = point as Record<string, unknown>;
+      const ref = typed.authoritativeRef;
+      if (
+        typeof typed.lessonKnowledgePointId === 'string' &&
+        ref &&
+        typeof ref === 'object' &&
+        typeof (ref as Record<string, unknown>).namespace === 'string' &&
+        typeof (ref as Record<string, unknown>).scopeId === 'string' &&
+        typeof (ref as Record<string, unknown>).id === 'string'
+      ) {
+        result.set(
+          typed.lessonKnowledgePointId,
+          ref as { namespace: string; scopeId: string; id: string },
+        );
+      }
+    }
+    return result;
+  }
+  const knowledgeRefs = formalMap
+    ? (formalMap as { knowledgeRefs?: unknown[] }).knowledgeRefs
+    : undefined;
+  if (Array.isArray(knowledgeRefs)) {
+    for (const ref of knowledgeRefs) {
+      if (!ref || typeof ref !== 'object') continue;
+      const typed = ref as Record<string, unknown>;
+      if (
+        typeof typed.id === 'string' &&
+        typeof typed.namespace === 'string' &&
+        typeof typed.scopeId === 'string'
+      ) {
+        result.set(typed.id, { namespace: typed.namespace, scopeId: typed.scopeId, id: typed.id });
+      }
     }
   }
   return result;
@@ -131,24 +159,35 @@ export async function completePersistentLesson(
         [session.lessonSessionId],
       );
       const references = mapReferences(session);
-      const storedFacts = facts.rows.map((row) =>
-        (typeof row.data === 'string' ? JSON.parse(row.data) : row.data) as StoredFact,
+      const storedFacts = facts.rows.map(
+        (row) => (typeof row.data === 'string' ? JSON.parse(row.data) : row.data) as StoredFact,
       );
       const observations = storedFacts.flatMap((fact) => {
         const point = fact.event.lessonKnowledgePointIds.find((id) => references.has(id));
         if (!point) return [];
-        return [{
-          kind: fact.diagnosis.correctness === 'incorrect' ? 'misconception_signal' : 'assessment_result',
-          lessonKnowledgePointId: point,
-          value: fact.diagnosis.correctness,
-          ...(fact.diagnosis.diagnoses[0]
-            ? { confidence: fact.diagnosis.diagnoses[0].confidence }
-            : {}),
-          authoritativeRef: references.get(point)!,
-        }];
+        return [
+          {
+            kind:
+              fact.diagnosis.correctness === 'incorrect'
+                ? 'misconception_signal'
+                : 'assessment_result',
+            lessonKnowledgePointId: point,
+            value: fact.diagnosis.correctness,
+            ...(fact.diagnosis.diagnoses[0]
+              ? { confidence: fact.diagnosis.diagnoses[0].confidence }
+              : {}),
+            authoritativeRef: references.get(point)!,
+          },
+        ];
       });
       if (!observations.length) throw new Error('no_qualifying_classroom_facts');
-      const mapping = session.lessonKnowledgeMap as { mappingId?: unknown; mappingRevision?: unknown };
+      const mapping = (session.lessonKnowledgeMap ??
+        (
+          session.frozenLessonGenerationContext as
+            | { proposal?: { lessonKnowledgeMap?: unknown } }
+            | undefined
+        )?.proposal?.lessonKnowledgeMap ??
+        {}) as { mappingId?: unknown; mappingRevision?: unknown };
       if (typeof mapping.mappingId !== 'string' || typeof mapping.mappingRevision !== 'string') {
         throw new Error('invalid_frozen_knowledge_map');
       }
@@ -169,15 +208,19 @@ export async function completePersistentLesson(
          VALUES ($1, $2, $3, $4::timestamptz)`,
         [session.lessonSessionId, candidateId, candidateId, now.toISOString()],
       );
-      await services.outbox.enqueueInTransaction(queryable, {
-        idempotencyKey: candidateId,
-        kind: 'profile_update_candidate',
-        lessonSessionId: session.lessonSessionId,
-        learnerKey: session.learnerId,
-        credentialRef: session.credentialRef,
-        candidateId,
-        payload: asJson(candidate),
-      }, now);
+      await services.outbox.enqueueInTransaction(
+        queryable,
+        {
+          idempotencyKey: candidateId,
+          kind: 'profile_update_candidate',
+          lessonSessionId: session.lessonSessionId,
+          learnerKey: session.learnerId,
+          credentialRef: session.credentialRef,
+          candidateId,
+          payload: asJson(candidate),
+        },
+        now,
+      );
       return {
         immediateConclusion: 'classroom_completed',
         profileUpdate: 'queued',

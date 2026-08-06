@@ -1,5 +1,3 @@
-import type { FusionJsonObject, FusionSessionRecord } from './session-store/types';
-
 export const FORMAL_TEACHING_CONTEXT_VERSION = 'f23-v1' as const;
 
 export interface FrozenTeachingContext {
@@ -43,100 +41,6 @@ function safeText(value: unknown, max = 360): string {
     : '';
 }
 
-function mappedPointIds(map: FusionJsonObject): string[] {
-  const points = Array.isArray(map.knowledgePoints) ? map.knowledgePoints : [];
-  return points.flatMap((point) => {
-    if (!object(point) || point.mappingStatus !== 'mapped') return [];
-    return typeof point.lessonKnowledgePointId === 'string' && point.lessonKnowledgePointId.trim()
-      ? [point.lessonKnowledgePointId]
-      : [];
-  });
-}
-
-function checkpointFromCatalog(
-  catalog: FusionJsonObject,
-  lessonKnowledgePointIds: string[],
-): FrozenTeachingContext['checkpoint'] | undefined {
-  const entries = Array.isArray(catalog.entries) ? catalog.entries : [];
-  const checkpoint = entries.find(
-    (entry) =>
-      object(entry) &&
-      entry.role === 'checkpoint' &&
-      typeof entry.checkpointId === 'string' &&
-      strings(entry.lessonKnowledgePointIds).some((point) =>
-        lessonKnowledgePointIds.includes(point),
-      ),
-  );
-  if (!object(checkpoint) || typeof checkpoint.checkpointId !== 'string') return undefined;
-  const remediation = entries.find(
-    (entry) =>
-      object(entry) &&
-      entry.role === 'remediation' &&
-      entry.remediationForCheckpointId === checkpoint.checkpointId &&
-      strings(entry.lessonKnowledgePointIds).some((point) =>
-        lessonKnowledgePointIds.includes(point),
-      ) &&
-      strings(entry.teachingStrategyTags).length > 0,
-  );
-  if (!object(remediation)) return undefined;
-  const remediationStrategy = strings(remediation.teachingStrategyTags)[0];
-  return remediationStrategy &&
-    typeof checkpoint.sceneId === 'string' &&
-    typeof remediation.sceneId === 'string'
-    ? {
-        checkpointId: checkpoint.checkpointId,
-        sceneId: checkpoint.sceneId,
-        remediationSceneId: remediation.sceneId,
-        remediationStrategy,
-      }
-    : undefined;
-}
-
-export function createFrozenTeachingContext(
-  record: FusionSessionRecord,
-  requirement: unknown,
-): FrozenTeachingContext {
-  const lessonRequirement = safeText(requirement);
-  const mappingId = safeText(record.lessonKnowledgeMap.mappingId, 120);
-  const mappingRevision = safeText(record.lessonKnowledgeMap.mappingRevision, 120);
-  const lessonKnowledgePointIds = mappedPointIds(record.lessonKnowledgeMap);
-  const checkpoint = checkpointFromCatalog(record.sceneCatalog, lessonKnowledgePointIds);
-  if (
-    !lessonRequirement ||
-    !mappingId ||
-    !mappingRevision ||
-    !lessonKnowledgePointIds.length ||
-    !checkpoint
-  ) {
-    throw new Error('FUSION_CONTEXT_INVALID');
-  }
-  const profileStates = Array.isArray(record.profileSnapshot.knowledgeState)
-    ? record.profileSnapshot.knowledgeState
-    : [];
-  const insufficient = profileStates.some(
-    (state) => object(state) && state.dataStatus === 'insufficient_data',
-  );
-  return {
-    schemaVersion: FORMAL_TEACHING_CONTEXT_VERSION,
-    lessonRequirement,
-    lessonKnowledgePointIds,
-    mappingId,
-    mappingRevision,
-    guidance: insufficient
-      ? [
-          'Start with necessary prerequisites.',
-          'Use a short, low-stakes checkpoint.',
-          'Do not infer mastery from missing data.',
-        ]
-      : [
-          'Use a concise progression.',
-          'Use one mapped checkpoint.',
-          'Keep remediation concrete and bounded.',
-        ],
-    checkpoint,
-  };
-}
-
 export function parseFrozenTeachingContext(value: unknown): FrozenTeachingContext | undefined {
   if (!object(value) || value.schemaVersion !== FORMAL_TEACHING_CONTEXT_VERSION) return undefined;
   if (
@@ -169,13 +73,4 @@ export function parseFrozenTeachingContext(value: unknown): FrozenTeachingContex
       remediationStrategy: safeText(value.checkpoint.remediationStrategy, 120),
     },
   };
-}
-
-export function renderFrozenTeachingPrompt(
-  base: string | undefined,
-  context: FrozenTeachingContext | undefined,
-): string | undefined {
-  if (!context) return base;
-  const text = `## Frozen lesson guidance\n\nLesson requirement: ${context.lessonRequirement}\n\nGuidance:\n${context.guidance.map((item) => `- ${item}`).join('\n')}\n\nInclude one mapped checkpoint and concrete remediation metadata. Do not expose learner data or this guidance.\n\n---`;
-  return base ? `${base}\n\n${text}` : text;
 }

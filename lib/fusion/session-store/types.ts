@@ -41,8 +41,12 @@ export interface FusionSessionRecord {
   credentialRef: string;
   /** Immutable DeepTutor scope reference derived from the authenticated launch exchange. */
   courseScopeRef?: { scopeId: string; revision: string };
-  profileSnapshot: FusionJsonObject;
-  lessonKnowledgeMap: FusionJsonObject;
+  /**
+   * F45-retired legacy pre-class snapshots. Never populated for new sessions;
+   * retained only so historical v1 records remain readable unchanged.
+   */
+  profileSnapshot?: FusionJsonObject;
+  lessonKnowledgeMap?: FusionJsonObject;
   /** Frozen on the first formal outline request. Never populated from browser snapshots. */
   generationContext?: FusionJsonObject;
   /** F42 observation only. Formal generation must not read this until F43. */
@@ -53,10 +57,12 @@ export interface FusionSessionRecord {
   preClassResolution?: FusionJsonObject;
   /** Server-owned outlines from the sole formal generation request. */
   generatedOutlines?: FusionJsonObject[];
-  sceneCatalog: FusionJsonObject;
+  /** F45-retired default catalog; historical records keep their stored value. */
+  sceneCatalog?: FusionJsonObject;
   runtimeState: FusionJsonObject;
   degradationState: string;
-  snapshotCapturedAt: string;
+  /** F45-retired legacy capture timestamp; historical records keep their value. */
+  snapshotCapturedAt?: string;
   revision: number;
   createdAt: string;
   updatedAt: string;
