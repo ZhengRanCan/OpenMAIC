@@ -8,21 +8,6 @@
   "home": {
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん",
-    "fusion": {
-      "badge": "デモ",
-      "title": "DeepTutor のデモ学習者プロファイル",
-      "description": "「一次函数」のデモ専用です。実在のアカウントや学習記録には紐付きません。",
-      "studentA": "デモ学習者 A",
-      "studentADesc": "基礎の補強：ゆっくりした進行、図、段階的な説明",
-      "studentB": "デモ学習者 B",
-      "studentBDesc": "発展的な挑戦：基礎復習を短縮し、総合課題を追加",
-      "selected": "選択済み",
-      "preparing": "準備中…",
-      "topicHint": "このデモは現在、「一次函数」を含む授業リクエストのみ対応しています。",
-      "unavailable": "デモプロファイルは一時的に利用できません。再試行するか、無効にして通常生成してください。",
-      "retry": "再試行",
-      "normalGeneration": "無効にして通常生成"
-    },
     "formalFusion": {
       "badge": "Local test",
       "title": "Formal DeepTutor connection",
@@ -945,7 +930,6 @@
     "outlineRetrying": "アウトライン生成に問題があります。リトライしています...",
     "outlineEmptyResponse": "モデルから有効なアウトラインが返されませんでした。モデルの設定を確認して再度お試しください",
     "outlineGenerateFailed": "アウトラインの生成に失敗しました。しばらくしてからお試しください",
-    "fusionSessionUnavailable": "デモプロファイルのセッションが無効か、一時的に利用できません。ホームに戻って選び直すか、無効にして通常生成してください。",
     "sceneGenerateFailed": "シーンの生成に失敗しました。しばらくしてからお試しください",
     "sceneGenerateAuthFailed": "モデルプロバイダーが認証情報を拒否したため、シーン生成に失敗しました。モデル設定を確認してください。",
     "sceneGenerateRateLimited": "シーン生成がレート制限されています。少し待ってからもう一度お試しください。",

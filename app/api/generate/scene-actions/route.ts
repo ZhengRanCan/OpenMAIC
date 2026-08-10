@@ -28,10 +28,6 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import {
-  appendFusionTeachingPrompt,
-  lookupFusionLessonSession,
-} from '@/lib/fusion/session-catalog';
-import {
   appendFormalTeachingPrompt,
   formalFusionErrorResponse,
   FormalFusionError,
@@ -48,18 +44,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
-    const fusionLookup =
-      formalFusion.kind === 'resolved'
-        ? { kind: 'none' as const }
-        : lookupFusionLessonSession(body.fusionSessionId);
-    if (fusionLookup.kind === 'invalid') {
-      return apiError(
-        'INVALID_REQUEST',
-        400,
-        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
-      );
-    }
-    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
     const {
       outline,
       allOutlines,
@@ -179,9 +163,7 @@ export async function POST(req: NextRequest) {
       previousSpeeches: incomingPreviousSpeeches ?? [],
     };
     const effectiveLanguageDirective = appendFormalTeachingPrompt(
-      formalFusion.kind === 'resolved'
-        ? undefined
-        : appendFusionTeachingPrompt(languageDirective, fusionSession),
+      formalFusion.kind === 'resolved' ? undefined : languageDirective,
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
 

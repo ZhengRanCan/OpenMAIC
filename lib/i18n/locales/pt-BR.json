@@ -8,21 +8,6 @@
   "home": {
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
     "greetingWithName": "Olá, {{name}}",
-    "fusion": {
-      "badge": "Demonstração",
-      "title": "Perfil de aluno de demonstração do DeepTutor",
-      "description": "Apenas para a demonstração de “一次函数”. Não está ligado a uma conta real nem a registros de aprendizagem.",
-      "studentA": "Aluno de demonstração A",
-      "studentADesc": "Revisão básica: ritmo mais lento, recursos visuais e explicações passo a passo",
-      "studentB": "Aluno de demonstração B",
-      "studentBDesc": "Desafio avançado: reduzir a revisão básica e incluir tarefas integradas",
-      "selected": "Selecionado",
-      "preparing": "Preparando…",
-      "topicHint": "Esta demonstração atualmente só aceita pedidos de curso que contenham “一次函数”.",
-      "unavailable": "O perfil de demonstração está indisponível no momento. Tente novamente ou desative-o para gerar normalmente.",
-      "retry": "Tentar novamente",
-      "normalGeneration": "Desativar e gerar normalmente"
-    },
     "formalFusion": {
       "badge": "Local test",
       "title": "Formal DeepTutor connection",
@@ -945,7 +930,6 @@
     "outlineRetrying": "Problema na geração do roteiro, tentando novamente...",
     "outlineEmptyResponse": "O modelo não retornou roteiros válidos. Verifique a configuração do modelo e tente novamente",
     "outlineGenerateFailed": "Falha ao gerar roteiro, tente novamente mais tarde",
-    "fusionSessionUnavailable": "A sessão do perfil de demonstração expirou ou está indisponível. Volte à página inicial para escolhê-lo novamente ou desative-o para gerar normalmente.",
     "sceneGenerateFailed": "Falha ao gerar cena, tente novamente mais tarde",
     "sceneGenerateAuthFailed": "A geração da cena falhou porque o provedor do modelo rejeitou as credenciais. Verifique a configuração do modelo.",
     "sceneGenerateRateLimited": "A geração da cena atingiu o limite de requisições. Aguarde um momento e tente novamente.",

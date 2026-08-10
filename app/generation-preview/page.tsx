@@ -157,11 +157,8 @@ function GenerationPreviewContent() {
   const isReviewingOutlines = session?.previewPhase === 'review';
 
   const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
-    if (
-      (session?.fusionSessionId || session?.lessonSessionId) &&
-      failure.errorCode === 'INVALID_REQUEST'
-    ) {
-      return t('generation.fusionSessionUnavailable');
+    if (session?.lessonSessionId && failure.errorCode === 'INVALID_REQUEST') {
+      return t('generation.sceneGenerateFailed');
     }
 
     if (
@@ -613,7 +610,6 @@ function GenerationPreviewContent() {
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
-                fusionSessionId: currentSession.fusionSessionId,
                 lessonSessionId: currentSession.lessonSessionId,
               }),
             ),
@@ -623,15 +619,12 @@ function GenerationPreviewContent() {
               if (!res.ok) {
                 return res.json().then((d) => {
                   const isFusionSessionError =
-                    (currentSession.fusionSessionId || currentSession.lessonSessionId) &&
-                    d?.errorCode === 'INVALID_REQUEST';
+                    currentSession.lessonSessionId && d?.errorCode === 'INVALID_REQUEST';
                   const responseError =
                     typeof d?.error === 'string' ? d.error : t('generation.outlineGenerateFailed');
                   reject(
                     new Error(
-                      isFusionSessionError
-                        ? t('generation.fusionSessionUnavailable')
-                        : responseError,
+                      isFusionSessionError ? t('generation.outlineGenerateFailed') : responseError,
                     ),
                   );
                 });
@@ -995,7 +988,6 @@ function GenerationPreviewContent() {
           agents,
           languageDirective,
           requirements: currentSession.requirements,
-          fusionSessionId: currentSession.fusionSessionId,
           lessonSessionId: currentSession.lessonSessionId,
         },
         signal,
@@ -1020,7 +1012,6 @@ function GenerationPreviewContent() {
           previousSpeeches: [],
           userProfile,
           languageDirective,
-          fusionSessionId: currentSession.fusionSessionId,
           lessonSessionId: currentSession.lessonSessionId,
         },
         signal,
@@ -1095,7 +1086,6 @@ function GenerationPreviewContent() {
           agents,
           userProfile,
           languageDirective,
-          fusionSessionId: currentSession.fusionSessionId,
           lessonSessionId: currentSession.lessonSessionId,
         }),
       );

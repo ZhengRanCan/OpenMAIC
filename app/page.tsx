@@ -67,7 +67,6 @@ import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
-import { isSupportedFusionDemoTopic } from '@/lib/fusion/topic';
 import { db } from '@/lib/utils/database';
 
 const log = createLogger('Home');
@@ -91,7 +90,6 @@ interface FormState {
   vocationalTestMode: boolean;
 }
 
-type FusionDemoStudent = 'a' | 'b';
 type ListedClassroom = StageListItem & { shared?: boolean };
 type ClassroomTimeField = 'updatedAt' | 'createdAt';
 
@@ -129,7 +127,7 @@ function HomePage() {
   const { cachedValue: cachedRequirement, updateCache: updateRequirementCache } =
     useDraftCache<string>({ key: 'requirementDraft' });
 
-  // A usable LLM provider exists ⇒ a concrete model is always selected (#580
+  // A usable LLM provider exists 鈬?a concrete model is always selected (#580
   // invariant). Gate generation on this single condition (state A vs B)
   // instead of inspecting modelId directly.
   const providersConfig = useSettingsStore((s) => s.providersConfig);
@@ -180,9 +178,6 @@ function HomePage() {
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedFusionDemo, setSelectedFusionDemo] = useState<FusionDemoStudent | null>(null);
-  const [isPreparingFusionSession, setIsPreparingFusionSession] = useState(false);
-  const [fusionError, setFusionError] = useState(false);
   const [formalFusionConnection, setFormalFusionConnection] =
     useState<FormalFusionConnection | null>(null);
   const [formalLessonSessionId, setFormalLessonSessionId] = useState<string | null>(null);
@@ -394,10 +389,6 @@ function HomePage() {
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
-    if (field === 'requirement' && !isSupportedFusionDemoTopic(value as string)) {
-      setSelectedFusionDemo(null);
-      setFusionError(false);
-    }
     if (field === 'requirement') {
       // A formal session freezes a profile/map snapshot for one course request.
       // Editing that request requires an explicit fresh local launch.
@@ -479,8 +470,6 @@ function HomePage() {
       }
 
       setFormalLessonSessionId(lessonSessionId);
-      setSelectedFusionDemo(null);
-      setFusionError(false);
       setError(null);
     } catch (err) {
       log.warn('Unable to create the formal Fusion session:', err);
@@ -532,45 +521,14 @@ function HomePage() {
     setError(null);
 
     try {
-      let fusionSessionId: string | undefined;
       const lessonSessionId = formalLessonSessionId ?? undefined;
-      if (selectedFusionDemo) {
-        setIsPreparingFusionSession(true);
-        try {
-          const response = await fetch('/api/fusion/demo-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              demoStudent: selectedFusionDemo,
-              requirement: form.requirement,
-            }),
-          });
-          const data: unknown = await response.json().catch(() => null);
-          const fusionSessionIdFromResponse =
-            typeof data === 'object' && data !== null && 'fusionSessionId' in data
-              ? (data as { fusionSessionId?: unknown }).fusionSessionId
-              : undefined;
-          if (!response.ok || typeof fusionSessionIdFromResponse !== 'string') {
-            throw new Error('Fusion demo session was not created');
-          }
-          fusionSessionId = fusionSessionIdFromResponse;
-          setFusionError(false);
-        } catch (err) {
-          log.warn('Unable to create the selected Fusion demo session:', err);
-          setFusionError(true);
-          setError(t('home.fusion.unavailable'));
-          return;
-        } finally {
-          setIsPreparingFusionSession(false);
-        }
-      }
 
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
-        // 演示会话只允许向模型传递经审阅的教学策略和课程请求；不能把本地
-        // 昵称或简介与合成演示画像混在一起。普通生成维持原有行为。
-        ...(selectedFusionDemo || lessonSessionId
+        // 婕旂ず浼氳瘽鍙厑璁稿悜妯″瀷浼犻€掔粡瀹￠槄鐨勬暀瀛︾瓥鐣ュ拰璇剧▼璇锋眰锛涗笉鑳芥妸鏈湴
+        // 鏄电О鎴栫畝浠嬩笌鍚堟垚婕旂ず鐢诲儚娣峰湪涓€璧枫€傛櫘閫氱敓鎴愮淮鎸佸師鏈夎涓恒€?
+        ...(lessonSessionId
           ? {}
           : {
               userNickname: userProfile.nickname || undefined,
@@ -629,7 +587,6 @@ function HomePage() {
 
       const sessionState = {
         sessionId: nanoid(),
-        fusionSessionId,
         lessonSessionId,
         requirements,
         pdfText: '',
@@ -664,12 +621,7 @@ function HomePage() {
       hour12: false,
     }).format(new Date(timestamp));
 
-  const isFusionDemoSupported = isSupportedFusionDemoTopic(form.requirement);
-  const canGenerate =
-    !!form.requirement.trim() &&
-    hasUsableProvider &&
-    !isPreparingFusionSession &&
-    !isConnectingFormalFusion;
+  const canGenerate = !!form.requirement.trim() && hasUsableProvider && !isConnectingFormalFusion;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -696,7 +648,7 @@ function HomePage() {
           className="hidden"
         />
       )}
-      {/* ═══ Top-right pill (unchanged) ═══ */}
+      {/* 鈺愨晲鈺?Top-right pill (unchanged) 鈺愨晲鈺?*/}
       <div
         ref={toolbarRef}
         className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
@@ -787,7 +739,7 @@ function HomePage() {
         initialSection={settingsSection}
       />
 
-      {/* ═══ Background Decor ═══ */}
+      {/* 鈺愨晲鈺?Background Decor 鈺愨晲鈺?*/}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
           className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"
@@ -799,7 +751,7 @@ function HomePage() {
         />
       </div>
 
-      {/* ═══ Hero section: title + input (centered, wider) ═══ */}
+      {/* 鈺愨晲鈺?Hero section: title + input (centered, wider) 鈺愨晲鈺?*/}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -809,7 +761,7 @@ function HomePage() {
           classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
         )}
       >
-        {/* ── Logo ── */}
+        {/* 鈹€鈹€ Logo 鈹€鈹€ */}
         <motion.img
           src="/logo-horizontal.png"
           alt="OpenMAIC"
@@ -824,7 +776,7 @@ function HomePage() {
           className="h-12 md:h-16 mb-2 -ml-2 md:-ml-3"
         />
 
-        {/* ── Slogan ── */}
+        {/* 鈹€鈹€ Slogan 鈹€鈹€ */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -834,7 +786,7 @@ function HomePage() {
           {t('home.slogan')}
         </motion.p>
 
-        {/* ── Unified input area ── */}
+        {/* 鈹€鈹€ Unified input area 鈹€鈹€ */}
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -842,7 +794,7 @@ function HomePage() {
           className="w-full"
         >
           <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
-            {/* ── Greeting + Profile + Agents ── */}
+            {/* 鈹€鈹€ Greeting + Profile + Agents 鈹€鈹€ */}
             <div className="relative z-20 flex items-start justify-between">
               <GreetingBar />
               <div className="pr-3 pt-3.5 shrink-0">
@@ -923,108 +875,6 @@ function HomePage() {
                 <p className="mt-2 text-[11px] text-destructive" role="alert">
                   {formalFusionError}
                 </p>
-              )}
-            </div>
-
-            {/* F02：只在支持的课题中启用经审阅的离线演示画像。 */}
-            <div
-              className="mx-3 mb-2 rounded-xl border border-violet-200/70 bg-violet-50/60 p-3 dark:border-violet-900/70 dark:bg-violet-950/20"
-              role="group"
-              aria-label={t('home.fusion.title')}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/60 dark:text-violet-200">
-                      {t('home.fusion.badge')}
-                    </span>
-                    <p className="text-xs font-medium text-violet-950 dark:text-violet-100">
-                      {t('home.fusion.title')}
-                    </p>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                    {t('home.fusion.description')}
-                  </p>
-                </div>
-                {selectedFusionDemo && isFusionDemoSupported && (
-                  <span className="shrink-0 rounded-full border border-violet-300/80 bg-white/80 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:border-violet-700 dark:bg-violet-950/70 dark:text-violet-200">
-                    {isPreparingFusionSession
-                      ? t('home.fusion.preparing')
-                      : t('home.fusion.selected')}
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {(['a', 'b'] as const).map((demoStudent) => {
-                  const selected = selectedFusionDemo === demoStudent;
-                  const titleKey =
-                    demoStudent === 'a' ? 'home.fusion.studentA' : 'home.fusion.studentB';
-                  const descriptionKey =
-                    demoStudent === 'a' ? 'home.fusion.studentADesc' : 'home.fusion.studentBDesc';
-                  return (
-                    <button
-                      key={demoStudent}
-                      type="button"
-                      aria-pressed={selected}
-                      disabled={!isFusionDemoSupported || isPreparingFusionSession}
-                      onClick={() => {
-                        setSelectedFusionDemo(demoStudent);
-                        setFormalLessonSessionId(null);
-                        setFormalFusionError(null);
-                        setFusionError(false);
-                        setError(null);
-                      }}
-                      className={cn(
-                        'rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 dark:focus-visible:ring-offset-slate-900',
-                        selected
-                          ? 'border-violet-400 bg-white text-violet-950 shadow-sm dark:border-violet-500 dark:bg-violet-950/70 dark:text-violet-100'
-                          : 'border-violet-200/80 bg-white/60 text-foreground hover:border-violet-300 hover:bg-white dark:border-violet-900/80 dark:bg-slate-950/20 dark:hover:border-violet-700',
-                      )}
-                    >
-                      <span className="block text-xs font-medium">{t(titleKey)}</span>
-                      <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
-                        {t(descriptionKey)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {!isFusionDemoSupported && (
-                <p className="mt-2 text-[11px] text-muted-foreground" role="status">
-                  {t('home.fusion.topicHint')}
-                </p>
-              )}
-
-              {fusionError && (
-                <div
-                  className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-2"
-                  role="alert"
-                >
-                  <p className="text-[11px] text-destructive">{t('home.fusion.unavailable')}</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleGenerate()}
-                      disabled={isPreparingFusionSession}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {t('home.fusion.retry')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedFusionDemo(null);
-                        setFusionError(false);
-                        setError(null);
-                      }}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                    >
-                      {t('home.fusion.normalGeneration')}
-                    </button>
-                  </div>
-                </div>
               )}
             </div>
 
@@ -1111,10 +961,10 @@ function HomePage() {
                   )}
                 >
                   <span className="rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-cyan-700 dark:bg-cyan-900/45 dark:text-cyan-300">
-                    测试功能
+                    娴嬭瘯鍔熻兘
                   </span>
                   <Sparkles className="size-3.5" />
-                  <span>职教任务</span>
+                  <span>鑱屾暀浠诲姟</span>
                   <span
                     className={cn(
                       'relative h-3.5 w-6 rounded-full transition-colors',
@@ -1131,13 +981,13 @@ function HomePage() {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                从当前输入框提交职教实操训练测试
+                浠庡綋鍓嶈緭鍏ユ鎻愪氦鑱屾暀瀹炴搷璁粌娴嬭瘯
               </TooltipContent>
             </Tooltip>
           </motion.div>
         )}
 
-        {/* ── Error ── */}
+        {/* 鈹€鈹€ Error 鈹€鈹€ */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -1151,7 +1001,7 @@ function HomePage() {
           )}
         </AnimatePresence>
 
-        {/* ── Import buttons (empty state) ── */}
+        {/* 鈹€鈹€ Import buttons (empty state) 鈹€鈹€ */}
         {listedClassrooms.length === 0 && (
           <div className="relative z-10 mt-4 flex items-center gap-4">
             <button
@@ -1176,7 +1026,7 @@ function HomePage() {
         )}
       </motion.div>
 
-      {/* ═══ Recent classrooms — collapsible ═══ */}
+      {/* 鈺愨晲鈺?Recent classrooms 鈥?collapsible 鈺愨晲鈺?*/}
       {listedClassrooms.length > 0 && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -1184,7 +1034,7 @@ function HomePage() {
           transition={{ delay: 0.5 }}
           className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
         >
-          {/* Trigger — divider-line with centered text */}
+          {/* Trigger 鈥?divider-line with centered text */}
           <div className="group w-full flex items-center gap-4 py-2">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
             <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
@@ -1248,7 +1098,7 @@ function HomePage() {
                 </button>
               )}
 
-              {/* Search toggle — icon that expands into an input in place */}
+              {/* Search toggle 鈥?icon that expands into an input in place */}
               <AnimatePresence initial={false}>
                 {!searchOpen ? (
                   <motion.button
@@ -1406,7 +1256,7 @@ function HomePage() {
         </motion.div>
       )}
 
-      {/* Footer — flows with content, at the very end */}
+      {/* Footer 鈥?flows with content, at the very end */}
       <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
         OpenMAIC Open Source Project
       </div>
@@ -1414,7 +1264,7 @@ function HomePage() {
   );
 }
 
-// ─── Greeting Bar — avatar + "Hi, Name", click to edit in-place ────
+// 鈹€鈹€鈹€ Greeting Bar 鈥?avatar + "Hi, Name", click to edit in-place 鈹€鈹€鈹€鈹€
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 
 function isCustomAvatar(src: string) {
@@ -1506,7 +1356,7 @@ function GreetingBar() {
         onChange={handleAvatarUpload}
       />
 
-      {/* ── Collapsed pill (always in flow) ── */}
+      {/* 鈹€鈹€ Collapsed pill (always in flow) 鈹€鈹€ */}
       {!open && (
         <div
           className="flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
@@ -1538,7 +1388,7 @@ function GreetingBar() {
         </div>
       )}
 
-      {/* ── Expanded panel (absolute, floating) ── */}
+      {/* 鈹€鈹€ Expanded panel (absolute, floating) 鈹€鈹€ */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -1549,7 +1399,7 @@ function GreetingBar() {
             className="absolute left-4 top-3.5 z-50 w-64"
           >
             <div className="rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06] shadow-[0_1px_8px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_8px_-2px_rgba(0,0,0,0.3)] px-2.5 py-2">
-              {/* ── Row: avatar + name ── */}
+              {/* 鈹€鈹€ Row: avatar + name 鈹€鈹€ */}
               <div
                 className="flex items-center gap-2.5 cursor-pointer transition-all duration-200"
                 onClick={() => {
@@ -1635,7 +1485,7 @@ function GreetingBar() {
                 </motion.div>
               </div>
 
-              {/* ── Expandable content ── */}
+              {/* 鈹€鈹€ Expandable content 鈹€鈹€ */}
               <div className="pt-2" onClick={(e) => e.stopPropagation()}>
                 {/* Avatar picker */}
                 <AnimatePresence>
@@ -1699,7 +1549,7 @@ function GreetingBar() {
   );
 }
 
-// ─── Classroom Card — clean, minimal style ──────────────────────
+// 鈹€鈹€鈹€ Classroom Card 鈥?clean, minimal style 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function ClassroomCard({
   classroom,
   slide,
@@ -1775,7 +1625,7 @@ function ClassroomCard({
 
   return (
     <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
-      {/* Thumbnail — large radius, no border, subtle bg */}
+      {/* Thumbnail 鈥?large radius, no border, subtle bg */}
       <div
         ref={thumbRef}
         className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
@@ -1790,7 +1640,7 @@ function ClassroomCard({
         ) : !slide ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="size-12 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/30 dark:to-blue-900/30 flex items-center justify-center">
-              <span className="text-xl opacity-50">📄</span>
+              <span className="text-xl opacity-50">馃搫</span>
             </div>
           </div>
         ) : null}
@@ -1825,7 +1675,7 @@ function ClassroomCard({
           </Tooltip>
         )}
 
-        {/* Delete — top-right, only on hover */}
+        {/* Delete 鈥?top-right, only on hover */}
         <AnimatePresence>
           {!confirmingDelete && !readOnly && (
             <motion.div
@@ -1890,13 +1740,13 @@ function ClassroomCard({
         </AnimatePresence>
       </div>
 
-      {/* Info — outside the thumbnail */}
+      {/* Info 鈥?outside the thumbnail */}
       <div className="mt-2.5 px-1 flex items-center gap-2">
         <span
           title={classroomTimestampTitle}
           className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400"
         >
-          {classroom.sceneCount} {t('classroom.slides')} · {displayedTimestampLabel}{' '}
+          {classroom.sceneCount} {t('classroom.slides')} 路 {displayedTimestampLabel}{' '}
           {formatTimestamp(displayedTimestamp)}
         </span>
         {editing ? (

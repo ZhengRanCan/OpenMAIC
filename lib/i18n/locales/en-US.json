@@ -8,21 +8,6 @@
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}",
-    "fusion": {
-      "badge": "Demo",
-      "title": "DeepTutor demo learner profile",
-      "description": "For the “linear function” demo only. It is not linked to a real account or learning record.",
-      "studentA": "Demo learner A",
-      "studentADesc": "Foundation review: slower pace, visuals, and step-by-step explanations",
-      "studentB": "Demo learner B",
-      "studentBDesc": "Advanced challenge: shorten basic review and add integrated tasks",
-      "selected": "Selected",
-      "preparing": "Preparing…",
-      "topicHint": "This demo currently supports course requests containing “一次函数” only.",
-      "unavailable": "The demo profile is temporarily unavailable. Retry, or turn it off and generate normally.",
-      "retry": "Retry",
-      "normalGeneration": "Turn off and generate normally"
-    },
     "formalFusion": {
       "badge": "Local test",
       "title": "Formal DeepTutor connection",
@@ -945,7 +930,6 @@
     "outlineRetrying": "Outline generation issue, retrying...",
     "outlineEmptyResponse": "Model returned no valid outlines. Please check model configuration and try again",
     "outlineGenerateFailed": "Outline generation failed, please try again later",
-    "fusionSessionUnavailable": "The demo profile session is unavailable or has expired. Return to the home page to choose it again, or turn it off and generate normally.",
     "sceneGenerateFailed": "Scene generation failed, please try again later",
     "sceneGenerateAuthFailed": "Scene generation failed because the model provider rejected the credentials. Please check your model configuration.",
     "sceneGenerateRateLimited": "Scene generation is rate limited. Please wait a moment and try again.",

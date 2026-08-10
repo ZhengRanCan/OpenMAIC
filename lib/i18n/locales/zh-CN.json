@@ -8,21 +8,6 @@
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}",
-    "fusion": {
-      "badge": "演示",
-      "title": "DeepTutor 演示学生画像",
-      "description": "仅用于“一次函数”演示，不关联真实账号或学习记录。",
-      "studentA": "演示学生 A",
-      "studentADesc": "基础巩固：慢节奏、图像与分步骤讲解",
-      "studentB": "演示学生 B",
-      "studentBDesc": "进阶挑战：压缩基础复习，加入综合任务",
-      "selected": "已选择",
-      "preparing": "正在准备…",
-      "topicHint": "本演示目前仅支持包含“一次函数”的课程需求。",
-      "unavailable": "演示画像暂时不可用。你可以重试，或关闭画像后按普通方式生成。",
-      "retry": "重试",
-      "normalGeneration": "关闭画像，普通生成"
-    },
     "formalFusion": {
       "badge": "本地测试",
       "title": "正式 DeepTutor 连接",
@@ -945,7 +930,6 @@
     "outlineRetrying": "大纲生成异常，正在重试...",
     "outlineEmptyResponse": "模型未返回有效的大纲内容，请检查模型配置后重试",
     "outlineGenerateFailed": "大纲生成失败，请稍后重试",
-    "fusionSessionUnavailable": "演示画像会话已失效或暂不可用。请返回首页重新选择画像，或关闭画像后按普通方式生成。",
     "sceneGenerateFailed": "场景生成失败，请稍后重试",
     "sceneGenerateAuthFailed": "场景生成失败：模型服务拒绝了当前凭据。请检查模型配置。",
     "sceneGenerateRateLimited": "场景生成触发限流，请稍后重试。",

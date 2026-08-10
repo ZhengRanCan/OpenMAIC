@@ -11,8 +11,6 @@ import type {
 // Session state stored in sessionStorage
 export interface GenerationSessionState {
   sessionId: string;
-  /** Opaque server-side FusionLessonSession handle; never contains profile text. */
-  fusionSessionId?: string;
   /** Opaque formal Fusion session id paired with an HttpOnly browser cookie. */
   lessonSessionId?: string;
   requirements: UserRequirements;

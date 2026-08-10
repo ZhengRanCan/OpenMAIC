@@ -8,21 +8,6 @@
   "home": {
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
     "greetingWithName": "안녕하세요, {{name}}!",
-    "fusion": {
-      "badge": "데모",
-      "title": "DeepTutor 데모 학습자 프로필",
-      "description": "“一次函数” 데모에만 사용되며 실제 계정이나 학습 기록과 연결되지 않습니다.",
-      "studentA": "데모 학습자 A",
-      "studentADesc": "기초 보완: 느린 속도, 시각 자료, 단계별 설명",
-      "studentB": "데모 학습자 B",
-      "studentBDesc": "심화 도전: 기초 복습을 줄이고 종합 과제를 추가",
-      "selected": "선택됨",
-      "preparing": "준비 중…",
-      "topicHint": "이 데모는 현재 “一次函数”가 포함된 수업 요청만 지원합니다.",
-      "unavailable": "데모 프로필을 일시적으로 사용할 수 없습니다. 다시 시도하거나 끄고 일반 생성하세요.",
-      "retry": "다시 시도",
-      "normalGeneration": "끄고 일반 생성"
-    },
     "formalFusion": {
       "badge": "Local test",
       "title": "Formal DeepTutor connection",
@@ -945,7 +930,6 @@
     "outlineRetrying": "개요 생성에 문제가 발생하여 재시도 중...",
     "outlineEmptyResponse": "모델이 유효한 개요를 반환하지 않았습니다. 모델 설정을 확인하고 다시 시도해주세요",
     "outlineGenerateFailed": "개요 생성에 실패했습니다. 잠시 후 다시 시도해주세요",
-    "fusionSessionUnavailable": "데모 프로필 세션이 만료되었거나 일시적으로 사용할 수 없습니다. 홈으로 돌아가 다시 선택하거나 끄고 일반 생성하세요.",
     "sceneGenerateFailed": "장면 생성에 실패했습니다. 잠시 후 다시 시도해주세요",
     "sceneGenerateAuthFailed": "모델 제공자가 현재 인증 정보를 거부해 장면 생성에 실패했습니다. 모델 설정을 확인해주세요.",
     "sceneGenerateRateLimited": "장면 생성 요청이 속도 제한에 걸렸습니다. 잠시 후 다시 시도해주세요.",

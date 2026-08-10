@@ -141,8 +141,6 @@ export async function fetchSceneContent(
     agents?: AgentInfo[];
     languageDirective?: string;
     requirements?: UserRequirements;
-    /** Opaque F02 session id; the server resolves its teaching context. */
-    fusionSessionId?: string;
     /** Opaque formal F23 session id; the server validates its paired cookie. */
     lessonSessionId?: string;
   },
@@ -194,8 +192,6 @@ export async function fetchSceneActions(
     previousSpeeches?: string[];
     userProfile?: string;
     languageDirective?: string;
-    /** Opaque F02 session id; the server resolves its teaching context. */
-    fusionSessionId?: string;
     /** Opaque formal F23 session id; the server validates its paired cookie. */
     lessonSessionId?: string;
   },
@@ -422,8 +418,6 @@ export interface GenerationParams {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
-  /** Opaque F02 session id carried through every remaining scene. */
-  fusionSessionId?: string;
   /** Opaque formal F23 session id carried through every remaining scene. */
   lessonSessionId?: string;
 }
@@ -530,7 +524,6 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageInfo: params.stageInfo,
               agents: params.agents,
               languageDirective: params.languageDirective,
-              fusionSessionId: params.fusionSessionId,
               lessonSessionId: params.lessonSessionId,
             },
             signal,
@@ -627,7 +620,6 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               previousSpeeches,
               userProfile: params.userProfile,
               languageDirective: params.languageDirective,
-              fusionSessionId: params.fusionSessionId,
               lessonSessionId: params.lessonSessionId,
             },
             signal,
@@ -780,7 +772,6 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageInfo: params.stageInfo,
             agents: params.agents,
             languageDirective: params.languageDirective,
-            fusionSessionId: params.fusionSessionId,
             lessonSessionId: params.lessonSessionId,
           },
           signal,
@@ -810,7 +801,6 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             previousSpeeches,
             userProfile: params.userProfile,
             languageDirective: params.languageDirective,
-            fusionSessionId: params.fusionSessionId,
             lessonSessionId: params.lessonSessionId,
           },
           signal,

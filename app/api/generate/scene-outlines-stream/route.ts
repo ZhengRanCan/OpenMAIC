@@ -39,10 +39,6 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import {
-  appendFusionTeachingPrompt,
-  lookupFusionLessonSession,
-} from '@/lib/fusion/session-catalog';
-import {
   appendFormalTeachingPrompt,
   formalFusionErrorResponse,
   FormalFusionError,
@@ -308,21 +304,6 @@ export async function POST(req: NextRequest) {
       body.lessonSessionId,
       body.requirements.requirement,
     );
-    // A formal session is authoritative: never combine it with the historical
-    // F02 Demo projection or browser-supplied profile fields.
-    const fusionLookup =
-      formalFusion.kind === 'resolved'
-        ? { kind: 'none' as const }
-        : lookupFusionLessonSession(body.fusionSessionId);
-    if (fusionLookup.kind === 'invalid') {
-      return apiError(
-        'INVALID_REQUEST',
-        400,
-        'The selected demo profile session is unavailable. Please continue without it or create a new demo session.',
-      );
-    }
-    const fusionSession = fusionLookup.kind === 'resolved' ? fusionLookup.session : undefined;
-
     // Get API configuration from request headers/body
     const {
       model: languageModel,
@@ -354,7 +335,7 @@ export async function POST(req: NextRequest) {
           ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
           : '';
     const userProfileText = appendFormalTeachingPrompt(
-      appendFusionTeachingPrompt(demoProfileText, fusionSession),
+      demoProfileText,
       formalFusion.kind === 'resolved' ? formalFusion.context : undefined,
     );
 

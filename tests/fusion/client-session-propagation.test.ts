@@ -52,7 +52,7 @@ function jsonResponse(body: unknown) {
   };
 }
 
-describe('F02 客户端会话传递', () => {
+describe('正式 Fusion 客户端会话传递', () => {
   beforeEach(() => {
     vi.resetModules();
     mockFetch.mockReset();
@@ -71,45 +71,6 @@ describe('F02 客户端会话传递', () => {
     mocks.pickNarratorAgent.mockReturnValue(undefined);
     mocks.resolveAgentVoiceOptions.mockResolvedValue({});
     mocks.listAgents.mockReturnValue([]);
-  });
-
-  it('内容和动作请求仅传递同一个 opaque session id，不传递 promptText', async () => {
-    const fusionSessionId = 'fusion-demo-linear-function-a-v1';
-    mockFetch
-      .mockResolvedValueOnce(jsonResponse({ success: true, content: { elements: [] } }))
-      .mockResolvedValueOnce(jsonResponse({ success: true, scene: { id: 'scene-1' } }));
-
-    const { fetchSceneActions, fetchSceneContent } =
-      await import('@/lib/hooks/use-scene-generator');
-    await fetchSceneContent(
-      {
-        outline,
-        allOutlines: [outline],
-        stageId: 'stage-1',
-        stageInfo: { name: '一次函数课堂' },
-        fusionSessionId,
-      },
-      undefined,
-      { maxRetries: 0 },
-    );
-    await fetchSceneActions(
-      {
-        outline,
-        allOutlines: [outline],
-        content: { elements: [] },
-        stageId: 'stage-1',
-        fusionSessionId,
-      },
-      undefined,
-      { maxRetries: 0 },
-    );
-
-    const contentBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
-    const actionsBody = JSON.parse(mockFetch.mock.calls[1][1].body as string);
-    expect(contentBody.fusionSessionId).toBe(fusionSessionId);
-    expect(actionsBody.fusionSessionId).toBe(fusionSessionId);
-    expect(JSON.stringify([contentBody, actionsBody])).not.toContain('promptText');
-    expect(JSON.stringify([contentBody, actionsBody])).not.toContain('demo-student-a');
   });
 
   it('formal session id follows content and action requests without profile data', async () => {
