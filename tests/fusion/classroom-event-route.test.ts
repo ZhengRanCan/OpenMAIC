@@ -17,6 +17,7 @@ import {
 import type { Queryable } from '@/lib/fusion/reliability/postgres';
 import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
 import { createLessonRuntimeState } from '@/lib/fusion/lesson-runtime-state';
+import { classroomObservationLedger } from '@/lib/fusion/classroom-observation-ledger';
 
 function request(body: unknown) {
   return new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
@@ -313,6 +314,225 @@ describe('F20 authoritative persistent classroom event route', () => {
       revision: 0,
       runtimeState: initialRuntime,
     });
+    clearProductionFusionServices(services as never);
+    await db.close();
+  });
+});
+
+describe('F46 formal scene catalog binding', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function createFormalSession(catalog?: unknown, digest = 'sha256:'.concat('a'.repeat(64))) {
+    const db = new PGlite();
+    await db.waitReady;
+    const queryable = db as unknown as Queryable;
+    await ensureFusionSessionSchema(queryable);
+    await ensureFusionOutboxSchema(queryable);
+    await ensureFusionLessonFactsSchema(queryable);
+    const transaction = <T>(body: (connection: Queryable) => Promise<T>): Promise<T> =>
+      db.transaction((connection) => body(connection as unknown as Queryable));
+    const sessions = new PgFusionSessionStore(queryable, transaction);
+    const outbox = new PgFusionOutboxStore(queryable, transaction);
+    const browserToken = crypto.randomUUID();
+    const lessonSessionId = 'formal-f46-session';
+    await sessions.create(
+      {
+        lessonSessionId,
+        learnerId: 'allowlisted-synthetic-learner',
+        credentialRef: 'fusion/delegations/reference-only',
+        frozenLessonGenerationContext: {
+          schemaVersion: 'v1',
+          contextId: 'formal-context-1',
+          semanticRequest: {
+            semanticRequestId: 'req-1',
+            semanticRequestRevision: 'r1',
+            semanticRequestDigest: digest,
+            normalizedTopic: 'linear functions',
+            normalizedLearningObjectives: ['understand slope'],
+            authorizedKnowledgeScope: { namespace: 'test', scopeId: 'course-1' },
+            sourceRevisions: ['fixture'],
+            createdAt: '2026-08-11T00:00:00.000Z',
+          },
+          proposal: {
+            proposalId: 'proposal-1',
+            basedOnSemanticRequestId: 'req-1',
+            basedOnSemanticRequestRevision: 'r1',
+            semanticRequestDigest: digest,
+            resolutionStatus: 'ready',
+            interpretedLessonSemantics: {
+              normalizedTopic: 'linear functions',
+              normalizedLearningObjectives: ['understand slope'],
+            },
+            lessonKnowledgeMap: {
+              mappingId: 'semantic-map-1',
+              mappingRevision: '1',
+              knowledgeRefs: [{ namespace: 'test', scopeId: 'course-1', id: 'semantic-point-1' }],
+            },
+            learnerCognitiveProjection: {
+              projectionRevision: '1',
+              signals: ['insufficient_data'],
+            },
+            teachingGuidance: { guidanceRevision: '1', recommendedApproaches: ['worked-example'] },
+            sourceRevisions: ['fixture'],
+            clarificationIssues: [],
+            warnings: [],
+            createdAt: '2026-08-11T00:00:00.000Z',
+          },
+          resolution: {
+            schemaVersion: 'v1',
+            semanticRequestId: 'req-1',
+            semanticRequestRevision: 'r1',
+            semanticRequestDigest: digest,
+            status: 'ready',
+            clarificationIssues: [],
+          },
+          frozenAt: '2026-08-11T00:00:00.000Z',
+        },
+        sceneCatalog: catalog ? JSON.parse(JSON.stringify(catalog)) : undefined,
+        runtimeState: JSON.parse(JSON.stringify(createLessonRuntimeState('checkpoint-1'))),
+        degradationState: 'none',
+        expiresAt: '2030-01-01T00:00:00.000Z',
+      },
+      browserToken,
+    );
+    const services = {
+      sessions,
+      outbox,
+      credentials: {
+        get: vi.fn(async () => ({
+          token: crypto.randomUUID(),
+          tokenId: 'runtime-only',
+          learnerId: 'allowlisted-synthetic-learner',
+          audience: 'openmaic',
+          scope: ['diagnosis:request'],
+          expiresAt: 9_999_999_999,
+          lessonSessionId,
+        })),
+      },
+      circuits: new CapabilityCircuitBreakers({ failureThreshold: 2, cooldownMs: 1 }),
+    };
+    configureProductionFusionServices(services as never);
+    return { db, services, browserToken };
+  }
+
+  function formalCatalog(digest: string) {
+    return {
+      catalogId: 'fusion-scene-catalog-formal-1',
+      catalogRevision: '1',
+      semanticRequestDigest: digest,
+      contextId: 'formal-context-1',
+      entries: [
+        {
+          sceneId: 'teach-1',
+          order: 1,
+          role: 'teach',
+          lessonKnowledgePointIds: ['semantic-point-1'],
+          teachingStrategyTags: [],
+        },
+        {
+          sceneId: 'checkpoint-1',
+          order: 2,
+          role: 'checkpoint',
+          checkpointId: 'checkpoint-1',
+          lessonKnowledgePointIds: ['semantic-point-1'],
+          teachingStrategyTags: [],
+        },
+      ],
+    };
+  }
+
+  function formalEventRequest(browserToken: string) {
+    return new NextRequest('http://openmaic.local/api/fusion/classroom-events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `openmaic_fusion_session=${browserToken}`,
+      },
+      body: JSON.stringify({
+        question: 'synthetic question',
+        answer: 'synthetic answer',
+        localAssessment: { gradingMode: 'synthetic', correctness: 'incorrect' },
+      }),
+    });
+  }
+
+  it('rejects formal events when the authoritative catalog is missing', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'false');
+    const { db, services, browserToken } = await createFormalSession();
+    const response = await POST(formalEventRequest(browserToken));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: 'The authoritative classroom catalog is unavailable.',
+    });
+    clearProductionFusionServices(services as never);
+    await db.close();
+  });
+
+  it('rejects formal events when the catalog digest does not match the frozen context', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'false');
+    const digest = 'sha256:'.concat('a'.repeat(64));
+    const { db, services, browserToken } = await createFormalSession(
+      formalCatalog('sha256:'.concat('b'.repeat(64))),
+      digest,
+    );
+    const response = await POST(formalEventRequest(browserToken));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: 'The authoritative classroom catalog is unavailable.',
+    });
+    clearProductionFusionServices(services as never);
+    await db.close();
+  });
+
+  it('records a successful continue for a formal session with a matching catalog', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubEnv('FUSION_DEVELOPMENT_MOCK_ENABLED', 'false');
+    const digest = 'sha256:'.concat('a'.repeat(64));
+    const recordSpy = vi.spyOn(classroomObservationLedger, 'record');
+    const { db, services, browserToken } = await createFormalSession(formalCatalog(digest), digest);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, init) => {
+        const event = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 'v1',
+            eventId: event.eventId,
+            correctness: 'correct',
+            diagnoses: [],
+            teachingIntent: {
+              schemaVersion: 'v1',
+              kind: 'continue',
+              targetLessonKnowledgePointIds: ['semantic-point-1'],
+              recommendedStrategy: 'continue',
+            },
+            warnings: [],
+            createdAt: new Date().toISOString(),
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+    const response = await POST(formalEventRequest(browserToken));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      continue: true,
+    });
+    expect(recordSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ kind: 'continue' }),
+      'executed',
+    );
+    recordSpy.mockRestore();
     clearProductionFusionServices(services as never);
     await db.close();
   });
