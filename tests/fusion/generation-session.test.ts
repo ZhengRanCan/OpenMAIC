@@ -190,6 +190,16 @@ describe('F23 formal generation session', () => {
       ]),
     );
     await persistFormalLessonOutlines(request(), frozen, outlines);
+    expect(configured.current().sceneCatalog).toMatchObject({
+      semanticRequestDigest: frozen.context.semanticRequest.semanticRequestDigest,
+      entries: expect.arrayContaining([
+        expect.objectContaining({ role: 'checkpoint' }),
+        expect.objectContaining({ role: 'remediation' }),
+      ]),
+    });
+    expect(configured.current().runtimeState).toMatchObject({
+      currentSceneId: expect.stringContaining('fusion-checkpoint-scene-'),
+    });
     const reused = await resolveFormalFusion(request(), 'lesson-1');
     expect(reused).toMatchObject({ kind: 'resolved', context: frozen.context, outlines });
     await expect(
@@ -208,6 +218,53 @@ describe('F23 formal generation session', () => {
     await expect(resolveFormalFusion(request(), 'lesson-2')).rejects.toMatchObject({
       code: 'FUSION_SESSION_MISMATCH',
     } satisfies Partial<FormalFusionError>);
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('fails closed when the persisted formal catalog is missing or digest-mismatched', async () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          new Response(JSON.stringify(responseFor(String(init?.body))), { status: 200 }),
+      ),
+    );
+    const configured = configure(record());
+
+    const frozen = await freezeFormalFusionForOutline(
+      request(),
+      'lesson-1',
+      'Explain linear functions in fifteen minutes',
+    );
+    expect(frozen.kind).toBe('resolved');
+    if (frozen.kind !== 'resolved') return;
+    const outlines = completeFormalLessonOutlines(frozen.context, [
+      {
+        id: 'teach-1',
+        type: 'slide',
+        title: 'Server generated teaching scene',
+        description: 'Teach the frozen requirement.',
+        keyPoints: ['point-1'],
+        order: 1,
+      },
+    ]);
+    await persistFormalLessonOutlines(request(), frozen, outlines);
+
+    const persistedCatalog = configured.current().sceneCatalog;
+    delete (configured.current() as { sceneCatalog?: unknown }).sceneCatalog;
+    await expect(resolveFormalFusion(request(), 'lesson-1')).rejects.toMatchObject({
+      code: 'FUSION_CONTEXT_INVALID',
+    });
+
+    configured.current().sceneCatalog = {
+      ...(persistedCatalog as Record<string, unknown>),
+      semanticRequestDigest: 'sha256:'.concat('b'.repeat(64)),
+    };
+    await expect(resolveFormalFusion(request(), 'lesson-1')).rejects.toMatchObject({
+      code: 'FUSION_CONTEXT_INVALID',
+    });
     clearProductionFusionServices(configured.services);
   });
 

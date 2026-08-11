@@ -9,7 +9,7 @@ import {
   createF08DiagnosisPort,
   DEVELOPMENT_MOCK_KNOWLEDGE_POINT_ID,
 } from '@/lib/fusion/adapter/classroom-diagnosis-adapter';
-import { DEVELOPMENT_SCENE_CATALOG } from '@/lib/fusion/scene-catalog';
+import { DEVELOPMENT_SCENE_CATALOG, isFormalSceneCatalog } from '@/lib/fusion/scene-catalog';
 import {
   applyDirective,
   createLessonRuntimeState,
@@ -56,6 +56,17 @@ async function integratedPost(request: NextRequest, body: Record<string, unknown
         };
       }
     | undefined;
+  if (formalContext) {
+    const digest = (formalContext as { semanticRequest?: { semanticRequestDigest?: unknown } })
+      .semanticRequest?.semanticRequestDigest;
+    if (
+      !isFormalSceneCatalog(session.sceneCatalog) ||
+      typeof digest !== 'string' ||
+      catalog.semanticRequestDigest !== digest
+    ) {
+      return apiError('INTERNAL_ERROR', 409, 'The authoritative classroom catalog is unavailable.');
+    }
+  }
   const mapping = (session.lessonKnowledgeMap ??
     formalContext?.proposal?.lessonKnowledgeMap ??
     {}) as {
@@ -141,7 +152,7 @@ async function integratedPost(request: NextRequest, body: Record<string, unknown
   }
   if (!updated)
     return apiError('INTERNAL_ERROR', 409, 'Classroom state changed; retry the checkpoint.');
-  const executionStatus = planned.directive.kind === 'continue' ? 'degraded' : 'executed';
+  const executionStatus = 'executed';
   classroomObservationLedger.record(event, diagnosis, planned.directive, executionStatus);
   return apiSuccess({
     diagnosis: {

@@ -10,6 +10,7 @@ import {
   type FrozenLessonGenerationContext,
 } from './preclass-contracts';
 import { requestFormalPreClassContext } from './adapter/preclass-context-provider';
+import { buildFormalSceneCatalog, isFormalSceneCatalog } from './scene-catalog';
 
 const COOKIE = 'openmaic_fusion_session';
 export type FormalFusionResolution =
@@ -183,6 +184,16 @@ export async function resolveFormalFusion(
   if (record.generatedOutlines && !outlinesFrom(record)) {
     throw new FormalFusionError('FUSION_CONTEXT_INVALID');
   }
+  if (record.generatedOutlines && !isFormalSceneCatalog(record.sceneCatalog)) {
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+  if (
+    record.sceneCatalog &&
+    isFormalSceneCatalog(record.sceneCatalog) &&
+    record.sceneCatalog.semanticRequestDigest !== context.semanticRequest.semanticRequestDigest
+  ) {
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
   return { kind: 'resolved', context, record, outlines: outlinesFrom(record) };
 }
 
@@ -304,6 +315,16 @@ export async function persistFormalLessonOutlines(
         : {
             ...current,
             generatedOutlines: outlines as unknown as FusionJsonObject[],
+            sceneCatalog: buildFormalSceneCatalog(
+              formal.context,
+              outlines,
+            ) as unknown as FusionJsonObject,
+            runtimeState: JSON.parse(
+              JSON.stringify({
+                ...(current.runtimeState as Record<string, unknown>),
+                currentSceneId: outlines.find((outline) => outline.fusionCheckpoint)?.id,
+              }),
+            ),
           },
   );
   if (!updated || !outlinesFrom(updated)) throw new FormalFusionError('FUSION_CONTEXT_INVALID');
