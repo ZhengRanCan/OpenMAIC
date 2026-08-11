@@ -1004,7 +1004,12 @@
     "webSearchFailed": "ウェブ検索に失敗しました",
     "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
     "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
-    "analyzingMediaMaterial": "音声・動画を解析中"
+    "analyzingMediaMaterial": "音声・動画を解析中",
+    "clarificationRequired": "Clarification required",
+    "clarificationDesc": "The formal lesson requirement is ambiguous. The initiator may submit one clarification to re-freeze the lesson context.",
+    "clarificationPlaceholder": "Describe the clarified lesson requirement",
+    "clarificationSubmit": "Submit clarification",
+    "clarificationSubmitting": "Submitting"
   },
   "settings": {
     "title": "設定",

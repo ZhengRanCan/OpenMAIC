@@ -43,6 +43,7 @@ import {
   formalFusionErrorResponse,
   FormalFusionError,
   freezeFormalFusionForOutline,
+  resolveFormalFusion,
   completeFormalLessonOutlines,
   persistFormalLessonOutlines,
   assertFormalSourceMaterialBoundary,
@@ -300,11 +301,24 @@ export async function POST(req: NextRequest) {
     if (!body.requirements) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
-    const formalFusion = await freezeFormalFusionForOutline(
-      req,
-      body.lessonSessionId,
-      body.requirements.requirement,
-    );
+    let formalFusion: Awaited<ReturnType<typeof freezeFormalFusionForOutline>>;
+    try {
+      formalFusion = await freezeFormalFusionForOutline(
+        req,
+        body.lessonSessionId,
+        body.requirements.requirement,
+      );
+    } catch (error) {
+      // F48: after an explicit initiator clarification, the server has already
+      // frozen the revised context, so the outline request resolves it instead
+      // of attempting a second freeze. A forged or mismatched re-request still
+      // fails closed through the strict freeze path or resolveFormalFusion.
+      if (error instanceof FormalFusionError && error.code === 'FUSION_SESSION_ALREADY_GENERATED') {
+        formalFusion = await resolveFormalFusion(req, body.lessonSessionId);
+      } else {
+        throw error;
+      }
+    }
     // Get API configuration from request headers/body
     const {
       model: languageModel,

@@ -130,6 +130,11 @@ function GenerationPreviewContent() {
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingOutlines, setStreamingOutlines] = useState<SceneOutline[] | null>(null);
   const [isOutlineStreaming, setIsOutlineStreaming] = useState(false);
+  // F48: an explicit initiator clarification is required before formal outline
+  // generation can proceed; the frozen context (if any) is never mutated.
+  const [needsClarification, setNeedsClarification] = useState(false);
+  const [clarificationSupplement, setClarificationSupplement] = useState('');
+  const [isSubmittingClarification, setIsSubmittingClarification] = useState(false);
   const [truncationWarnings, setTruncationWarnings] = useState<string[]>([]);
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
     [],
@@ -622,11 +627,12 @@ function GenerationPreviewContent() {
                     currentSession.lessonSessionId && d?.errorCode === 'INVALID_REQUEST';
                   const responseError =
                     typeof d?.error === 'string' ? d.error : t('generation.outlineGenerateFailed');
-                  reject(
-                    new Error(
-                      isFusionSessionError ? t('generation.outlineGenerateFailed') : responseError,
-                    ),
-                  );
+                  const streamError = new Error(
+                    isFusionSessionError ? t('generation.outlineGenerateFailed') : responseError,
+                  ) as Error & { errorCode?: string; recovery?: unknown };
+                  if (typeof d?.errorCode === 'string') streamError.errorCode = d.errorCode;
+                  if (d?.recovery) streamError.recovery = d.recovery;
+                  reject(streamError);
                 });
               }
 
@@ -1100,8 +1106,48 @@ function GenerationPreviewContent() {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
+      // F48: needs_clarification keeps the server session and asks the
+      // initiator for one explicit supplement instead of discarding progress.
+      if (
+        (err as { errorCode?: string } | null)?.errorCode === 'FUSION_CONTEXT_NEEDS_CLARIFICATION'
+      ) {
+        setNeedsClarification(true);
+        setError(null);
+        return;
+      }
       sessionStorage.removeItem('generationSession');
       setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const submitClarification = async () => {
+    const generationSession = session;
+    const supplement = clarificationSupplement.trim();
+    if (!generationSession?.lessonSessionId || !supplement) return;
+    setIsSubmittingClarification(true);
+    try {
+      const response = await fetch('/api/fusion/clarify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonSessionId: generationSession.lessonSessionId,
+          supplement,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        errorCode?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || data.errorCode || t('generation.outlineGenerateFailed'));
+      }
+      setNeedsClarification(false);
+      setClarificationSupplement('');
+      setIsSubmittingClarification(false);
+      await startGeneration(generationSession);
+    } catch (clarifyError) {
+      setIsSubmittingClarification(false);
+      setError(clarifyError instanceof Error ? clarifyError.message : String(clarifyError));
     }
   };
 
@@ -1398,6 +1444,29 @@ function GenerationPreviewContent() {
 
             {/* Central Content */}
             <div className="flex-1 flex flex-col items-center justify-center w-full space-y-8 mt-4">
+              {needsClarification && (
+                <div className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-left text-sm text-amber-700 dark:text-amber-300">
+                  <p className="mb-2 font-medium">{t('generation.clarificationRequired')}</p>
+                  <p className="mb-3 text-xs opacity-80">{t('generation.clarificationDesc')}</p>
+                  <textarea
+                    value={clarificationSupplement}
+                    onChange={(e) => setClarificationSupplement(e.target.value)}
+                    rows={3}
+                    placeholder={t('generation.clarificationPlaceholder')}
+                    className="w-full rounded-md border border-amber-500/30 bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                  <Button
+                    size="sm"
+                    className="mt-3"
+                    disabled={isSubmittingClarification || !clarificationSupplement.trim()}
+                    onClick={submitClarification}
+                  >
+                    {isSubmittingClarification
+                      ? t('generation.clarificationSubmitting')
+                      : t('generation.clarificationSubmit')}
+                  </Button>
+                </div>
+              )}
               {/* Icon / Visualizer Container */}
               <div className="relative size-48 flex items-center justify-center">
                 <AnimatePresence mode="popLayout">
@@ -1542,7 +1611,7 @@ function GenerationPreviewContent() {
                   {t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>
-            ) : isOutlineReady ? null : !isComplete ? (
+            ) : isOutlineReady ? null : needsClarification ? null : !isComplete ? (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

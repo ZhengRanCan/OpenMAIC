@@ -1004,7 +1004,12 @@
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
-    "analyzingMediaMaterial": "تحليل الصوت/الفيديو"
+    "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
+    "clarificationRequired": "Clarification required",
+    "clarificationDesc": "The formal lesson requirement is ambiguous. The initiator may submit one clarification to re-freeze the lesson context.",
+    "clarificationPlaceholder": "Describe the clarified lesson requirement",
+    "clarificationSubmit": "Submit clarification",
+    "clarificationSubmitting": "Submitting"
   },
   "settings": {
     "title": "الإعدادات",

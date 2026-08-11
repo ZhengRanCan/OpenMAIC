@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildClarifiedSemanticRequest,
+  PRECLASS_CLARIFICATION_SCHEMA,
   PRECLASS_CONTRACT_VERSION,
   PreClassContractError,
   canonicalizeDigestEnvelope,
@@ -9,6 +11,7 @@ import {
   digestCanonicalBytes,
   parseFrozenLessonGenerationContext,
   parseLessonSemanticRequest,
+  parsePreClassClarification,
   parseStrictJson,
 } from '@/lib/fusion/preclass-contracts';
 
@@ -161,5 +164,66 @@ describe('F40 pre-class contract kernel', () => {
     expect(() =>
       parseFrozenLessonGenerationContext({ ...context, frozenAt: '2026-07-31T15:00:00.1234Z' }),
     ).toThrow(/timestamp_precision_unsupported/);
+  });
+});
+
+describe('F48 pre-class clarification revision contract', () => {
+  const base = parseLessonSemanticRequest(request());
+
+  it('builds exactly one clarified revision with a new digest while preserving lineage', () => {
+    const clarified = buildClarifiedSemanticRequest(
+      base,
+      'Clarified topic: linear functions for beginners',
+    );
+    expect(clarified.semanticRequestId).toBe(base.semanticRequestId);
+    expect(clarified.lessonSessionId).toBe(base.lessonSessionId);
+    expect(clarified.semanticRequestRevision).toBe('2');
+    expect(clarified.normalizedTopic).toBe('Clarified topic: linear functions for beginners');
+    expect(clarified.normalizedLearningObjectives).toEqual([
+      'Clarified topic: linear functions for beginners',
+    ]);
+    expect(clarified.semanticRequestDigest).not.toBe(base.semanticRequestDigest);
+    expect(computeSemanticRequestDigest(clarified)).toBe(clarified.semanticRequestDigest);
+    expect(clarified.warnings).toContain('clarified_by_initiator');
+  });
+
+  it.each([
+    [
+      'revision_limit_exceeded',
+      () => buildClarifiedSemanticRequest(buildClarifiedSemanticRequest(base, 'First'), 'Second'),
+    ],
+    ['invalid_supplement', () => buildClarifiedSemanticRequest(base, '')],
+    ['invalid_supplement', () => buildClarifiedSemanticRequest(base, 'x'.repeat(600))],
+    ['invalid_supplement', () => buildClarifiedSemanticRequest(base, 42)],
+  ])('fails closed with %s', (code, run) => {
+    try {
+      run();
+      throw new Error('expected contract failure');
+    } catch (error) {
+      expect(error).toBeInstanceOf(PreClassContractError);
+      expect((error as PreClassContractError).code).toBe(code);
+    }
+  });
+
+  it('parses a stored clarification record strictly', () => {
+    const clarified = buildClarifiedSemanticRequest(base, 'A concrete supplement');
+    const record = parsePreClassClarification({
+      schemaVersion: PRECLASS_CLARIFICATION_SCHEMA,
+      basedOnSemanticRequestId: base.semanticRequestId,
+      basedOnSemanticRequestRevision: '1',
+      basedOnSemanticRequestDigest: base.semanticRequestDigest,
+      semanticRequestId: clarified.semanticRequestId,
+      semanticRequestRevision: '2',
+      semanticRequestDigest: clarified.semanticRequestDigest,
+      supplement: clarified.normalizedTopic,
+      finalStatus: 'ready',
+      createdAt: '2026-08-11T10:00:00Z',
+    });
+    expect(record.finalStatus).toBe('ready');
+    expect(record.semanticRequestRevision).toBe('2');
+    expect(record.basedOnSemanticRequestRevision).toBe('1');
+    expect(() => parsePreClassClarification({ ...record, finalStatus: 'unsupported' })).toThrow(
+      /invalid_clarification/,
+    );
   });
 });

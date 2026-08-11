@@ -4,12 +4,23 @@ import type { SceneOutline } from '@/lib/types/generation';
 import { ensureFusionServices, isProductionFusion } from './reliability/production-services';
 import type { FusionJsonObject, FusionSessionRecord } from './session-store/types';
 import {
+  buildClarifiedSemanticRequest,
   parseFrozenLessonGenerationContext,
+  parseLessonSemanticRequest,
+  parsePreClassClarification,
   parseSemanticResolution,
   PreClassContractError,
+  PRECLASS_CLARIFICATION_SCHEMA,
+  PRECLASS_CONTRACT_VERSION,
   type FrozenLessonGenerationContext,
+  type LessonSemanticRequest,
+  type PreClassClarification,
+  type SemanticResolution,
 } from './preclass-contracts';
-import { requestFormalPreClassContext } from './adapter/preclass-context-provider';
+import {
+  requestFormalPreClassContext,
+  resolveFormalPreClassContext,
+} from './adapter/preclass-context-provider';
 import { buildFormalSceneCatalog, isFormalSceneCatalog } from './scene-catalog';
 
 const COOKIE = 'openmaic_fusion_session';
@@ -34,6 +45,7 @@ export class FormalFusionError extends Error {
       | 'FUSION_CONTEXT_REJECTED'
       | 'FUSION_CONTEXT_PROVIDER_UNAVAILABLE'
       | 'FUSION_SESSION_ALREADY_GENERATED'
+      | 'FUSION_CONTEXT_REVISION_LIMIT'
       | 'FUSION_SOURCE_MATERIAL_UNAUTHORIZED',
   ) {
     super('Restart the classroom from a new Launch Code.');
@@ -67,16 +79,24 @@ export function assertFormalSourceMaterialBoundary(
 
 export function formalFusionErrorResponse(error: FormalFusionError): NextResponse {
   const status = error.code === 'FUSION_SESSION_MISMATCH' ? 403 : 409;
+  const recovery =
+    error.code === 'FUSION_CONTEXT_NEEDS_CLARIFICATION'
+      ? {
+          kind: 'clarification' as const,
+          requiresNewSession: false,
+          message: 'The lesson requirement needs clarification before generation can start.',
+        }
+      : {
+          kind: 'non_fusion' as const,
+          requiresNewSession: true,
+          message: 'Start a new ordinary classroom. It will not reuse this Fusion context.',
+        };
   return NextResponse.json(
     {
       success: false,
       errorCode: error.code,
       error: 'Fusion context cannot generate this classroom.',
-      recovery: {
-        kind: 'non_fusion',
-        requiresNewSession: true,
-        message: 'Start a new ordinary classroom. It will not reuse this Fusion context.',
-      },
+      recovery,
     },
     { status },
   );
@@ -238,16 +258,17 @@ export async function freezeFormalFusionForOutline(
   if (priorResolution) throw priorResolution;
   let resolved: FrozenLessonGenerationContext;
   try {
-    const result = await requestFormalPreClassContext(record, requirement);
-    if ('status' in result) {
+    const outcome = await requestFormalPreClassContext(record, requirement);
+    if ('status' in outcome.result) {
       const sessions = (await ensureFusionServices()).sessions;
       await sessions.compareAndSet(record.lessonSessionId, record.revision, (current) => ({
         ...current,
-        preClassResolution: result as unknown as FusionJsonObject,
+        preClassResolution: outcome.result as unknown as FusionJsonObject,
+        preClassSemanticRequest: outcome.request as unknown as FusionJsonObject,
       }));
-      throw resolutionError(result.status);
+      throw resolutionError(outcome.result.status);
     }
-    resolved = result;
+    resolved = outcome.result;
   } catch (error) {
     if (error instanceof FormalFusionError) throw error;
     if (error instanceof PreClassContractError)
@@ -269,6 +290,109 @@ export async function freezeFormalFusionForOutline(
   );
   if (!updated) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
   return { kind: 'resolved', context: resolved, record: updated };
+}
+
+function readyResolution(request: LessonSemanticRequest): SemanticResolution {
+  return parseSemanticResolution({
+    schemaVersion: PRECLASS_CONTRACT_VERSION,
+    semanticRequestId: request.semanticRequestId,
+    semanticRequestRevision: request.semanticRequestRevision,
+    semanticRequestDigest: request.semanticRequestDigest,
+    status: 'ready',
+    clarificationIssues: [],
+  });
+}
+
+/**
+ * F48: the sole explicit initiator revision path for `needs_clarification`.
+ * The supplement creates one new request revision and digest, re-resolves the
+ * server-owned proposal, and only then freezes a brand-new context. The prior
+ * context (if any) is never mutated; partial/unresolved/rejected outcomes are
+ * non-retryable and fail closed, as does any attempt past the one-revision limit.
+ */
+export async function submitPreClassClarification(
+  request: NextRequest,
+  lessonSessionId: unknown,
+  supplement: unknown,
+): Promise<FormalFusionResolution> {
+  if (lessonSessionId === undefined || lessonSessionId === null || lessonSessionId === '')
+    throw new FormalFusionError('FUSION_SESSION_UNAVAILABLE');
+  const record = await recoverFormalSession(request, lessonSessionId);
+  if (record.generationContext || record.frozenLessonGenerationContext)
+    throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
+  if (!record.preClassResolution || !record.preClassSemanticRequest)
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  let priorResolution: SemanticResolution;
+  let priorRequest: LessonSemanticRequest;
+  try {
+    priorResolution = parseSemanticResolution(record.preClassResolution);
+    priorRequest = parseLessonSemanticRequest(record.preClassSemanticRequest);
+  } catch {
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+  if (priorResolution.status !== 'needs_clarification')
+    throw resolutionError(priorResolution.status);
+  if (
+    priorRequest.semanticRequestId !== priorResolution.semanticRequestId ||
+    priorRequest.semanticRequestRevision !== priorResolution.semanticRequestRevision ||
+    priorRequest.semanticRequestDigest !== priorResolution.semanticRequestDigest
+  )
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  if (record.preClassClarification) throw new FormalFusionError('FUSION_CONTEXT_REVISION_LIMIT');
+  let clarifiedRequest: LessonSemanticRequest;
+  try {
+    clarifiedRequest = buildClarifiedSemanticRequest(priorRequest, supplement);
+  } catch (error) {
+    if (error instanceof PreClassContractError && error.code === 'revision_limit_exceeded')
+      throw new FormalFusionError('FUSION_CONTEXT_REVISION_LIMIT');
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+  const sessions = (await ensureFusionServices()).sessions;
+  let result: FrozenLessonGenerationContext | SemanticResolution;
+  try {
+    result = await resolveFormalPreClassContext(record, clarifiedRequest);
+  } catch (error) {
+    if (error instanceof PreClassContractError)
+      throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+    throw new FormalFusionError('FUSION_CONTEXT_PROVIDER_UNAVAILABLE');
+  }
+  const clarification: PreClassClarification = {
+    schemaVersion: PRECLASS_CLARIFICATION_SCHEMA,
+    basedOnSemanticRequestId: priorRequest.semanticRequestId,
+    basedOnSemanticRequestRevision: priorRequest.semanticRequestRevision,
+    basedOnSemanticRequestDigest: priorRequest.semanticRequestDigest,
+    semanticRequestId: clarifiedRequest.semanticRequestId,
+    semanticRequestRevision: clarifiedRequest.semanticRequestRevision,
+    semanticRequestDigest: clarifiedRequest.semanticRequestDigest,
+    supplement: clarifiedRequest.normalizedTopic,
+    finalStatus: 'ready',
+    createdAt: new Date().toISOString(),
+  };
+  if ('status' in result) {
+    clarification.finalStatus = result.status;
+    await sessions.compareAndSet(record.lessonSessionId, record.revision, (current) => ({
+      ...current,
+      preClassResolution: result as unknown as FusionJsonObject,
+      preClassSemanticRequest: clarifiedRequest as unknown as FusionJsonObject,
+      preClassClarification: clarification as unknown as FusionJsonObject,
+    }));
+    throw resolutionError(result.status);
+  }
+  const updated = await sessions.compareAndSet(
+    record.lessonSessionId,
+    record.revision,
+    (current) => ({
+      ...current,
+      frozenLessonGenerationContext: result as unknown as FusionJsonObject,
+      preClassResolution: readyResolution(clarifiedRequest) as unknown as FusionJsonObject,
+      preClassSemanticRequest: clarifiedRequest as unknown as FusionJsonObject,
+      preClassClarification: parsePreClassClarification(
+        clarification as unknown as FusionJsonObject,
+      ) as unknown as FusionJsonObject,
+    }),
+  );
+  if (!updated) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
+  return { kind: 'resolved', context: result, record: updated };
 }
 
 /** Adds the Catalog-owned checkpoint/remediation pair to the server-owned formal lesson. */

@@ -1004,7 +1004,12 @@
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
-    "analyzingMediaMaterial": "Анализ аудио/видео"
+    "analyzingMediaMaterial": "Анализ аудио/видео",
+    "clarificationRequired": "Clarification required",
+    "clarificationDesc": "The formal lesson requirement is ambiguous. The initiator may submit one clarification to re-freeze the lesson context.",
+    "clarificationPlaceholder": "Describe the clarified lesson requirement",
+    "clarificationSubmit": "Submit clarification",
+    "clarificationSubmitting": "Submitting"
   },
   "settings": {
     "title": "Настройки",

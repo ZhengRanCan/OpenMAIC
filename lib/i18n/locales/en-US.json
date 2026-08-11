@@ -1004,7 +1004,12 @@
     "webSearchFailed": "Web search failed",
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
     "jumpToBlankTitle": "Jump to a section that still needs a title",
-    "analyzingMediaMaterial": "Analyzing audio/video"
+    "analyzingMediaMaterial": "Analyzing audio/video",
+    "clarificationRequired": "Clarification required",
+    "clarificationDesc": "The formal lesson requirement is ambiguous. The initiator may submit one clarification to re-freeze the lesson context.",
+    "clarificationPlaceholder": "Describe the clarified lesson requirement",
+    "clarificationSubmit": "Submit clarification",
+    "clarificationSubmitting": "Submitting"
   },
   "settings": {
     "title": "Settings",

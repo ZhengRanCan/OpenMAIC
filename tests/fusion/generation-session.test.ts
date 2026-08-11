@@ -7,6 +7,7 @@ import {
   freezeFormalFusionForOutline,
   persistFormalLessonOutlines,
   resolveFormalFusion,
+  submitPreClassClarification,
 } from '@/lib/fusion/generation-session';
 import {
   clearProductionFusionServices,
@@ -339,6 +340,149 @@ describe('F23 formal generation session', () => {
       'Explain linear functions in fifteen minutes',
     );
     expect(frozen.kind).toBe('resolved');
+    clearProductionFusionServices(configured.services);
+  });
+});
+
+describe('F48 pre-class clarification revision flow', () => {
+  const env = () => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+  };
+  const stubProposal = (resolutionStatus: string, clarificationIssues: string[] = []) =>
+    vi.fn(
+      async (_url: unknown, init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            ...responseFor(String(init?.body)),
+            resolutionStatus,
+            clarificationIssues,
+          }),
+          { status: 200 },
+        ),
+    );
+
+  it('lets the initiator submit one clarification that freezes a new revision context', async () => {
+    env();
+    vi.stubGlobal('fetch', stubProposal('needs_clarification', ['requirement_ambiguous']));
+    const configured = configure(record());
+    await expect(
+      freezeFormalFusionForOutline(request(), 'lesson-1', 'Vague topic'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_NEEDS_CLARIFICATION' });
+    expect(configured.current().preClassResolution).toMatchObject({
+      status: 'needs_clarification',
+    });
+    expect(configured.current().preClassSemanticRequest).toMatchObject({
+      semanticRequestRevision: '1',
+    });
+    const priorDigest =
+      (configured.current().preClassSemanticRequest as { semanticRequestDigest?: string })
+        ?.semanticRequestDigest ?? '';
+
+    vi.stubGlobal('fetch', stubProposal('ready'));
+    const resolved = await submitPreClassClarification(
+      request(),
+      'lesson-1',
+      'Clarified: linear functions for beginners',
+    );
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') return;
+    expect(resolved.context.semanticRequest.semanticRequestRevision).toBe('2');
+    expect(resolved.context.semanticRequest.normalizedTopic).toBe(
+      'Clarified: linear functions for beginners',
+    );
+    expect(resolved.context.semanticRequest.semanticRequestDigest).not.toBe(priorDigest);
+    const stored = configured.current();
+    expect(stored.frozenLessonGenerationContext).toBeDefined();
+    expect(stored.preClassClarification).toMatchObject({
+      finalStatus: 'ready',
+      semanticRequestRevision: '2',
+      basedOnSemanticRequestRevision: '1',
+    });
+    clearProductionFusionServices(configured.services);
+  });
+
+  it.each(['partial', 'unresolved', 'rejected'])(
+    'fails closed when the prior outcome is %s and cannot be clarified',
+    async (status) => {
+      env();
+      vi.stubGlobal('fetch', stubProposal(status, ['not_recoverable']));
+      const configured = configure(record());
+      await expect(
+        freezeFormalFusionForOutline(request(), 'lesson-1', 'Requirement'),
+      ).rejects.toMatchObject({ code: `FUSION_CONTEXT_${status.toUpperCase()}` });
+      await expect(
+        submitPreClassClarification(request(), 'lesson-1', 'Supplement'),
+      ).rejects.toMatchObject({ code: `FUSION_CONTEXT_${status.toUpperCase()}` });
+      expect(configured.current().preClassClarification).toBeUndefined();
+      expect(configured.current().frozenLessonGenerationContext).toBeUndefined();
+      clearProductionFusionServices(configured.services);
+    },
+  );
+
+  it('enforces the one-revision limit and never mutates an existing frozen context', async () => {
+    env();
+    vi.stubGlobal('fetch', stubProposal('needs_clarification', ['requirement_ambiguous']));
+    const configured = configure(record());
+    await expect(
+      freezeFormalFusionForOutline(request(), 'lesson-1', 'Vague topic'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_NEEDS_CLARIFICATION' });
+
+    vi.stubGlobal('fetch', stubProposal('ready'));
+    const resolved = await submitPreClassClarification(request(), 'lesson-1', 'Concrete topic now');
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') return;
+    const frozenDigest = (
+      resolved.context.semanticRequest.semanticRequestDigest
+        ? resolved.context.semanticRequest.semanticRequestDigest
+        : ''
+    ) as string;
+    await expect(
+      submitPreClassClarification(request(), 'lesson-1', 'Second revision attempt'),
+    ).rejects.toMatchObject({ code: 'FUSION_SESSION_ALREADY_GENERATED' });
+    expect(configured.current().frozenLessonGenerationContext).toBeDefined();
+    expect(
+      (
+        configured.current().frozenLessonGenerationContext as {
+          semanticRequest?: { semanticRequestDigest?: string };
+        }
+      )?.semanticRequest?.semanticRequestDigest,
+    ).toBe(frozenDigest);
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('records a non-ready revised outcome, then refuses any further revision', async () => {
+    env();
+    vi.stubGlobal('fetch', stubProposal('needs_clarification', ['requirement_ambiguous']));
+    const configured = configure(record());
+    await expect(
+      freezeFormalFusionForOutline(request(), 'lesson-1', 'Vague topic'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_NEEDS_CLARIFICATION' });
+
+    vi.stubGlobal('fetch', stubProposal('needs_clarification', ['still_ambiguous']));
+    await expect(
+      submitPreClassClarification(request(), 'lesson-1', 'Still vague'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_NEEDS_CLARIFICATION' });
+    expect(configured.current().preClassClarification).toMatchObject({
+      finalStatus: 'needs_clarification',
+      semanticRequestRevision: '2',
+    });
+    await expect(
+      submitPreClassClarification(request(), 'lesson-1', 'One more attempt'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_REVISION_LIMIT' });
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('fails closed without a stored clarification state or on a stale session', async () => {
+    env();
+    vi.stubGlobal('fetch', stubProposal('ready'));
+    const configured = configure(record());
+    await expect(
+      submitPreClassClarification(request(), 'lesson-1', 'Supplement'),
+    ).rejects.toMatchObject({ code: 'FUSION_CONTEXT_INVALID' });
+    await expect(
+      submitPreClassClarification(request('other-token'), 'lesson-1', 'Supplement'),
+    ).rejects.toMatchObject({ code: 'FUSION_SESSION_UNAVAILABLE' });
     clearProductionFusionServices(configured.services);
   });
 });

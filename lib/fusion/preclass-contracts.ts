@@ -602,3 +602,85 @@ export function parseStrictJson(raw: string): unknown {
     fail('invalid_json');
   }
 }
+
+/** F48: one explicit, auditable initiator clarification revision. */
+export const PRECLASS_CLARIFICATION_SCHEMA = 'preclass-clarification-v1' as const;
+
+export interface PreClassClarification {
+  schemaVersion: typeof PRECLASS_CLARIFICATION_SCHEMA;
+  basedOnSemanticRequestId: string;
+  basedOnSemanticRequestRevision: string;
+  basedOnSemanticRequestDigest: string;
+  semanticRequestId: string;
+  semanticRequestRevision: string;
+  semanticRequestDigest: string;
+  supplement: string;
+  finalStatus: SemanticResolution['status'];
+  createdAt: string;
+}
+
+/**
+ * F48: the sole permitted substantive revision. The initiator supplement
+ * replaces the ambiguous topic/objectives while preserving the request
+ * lineage (same semanticRequestId and lessonSessionId) and produces a new
+ * digest. Revision '1' is the initial request; exactly one clarification may
+ * create revision '2'. Anything else fails closed.
+ */
+export function buildClarifiedSemanticRequest(
+  request: LessonSemanticRequest,
+  supplement: unknown,
+): LessonSemanticRequest {
+  if (request.semanticRequestRevision !== '1') fail('revision_limit_exceeded');
+  const clarified = normalizedString(
+    typeof supplement === 'string' ? supplement : fail('invalid_supplement'),
+  );
+  if (!clarified || clarified.length > 512) fail('invalid_supplement');
+  const draft: LessonSemanticRequest = {
+    ...request,
+    semanticRequestRevision: '2',
+    normalizedTopic: clarified,
+    normalizedLearningObjectives: [clarified],
+    semanticRequestDigest:
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    warnings: [...request.warnings, 'clarified_by_initiator'],
+  };
+  return parseLessonSemanticRequest({
+    ...draft,
+    semanticRequestDigest: computeSemanticRequestDigest(draft),
+  });
+}
+
+export function parsePreClassClarification(value: unknown): PreClassClarification {
+  if (!isRecord(value)) fail('invalid_clarification');
+  requireExactFields(value, [
+    'schemaVersion',
+    'basedOnSemanticRequestId',
+    'basedOnSemanticRequestRevision',
+    'basedOnSemanticRequestDigest',
+    'semanticRequestId',
+    'semanticRequestRevision',
+    'semanticRequestDigest',
+    'supplement',
+    'finalStatus',
+    'createdAt',
+  ]);
+  if (value.schemaVersion !== PRECLASS_CLARIFICATION_SCHEMA) fail('unsupported_schema_version');
+  if (
+    !['ready', 'needs_clarification', 'partial', 'unresolved', 'rejected'].includes(
+      String(value.finalStatus),
+    )
+  )
+    fail('invalid_clarification');
+  return {
+    schemaVersion: PRECLASS_CLARIFICATION_SCHEMA,
+    basedOnSemanticRequestId: asciiId(value.basedOnSemanticRequestId),
+    basedOnSemanticRequestRevision: asciiId(value.basedOnSemanticRequestRevision),
+    basedOnSemanticRequestDigest: digest(value.basedOnSemanticRequestDigest),
+    semanticRequestId: asciiId(value.semanticRequestId),
+    semanticRequestRevision: asciiId(value.semanticRequestRevision),
+    semanticRequestDigest: digest(value.semanticRequestDigest),
+    supplement: nonEmpty(value.supplement),
+    finalStatus: value.finalStatus as SemanticResolution['status'],
+    createdAt: timestamp(value.createdAt),
+  };
+}

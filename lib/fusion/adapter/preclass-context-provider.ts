@@ -215,12 +215,17 @@ async function requestProposal(
   });
 }
 
-export async function requestFormalPreClassContext(
+export interface FormalPreClassContextOutcome {
+  request: LessonSemanticRequest;
+  result: FrozenLessonGenerationContext | SemanticResolution;
+}
+
+/** F48: resolves an explicit, already-built request through the bounded provider. */
+export async function resolveFormalPreClassContext(
   record: FusionSessionRecord,
-  requirement: unknown,
+  request: LessonSemanticRequest,
   fetchFn: typeof fetch = fetch,
 ): Promise<FrozenLessonGenerationContext | SemanticResolution> {
-  const request = buildFormalLessonSemanticRequest(record, requirement);
   const proposal = await requestProposal(record, request, fetchFn);
   const resolution = parseSemanticResolution(
     {
@@ -252,6 +257,15 @@ export async function requestFormalPreClassContext(
     resolution,
     frozenAt: new Date().toISOString(),
   });
+}
+
+export async function requestFormalPreClassContext(
+  record: FusionSessionRecord,
+  requirement: unknown,
+  fetchFn: typeof fetch = fetch,
+): Promise<FormalPreClassContextOutcome> {
+  const request = buildFormalLessonSemanticRequest(record, requirement);
+  return { request, result: await resolveFormalPreClassContext(record, request, fetchFn) };
 }
 
 /**

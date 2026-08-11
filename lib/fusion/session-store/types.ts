@@ -55,6 +55,10 @@ export interface FusionSessionRecord {
   frozenLessonGenerationContext?: FusionJsonObject;
   /** A non-ready F43 outcome is durable so repeated outline requests cannot silently retry it. */
   preClassResolution?: FusionJsonObject;
+  /** F48: the server-owned semantic request behind the latest resolution, for auditable revision. */
+  preClassSemanticRequest?: FusionJsonObject;
+  /** F48: the single explicit initiator clarification revision, if one was submitted. */
+  preClassClarification?: FusionJsonObject;
   /** Server-owned outlines from the sole formal generation request. */
   generatedOutlines?: FusionJsonObject[];
   /** F45-retired default catalog; historical records keep their stored value. */
