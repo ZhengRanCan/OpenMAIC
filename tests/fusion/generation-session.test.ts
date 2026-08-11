@@ -486,3 +486,104 @@ describe('F48 pre-class clarification revision flow', () => {
     clearProductionFusionServices(configured.services);
   });
 });
+
+describe('F49 pre-class context shadow wiring', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  const env = (shadow = false) => {
+    vi.stubEnv('FUSION_PERSISTENCE_MODE', 'local_postgres');
+    vi.stubEnv('DEEPTUTOR_FUSION_BASE_URL', 'http://dt.local');
+    if (shadow) vi.stubEnv('FUSION_PRECLASS_CONTEXT_SHADOW_ENABLED', 'true');
+  };
+
+  it('invokes the shadow read in the formal freeze path when enabled and persists only redacted metadata', async () => {
+    env(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          new Response(JSON.stringify(responseFor(String(init?.body))), { status: 200 }),
+      ),
+    );
+    const configured = configure(record());
+
+    const frozen = await freezeFormalFusionForOutline(
+      request(),
+      'lesson-1',
+      'Explain linear functions in fifteen minutes',
+    );
+
+    expect(frozen.kind).toBe('resolved');
+    await vi.waitFor(() => {
+      expect(configured.sessions.compareAndSet).toHaveBeenCalledTimes(2);
+      expect(configured.current().preClassContextShadow).toBeDefined();
+    });
+    const stored = configured.current();
+    expect(stored.preClassContextShadow).toMatchObject({ status: 'captured' });
+    const serialized = JSON.stringify(stored.preClassContextShadow);
+    expect(serialized).not.toContain('allowlisted-synthetic-learner');
+    expect(serialized).not.toContain('delegation-secret');
+    expect(serialized).not.toContain('secret://');
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('classifies shadow provider failure without blocking or mutating the formal resolution', async () => {
+    env(true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        const body = String(init?.body);
+        if (body.includes('"namespace":"openmaic"')) throw new Error('shadow provider down');
+        return new Response(JSON.stringify(responseFor(body)), { status: 200 });
+      }),
+    );
+    const configured = configure(record());
+
+    const frozen = await freezeFormalFusionForOutline(
+      request(),
+      'lesson-1',
+      'Explain linear functions in fifteen minutes',
+    );
+
+    expect(frozen.kind).toBe('resolved');
+    if (frozen.kind !== 'resolved') return;
+    expect(frozen.context.semanticRequest.normalizedTopic).toBe(
+      'Explain linear functions in fifteen minutes',
+    );
+    await vi.waitFor(() => {
+      expect(configured.current().preClassContextShadow).toBeDefined();
+    });
+    expect(configured.current().preClassContextShadow).toMatchObject({
+      status: 'provider_failed',
+      errorCode: 'provider_unavailable',
+    });
+    expect(configured.current().frozenLessonGenerationContext).toBeDefined();
+    clearProductionFusionServices(configured.services);
+  });
+
+  it('skips the shadow read entirely when the flag is not enabled', async () => {
+    env();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (_url: unknown, init?: RequestInit) =>
+          new Response(JSON.stringify(responseFor(String(init?.body))), { status: 200 }),
+      ),
+    );
+    const configured = configure(record());
+
+    const frozen = await freezeFormalFusionForOutline(
+      request(),
+      'lesson-1',
+      'Explain linear functions in fifteen minutes',
+    );
+
+    expect(frozen.kind).toBe('resolved');
+    expect(configured.sessions.compareAndSet).toHaveBeenCalledTimes(1);
+    expect(configured.current().preClassContextShadow).toBeUndefined();
+    clearProductionFusionServices(configured.services);
+  });
+});

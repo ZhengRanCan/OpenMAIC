@@ -15,7 +15,11 @@ import {
 } from '../preclass-contracts';
 import { ensureFusionServices } from '../reliability/production-services';
 import type { PreClassContextShadow, FusionSessionRecord } from '../session-store/types';
-import type { FrozenTeachingContext } from '../teaching-context';
+import {
+  FORMAL_TEACHING_CONTEXT_VERSION,
+  parseFrozenTeachingContext,
+  type FrozenTeachingContext,
+} from '../teaching-context';
 
 const SHADOW_VERSION = 'preclass-context-shadow-v1' as const;
 const SHADOW_SCOPE = 'preclass-context:read';
@@ -266,6 +270,39 @@ export async function requestFormalPreClassContext(
 ): Promise<FormalPreClassContextOutcome> {
   const request = buildFormalLessonSemanticRequest(record, requirement);
   return { request, result: await resolveFormalPreClassContext(record, request, fetchFn) };
+}
+
+/**
+ * F49: server-owned projection of the formal frozen context into the legacy
+ * f23-v1 teaching-context shape consumed by the shadow provider. Built solely
+ * from the already-frozen Formal context and revalidated by the legacy parser;
+ * browser input, learner identity, tokens, and raw materials never participate.
+ * Checkpoint ids follow the same derivation used when the formal lesson is
+ * completed, so the shadow comparison stays stable. Returns undefined when the
+ * projection is invalid, which only skips the optional diagnostic.
+ */
+export function buildShadowFrozenTeachingContext(
+  context: FrozenLessonGenerationContext,
+): FrozenTeachingContext | undefined {
+  const lessonKnowledgePointIds = context.proposal.lessonKnowledgeMap.knowledgeRefs.map(
+    (ref) => ref.id,
+  );
+  const contextId = context.contextId;
+  const remediationStrategy = context.proposal.teachingGuidance.recommendedApproaches[0] ?? '';
+  return parseFrozenTeachingContext({
+    schemaVersion: FORMAL_TEACHING_CONTEXT_VERSION,
+    lessonRequirement: context.semanticRequest.normalizedTopic,
+    lessonKnowledgePointIds,
+    mappingId: context.proposal.lessonKnowledgeMap.mappingId,
+    mappingRevision: context.proposal.lessonKnowledgeMap.mappingRevision,
+    guidance: context.proposal.teachingGuidance.recommendedApproaches,
+    checkpoint: {
+      checkpointId: `fusion-checkpoint-${contextId}`,
+      sceneId: `fusion-checkpoint-scene-${contextId}`,
+      remediationSceneId: `fusion-remediation-scene-${contextId}`,
+      remediationStrategy,
+    },
+  });
 }
 
 /**

@@ -18,6 +18,9 @@ import {
   type SemanticResolution,
 } from './preclass-contracts';
 import {
+  buildShadowFrozenTeachingContext,
+  isPreClassContextShadowEnabled,
+  recordPreClassContextShadow,
   requestFormalPreClassContext,
   resolveFormalPreClassContext,
 } from './adapter/preclass-context-provider';
@@ -289,6 +292,12 @@ export async function freezeFormalFusionForOutline(
     }),
   );
   if (!updated) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
+  if (isPreClassContextShadowEnabled()) {
+    const shadowContext = buildShadowFrozenTeachingContext(resolved);
+    if (shadowContext) {
+      void recordPreClassContextShadow(updated, shadowContext).catch(() => undefined);
+    }
+  }
   return { kind: 'resolved', context: resolved, record: updated };
 }
 
