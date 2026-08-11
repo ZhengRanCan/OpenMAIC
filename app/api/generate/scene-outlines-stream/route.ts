@@ -45,6 +45,7 @@ import {
   freezeFormalFusionForOutline,
   completeFormalLessonOutlines,
   persistFormalLessonOutlines,
+  assertFormalSourceMaterialBoundary,
 } from '@/lib/fusion/generation-session';
 const log = createLogger('Outlines Stream');
 
@@ -321,6 +322,12 @@ export async function POST(req: NextRequest) {
       researchContext?: string;
       agents?: AgentInfo[];
     };
+    assertFormalSourceMaterialBoundary(formalFusion, {
+      pdfText,
+      pdfImages,
+      imageMapping,
+      researchContext,
+    });
     const effectiveRequirements =
       formalFusion.kind === 'resolved'
         ? { requirement: formalFusion.context.semanticRequest.normalizedTopic }

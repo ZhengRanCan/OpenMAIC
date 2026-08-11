@@ -33,9 +33,35 @@ export class FormalFusionError extends Error {
       | 'FUSION_CONTEXT_UNRESOLVED'
       | 'FUSION_CONTEXT_REJECTED'
       | 'FUSION_CONTEXT_PROVIDER_UNAVAILABLE'
-      | 'FUSION_SESSION_ALREADY_GENERATED',
+      | 'FUSION_SESSION_ALREADY_GENERATED'
+      | 'FUSION_SOURCE_MATERIAL_UNAUTHORIZED',
   ) {
     super('Restart the classroom from a new Launch Code.');
+  }
+}
+
+/** Formal generation accepts only server-owned material references. Raw browser
+ * source bodies are never authoritative and are rejected when non-empty. */
+export function assertFormalSourceMaterialBoundary(
+  formal: FormalFusionResolution,
+  input: {
+    pdfText?: unknown;
+    pdfImages?: unknown;
+    researchContext?: unknown;
+    imageMapping?: unknown;
+  },
+): void {
+  if (formal.kind !== 'resolved') return;
+  const hasText = typeof input.pdfText === 'string' && input.pdfText.trim().length > 0;
+  const hasResearch =
+    typeof input.researchContext === 'string' && input.researchContext.trim().length > 0;
+  const hasImages = Array.isArray(input.pdfImages) && input.pdfImages.length > 0;
+  const hasMapping =
+    input.imageMapping && typeof input.imageMapping === 'object'
+      ? Object.keys(input.imageMapping as Record<string, unknown>).length > 0
+      : false;
+  if (hasText || hasResearch || hasImages || hasMapping) {
+    throw new FormalFusionError('FUSION_SOURCE_MATERIAL_UNAUTHORIZED');
   }
 }
 

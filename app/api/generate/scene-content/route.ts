@@ -31,6 +31,7 @@ import {
   formalFusionErrorResponse,
   FormalFusionError,
   resolveFormalFusion,
+  assertFormalSourceMaterialBoundary,
 } from '@/lib/fusion/generation-session';
 
 const log = createLogger('Scene Content API');
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
       languageDirective?: string;
       requirements?: UserRequirements;
     };
+    assertFormalSourceMaterialBoundary(formalFusion, { pdfImages, imageMapping });
 
     // Validate required fields
     if (!rawOutline) {
