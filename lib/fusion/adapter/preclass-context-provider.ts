@@ -158,10 +158,11 @@ function captured(
     schemaVersion: SHADOW_VERSION,
     status: 'captured',
     observedAt: frozenContext.frozenAt,
-    semanticRequest: request,
-    proposal,
-    resolution,
-    frozenContext,
+    requestRef: {
+      semanticRequestId: request.semanticRequestId,
+      semanticRequestRevision: request.semanticRequestRevision,
+      semanticRequestDigest: request.semanticRequestDigest,
+    },
     comparison: {
       topic:
         proposal.interpretedLessonSemantics.normalizedTopic === request.normalizedTopic

@@ -1,10 +1,3 @@
-import type {
-  FrozenLessonGenerationContext,
-  LessonSemanticRequest,
-  PreClassTeachingContextProposal,
-  SemanticResolution,
-} from '../preclass-contracts';
-
 export type FusionJson =
   | null
   | boolean
@@ -22,10 +15,12 @@ export interface PreClassContextShadow {
   schemaVersion: 'preclass-context-shadow-v1';
   status: 'captured' | 'provider_failed';
   observedAt: string;
-  semanticRequest?: LessonSemanticRequest;
-  proposal?: PreClassTeachingContextProposal;
-  resolution?: SemanticResolution;
-  frozenContext?: FrozenLessonGenerationContext;
+  /** Redacted correlation only; never persist semantic payloads or learner signals. */
+  requestRef?: {
+    semanticRequestId: string;
+    semanticRequestRevision: string;
+    semanticRequestDigest: string;
+  };
   comparison: {
     topic: 'match' | 'mismatch' | 'unavailable';
     knowledgeScope: 'match' | 'mismatch' | 'unavailable';

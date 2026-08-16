@@ -364,6 +364,7 @@ describe('F48 pre-class clarification revision flow', () => {
 
   it('lets the initiator submit one clarification that freezes a new revision context', async () => {
     env();
+    vi.stubEnv('FUSION_PRECLASS_CONTEXT_SHADOW_ENABLED', 'true');
     vi.stubGlobal('fetch', stubProposal('needs_clarification', ['requirement_ambiguous']));
     const configured = configure(record());
     await expect(
@@ -398,6 +399,9 @@ describe('F48 pre-class clarification revision flow', () => {
       finalStatus: 'ready',
       semanticRequestRevision: '2',
       basedOnSemanticRequestRevision: '1',
+    });
+    await vi.waitFor(() => {
+      expect(configured.current().preClassContextShadow).toMatchObject({ status: 'captured' });
     });
     clearProductionFusionServices(configured.services);
   });
@@ -527,6 +531,10 @@ describe('F49 pre-class context shadow wiring', () => {
     expect(serialized).not.toContain('allowlisted-synthetic-learner');
     expect(serialized).not.toContain('delegation-secret');
     expect(serialized).not.toContain('secret://');
+    expect(stored.preClassContextShadow).not.toHaveProperty('semanticRequest');
+    expect(stored.preClassContextShadow).not.toHaveProperty('proposal');
+    expect(stored.preClassContextShadow).not.toHaveProperty('resolution');
+    expect(stored.preClassContextShadow).not.toHaveProperty('frozenContext');
     clearProductionFusionServices(configured.services);
   });
 

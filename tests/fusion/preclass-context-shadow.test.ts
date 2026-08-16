@@ -149,7 +149,11 @@ describe('F42 pre-class Context shadow', () => {
     expect(updated?.preClassContextShadow).toMatchObject({
       status: 'captured',
       comparison: { topic: 'match', knowledgeScope: 'match', errorType: 'match' },
-      frozenContext: { semanticRequest: { lessonSessionId: 'lesson-1' } },
+      requestRef: {
+        semanticRequestId: expect.any(String),
+        semanticRequestRevision: expect.any(String),
+        semanticRequestDigest: expect.stringMatching(/^sha256:/),
+      },
     });
     expect(String(fetchFn.mock.calls[0]?.[0])).toContain('/api/v1/fusion/pre-class/context');
     expect(JSON.stringify(updated?.preClassContextShadow)).not.toContain(
@@ -173,7 +177,8 @@ describe('F42 pre-class Context shadow', () => {
       comparison: { topic: 'unavailable', knowledgeScope: 'unavailable', errorType: 'mismatch' },
     });
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(updated?.preClassContextShadow?.proposal).toBeUndefined();
+    expect(updated?.preClassContextShadow).not.toHaveProperty('proposal');
+    expect(updated?.preClassContextShadow?.requestRef).toBeUndefined();
     clearProductionFusionServices(configured.services);
   });
 });
@@ -322,6 +327,10 @@ describe('F49 pre-class context shadow wiring', () => {
     expect(shadowJson).not.toContain('learner-must-not-enter-shadow');
     expect(shadowJson).not.toContain('delegation-secret');
     expect(shadowJson).not.toContain('profileSnapshot');
+    expect(configured.current().preClassContextShadow).not.toHaveProperty('semanticRequest');
+    expect(configured.current().preClassContextShadow).not.toHaveProperty('proposal');
+    expect(configured.current().preClassContextShadow).not.toHaveProperty('resolution');
+    expect(configured.current().preClassContextShadow).not.toHaveProperty('frozenContext');
     expect(
       (configured.current().frozenLessonGenerationContext as { contextId?: string })?.contextId,
     ).toBe(frozen.context.contextId);

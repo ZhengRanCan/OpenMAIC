@@ -204,6 +204,17 @@ function storedResolutionError(record: FusionSessionRecord): FormalFusionError |
   }
 }
 
+function schedulePreClassContextShadow(
+  record: FusionSessionRecord,
+  context: FrozenLessonGenerationContext,
+): void {
+  if (!isPreClassContextShadowEnabled()) return;
+  const shadowContext = buildShadowFrozenTeachingContext(context);
+  if (shadowContext) {
+    void recordPreClassContextShadow(record, shadowContext).catch(() => undefined);
+  }
+}
+
 async function recoverFormalSession(
   request: NextRequest,
   lessonSessionId: unknown,
@@ -292,12 +303,7 @@ export async function freezeFormalFusionForOutline(
     }),
   );
   if (!updated) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
-  if (isPreClassContextShadowEnabled()) {
-    const shadowContext = buildShadowFrozenTeachingContext(resolved);
-    if (shadowContext) {
-      void recordPreClassContextShadow(updated, shadowContext).catch(() => undefined);
-    }
-  }
+  schedulePreClassContextShadow(updated, resolved);
   return { kind: 'resolved', context: resolved, record: updated };
 }
 
@@ -401,6 +407,7 @@ export async function submitPreClassClarification(
     }),
   );
   if (!updated) throw new FormalFusionError('FUSION_SESSION_ALREADY_GENERATED');
+  schedulePreClassContextShadow(updated, result);
   return { kind: 'resolved', context: result, record: updated };
 }
 
