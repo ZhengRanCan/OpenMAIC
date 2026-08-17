@@ -38,7 +38,12 @@ describe('F52 explicit non-Fusion recovery', () => {
     expect(ordinary).not.toHaveProperty('lessonSessionId');
     expect(ordinary.sceneOutlines).toBeNull();
     expect(ordinary.previewPhase).toBe('preparing');
-    expect(ordinary.requirements).toEqual(failedSession.requirements);
+    expect(ordinary.requirements).toEqual({ requirement: failedSession.requirements.requirement });
+    expect(ordinary.pdfText).toBe('');
+    expect(ordinary.pdfImages).toEqual([]);
+    expect(ordinary.documentSources).toEqual([]);
+    expect(ordinary.researchContext).toBeUndefined();
+    expect(ordinary.researchSources).toEqual([]);
   });
 
   it('records only a non-sensitive recovery reason', () => {

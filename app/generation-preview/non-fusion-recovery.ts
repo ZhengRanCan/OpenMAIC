@@ -22,10 +22,19 @@ export function isNonFusionRecovery(value: unknown): value is NonFusionRecovery 
 export function createOrdinaryRecoverySession(
   failedSession: GenerationSessionState,
 ): GenerationSessionState {
-  const { lessonSessionId: _lessonSessionId, ...ordinary } = failedSession;
   return {
-    ...ordinary,
     sessionId: nanoid(),
+    // Only the learner-entered requirement is carried across. Fusion-owned
+    // profile, map, guidance, frozen context, research and source material are
+    // intentionally discarded before ordinary generation starts.
+    requirements: { requirement: failedSession.requirements.requirement },
+    pdfText: '',
+    pdfImages: [],
+    imageStorageIds: [],
+    documentSources: [],
+    imageMapping: undefined,
+    researchContext: undefined,
+    researchSources: [],
     sceneOutlines: null,
     currentStep: 'generating',
     previewPhase: 'preparing',
