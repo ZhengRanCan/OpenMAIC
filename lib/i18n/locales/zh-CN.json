@@ -1010,7 +1010,9 @@
     "clarificationPlaceholder": "请描述澄清后的课堂需求",
     "clarificationSubmit": "提交澄清",
     "clarificationSubmitting": "提交中",
-    "clarificationFailed": "澄清提交失败，请重试。"
+    "clarificationFailed": "澄清提交失败，请重试。",
+    "nonFusionRecoveryDesc": "本次不会使用个性化 Fusion 上下文。你可以改用独立的普通课堂。",
+    "nonFusionRecoveryAction": "开始普通课堂"
   },
   "settings": {
     "title": "设置",

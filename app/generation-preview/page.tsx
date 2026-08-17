@@ -57,6 +57,12 @@ import {
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 import { isClarificationSubmitShortcut } from './clarification';
+import {
+  createOrdinaryRecoverySession,
+  createRecoveryAudit,
+  isNonFusionRecovery,
+  type NonFusionRecovery,
+} from './non-fusion-recovery';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -108,7 +114,21 @@ type SceneGenerationFailure = {
   error?: string;
   errorCode?: string;
   statusCode?: number;
+  recovery?: unknown;
 };
+
+function sceneFailureWithRecovery(
+  message: string,
+  result: SceneGenerationFailure,
+): Error & SceneGenerationFailure {
+  const failure = new Error(message) as Error & SceneGenerationFailure;
+  Object.assign(failure, {
+    errorCode: result.errorCode,
+    statusCode: result.statusCode,
+    recovery: result.recovery,
+  });
+  return failure;
+}
 
 function GenerationPreviewContent() {
   const router = useRouter();
@@ -126,6 +146,9 @@ function GenerationPreviewContent() {
   const [session, setSession] = useState<GenerationSessionState | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nonFusionRecovery, setNonFusionRecovery] = useState<NonFusionRecovery | null>(null);
+  const failedFusionSessionRef = useRef<GenerationSessionState | null>(null);
+  const recoveryErrorCodeRef = useRef<string>('FUSION_CONTEXT_INVALID');
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isComplete] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -1002,7 +1025,7 @@ function GenerationPreviewContent() {
       );
 
       if (!contentData.success || !contentData.content) {
-        throw new Error(sceneGenerationErrorMessage(contentData));
+        throw sceneFailureWithRecovery(sceneGenerationErrorMessage(contentData), contentData);
       }
 
       // Generate actions (activate actions step indicator)
@@ -1026,7 +1049,7 @@ function GenerationPreviewContent() {
       );
 
       if (!data.success || !data.scene) {
-        throw new Error(sceneGenerationErrorMessage(data));
+        throw sceneFailureWithRecovery(sceneGenerationErrorMessage(data), data);
       }
       const firstScene = data.scene;
 
@@ -1116,9 +1139,32 @@ function GenerationPreviewContent() {
         setError(null);
         return;
       }
+      const failedError = err as SceneGenerationFailure;
+      if (isNonFusionRecovery(failedError.recovery)) {
+        failedFusionSessionRef.current = currentSession;
+        recoveryErrorCodeRef.current = failedError.errorCode || 'FUSION_CONTEXT_INVALID';
+        setNonFusionRecovery(failedError.recovery);
+      }
       sessionStorage.removeItem('generationSession');
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  const recoverWithoutFusion = () => {
+    const failedSession = failedFusionSessionRef.current;
+    if (!failedSession || !nonFusionRecovery) return;
+    const ordinarySession = createOrdinaryRecoverySession(failedSession);
+    sessionStorage.setItem(
+      'generationRecoveryAudit',
+      JSON.stringify(createRecoveryAudit(recoveryErrorCodeRef.current)),
+    );
+    sessionStorage.setItem('generationSession', JSON.stringify(ordinarySession));
+    failedFusionSessionRef.current = null;
+    setNonFusionRecovery(null);
+    setError(null);
+    setSession(ordinarySession);
+    hasStartedRef.current = true;
+    void startGeneration(ordinarySession);
   };
 
   const submitClarification = async () => {
@@ -1621,9 +1667,28 @@ function GenerationPreviewContent() {
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-xs"
               >
-                <Button size="lg" variant="outline" className="w-full h-12" onClick={goBackToHome}>
-                  {t('generation.goBackAndRetry')}
-                </Button>
+                {nonFusionRecovery ? (
+                  <div className="space-y-3">
+                    <p className="text-center text-xs text-muted-foreground">
+                      {t('generation.nonFusionRecoveryDesc')}
+                    </p>
+                    <Button size="lg" className="w-full h-12" onClick={recoverWithoutFusion}>
+                      {t('generation.nonFusionRecoveryAction')}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="w-full" onClick={goBackToHome}>
+                      {t('generation.goBackAndRetry')}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="w-full h-12"
+                    onClick={goBackToHome}
+                  >
+                    {t('generation.goBackAndRetry')}
+                  </Button>
+                )}
               </motion.div>
             ) : isOutlineReady ? null : needsClarification ? null : !isComplete ? (
               <motion.div

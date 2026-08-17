@@ -995,7 +995,9 @@
     "clarificationPlaceholder": "請描述澄清後的課堂需求",
     "clarificationSubmit": "提交澄清",
     "clarificationSubmitting": "提交中",
-    "clarificationFailed": "澄清提交失敗，請重試。"
+    "clarificationFailed": "澄清提交失敗，請重試。",
+    "nonFusionRecoveryDesc": "這次不會使用個人化 Fusion 上下文。你可以改用獨立的普通課堂。",
+    "nonFusionRecoveryAction": "開始普通課堂"
   },
   "settings": {
     "title": "設定",

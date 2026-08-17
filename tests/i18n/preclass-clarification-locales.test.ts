@@ -37,4 +37,11 @@ describe('pre-class clarification Chinese locales', () => {
     expect(zhCN.generation.clarificationFailed).toContain('失败');
     expect(zhTW.generation.clarificationFailed).toContain('失敗');
   });
+
+  it('provides explicit ordinary-classroom recovery copy', () => {
+    expect(zhCN.generation.nonFusionRecoveryDesc).toContain('普通课堂');
+    expect(zhCN.generation.nonFusionRecoveryAction).toContain('普通课堂');
+    expect(zhTW.generation.nonFusionRecoveryDesc).toContain('普通課堂');
+    expect(zhTW.generation.nonFusionRecoveryAction).toContain('普通課堂');
+  });
 });

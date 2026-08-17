@@ -1010,7 +1010,9 @@
     "clarificationPlaceholder": "Describe the clarified lesson requirement",
     "clarificationSubmit": "Submit clarification",
     "clarificationSubmitting": "Submitting",
-    "clarificationFailed": "Clarification could not be submitted. Please try again."
+    "clarificationFailed": "Clarification could not be submitted. Please try again.",
+    "nonFusionRecoveryDesc": "Personalized Fusion context was not used. Start a separate ordinary classroom instead.",
+    "nonFusionRecoveryAction": "Start ordinary classroom"
   },
   "settings": {
     "title": "설정",

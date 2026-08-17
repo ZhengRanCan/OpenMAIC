@@ -38,6 +38,7 @@ interface SceneContentResult {
   error?: string;
   errorCode?: string;
   statusCode?: number;
+  recovery?: unknown;
 }
 
 interface SceneActionsResult {
@@ -47,6 +48,7 @@ interface SceneActionsResult {
   error?: string;
   errorCode?: string;
   statusCode?: number;
+  recovery?: unknown;
 }
 
 type ClientRetryOptions<T> = Partial<
@@ -94,7 +96,7 @@ async function readJsonResponse(response: Response): Promise<Record<string, unkn
 
 function createHttpError(
   response: Response,
-  data: { details?: unknown; error?: unknown; errorCode?: unknown },
+  data: { details?: unknown; error?: unknown; errorCode?: unknown; recovery?: unknown },
   fallback: string,
 ): Error & { errorCode?: string; statusCode?: number } {
   const message =
@@ -103,11 +105,16 @@ function createHttpError(
       : typeof data.error === 'string'
         ? data.error
         : `${fallback}: HTTP ${response.status}`;
-  const error = new Error(message) as Error & { errorCode?: string; statusCode?: number };
+  const error = new Error(message) as Error & {
+    errorCode?: string;
+    statusCode?: number;
+    recovery?: unknown;
+  };
   if (typeof data.errorCode === 'string') {
     error.errorCode = data.errorCode;
   }
   error.statusCode = response.status;
+  if (data.recovery !== undefined) error.recovery = data.recovery;
   return error;
 }
 
@@ -115,12 +122,15 @@ function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-function errorMeta(error: unknown): Pick<SceneContentResult, 'errorCode' | 'statusCode'> {
+function errorMeta(
+  error: unknown,
+): Pick<SceneContentResult, 'errorCode' | 'statusCode' | 'recovery'> {
   if (!error || typeof error !== 'object') return {};
-  const record = error as { errorCode?: unknown; statusCode?: unknown };
+  const record = error as { errorCode?: unknown; statusCode?: unknown; recovery?: unknown };
   return {
     ...(typeof record.errorCode === 'string' ? { errorCode: record.errorCode } : {}),
     ...(typeof record.statusCode === 'number' ? { statusCode: record.statusCode } : {}),
+    ...(record.recovery !== undefined ? { recovery: record.recovery } : {}),
   };
 }
 
