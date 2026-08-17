@@ -1005,11 +1005,12 @@
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
     "jumpToBlankTitle": "跳到待补充标题的章节",
     "analyzingMediaMaterial": "解析音视频内容",
-    "clarificationRequired": "????",
-    "clarificationDesc": "????????????????????????????????",
-    "clarificationPlaceholder": "??????????",
-    "clarificationSubmit": "????",
-    "clarificationSubmitting": "???"
+    "clarificationRequired": "需要澄清",
+    "clarificationDesc": "当前课堂需求存在歧义。发起人可以补充一次说明，以便重新冻结课前课堂上下文。",
+    "clarificationPlaceholder": "请描述澄清后的课堂需求",
+    "clarificationSubmit": "提交澄清",
+    "clarificationSubmitting": "提交中",
+    "clarificationFailed": "澄清提交失败，请重试。"
   },
   "settings": {
     "title": "设置",

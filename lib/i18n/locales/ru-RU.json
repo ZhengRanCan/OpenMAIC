@@ -1009,7 +1009,8 @@
     "clarificationDesc": "The formal lesson requirement is ambiguous. The initiator may submit one clarification to re-freeze the lesson context.",
     "clarificationPlaceholder": "Describe the clarified lesson requirement",
     "clarificationSubmit": "Submit clarification",
-    "clarificationSubmitting": "Submitting"
+    "clarificationSubmitting": "Submitting",
+    "clarificationFailed": "Clarification could not be submitted. Please try again."
   },
   "settings": {
     "title": "Настройки",

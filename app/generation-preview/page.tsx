@@ -56,6 +56,7 @@ import {
 } from './types';
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
+import { isClarificationSubmitShortcut } from './clarification';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -1147,7 +1148,8 @@ function GenerationPreviewContent() {
       await startGeneration(generationSession);
     } catch (clarifyError) {
       setIsSubmittingClarification(false);
-      setError(clarifyError instanceof Error ? clarifyError.message : String(clarifyError));
+      log.warn('[GenerationPreview] Clarification submission failed', clarifyError);
+      setError(t('generation.clarificationFailed'));
     }
   };
 
@@ -1446,13 +1448,25 @@ function GenerationPreviewContent() {
             <div className="flex-1 flex flex-col items-center justify-center w-full space-y-8 mt-4">
               {needsClarification && (
                 <div className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-left text-sm text-amber-700 dark:text-amber-300">
-                  <p className="mb-2 font-medium">{t('generation.clarificationRequired')}</p>
-                  <p className="mb-3 text-xs opacity-80">{t('generation.clarificationDesc')}</p>
+                  <p id="clarification-required" className="mb-2 font-medium">
+                    {t('generation.clarificationRequired')}
+                  </p>
+                  <p id="clarification-description" className="mb-3 text-xs opacity-80">
+                    {t('generation.clarificationDesc')}
+                  </p>
                   <textarea
                     value={clarificationSupplement}
                     onChange={(e) => setClarificationSupplement(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (isClarificationSubmitShortcut(e) && clarificationSupplement.trim()) {
+                        e.preventDefault();
+                        void submitClarification();
+                      }
+                    }}
                     rows={3}
                     placeholder={t('generation.clarificationPlaceholder')}
+                    aria-labelledby="clarification-required"
+                    aria-describedby="clarification-description"
                     className="w-full rounded-md border border-amber-500/30 bg-background px-3 py-2 text-sm text-foreground"
                   />
                   <Button

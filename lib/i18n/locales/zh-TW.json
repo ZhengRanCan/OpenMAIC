@@ -990,11 +990,12 @@
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
     "jumpToBlankTitle": "跳到待補充標題的章節",
     "analyzingMediaMaterial": "解析音視訊內容",
-    "clarificationRequired": "????",
-    "clarificationDesc": "????????????????????????????????",
-    "clarificationPlaceholder": "??????????",
-    "clarificationSubmit": "????",
-    "clarificationSubmitting": "???"
+    "clarificationRequired": "需要澄清",
+    "clarificationDesc": "目前的課堂需求有歧義。發起人可以補充一次說明，以便重新凍結課前課堂上下文。",
+    "clarificationPlaceholder": "請描述澄清後的課堂需求",
+    "clarificationSubmit": "提交澄清",
+    "clarificationSubmitting": "提交中",
+    "clarificationFailed": "澄清提交失敗，請重試。"
   },
   "settings": {
     "title": "設定",
