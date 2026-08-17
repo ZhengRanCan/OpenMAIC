@@ -127,7 +127,7 @@ function HomePage() {
   const { cachedValue: cachedRequirement, updateCache: updateRequirementCache } =
     useDraftCache<string>({ key: 'requirementDraft' });
 
-  // A usable LLM provider exists 鈬?a concrete model is always selected (#580
+  // A usable LLM provider exists ⇒ a concrete model is always selected (#580
   // invariant). Gate generation on this single condition (state A vs B)
   // instead of inspecting modelId directly.
   const providersConfig = useSettingsStore((s) => s.providersConfig);
@@ -526,8 +526,8 @@ function HomePage() {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
-        // 婕旂ず浼氳瘽鍙厑璁稿悜妯″瀷浼犻€掔粡瀹￠槄鐨勬暀瀛︾瓥鐣ュ拰璇剧▼璇锋眰锛涗笉鑳芥妸鏈湴
-        // 鏄电О鎴栫畝浠嬩笌鍚堟垚婕旂ず鐢诲儚娣峰湪涓€璧枫€傛櫘閫氱敓鎴愮淮鎸佸師鏈夎涓恒€?
+        // Formal sessions use the server-owned frozen context; ordinary generation keeps its
+        // existing local profile behavior.
         ...(lessonSessionId
           ? {}
           : {
@@ -648,7 +648,7 @@ function HomePage() {
           className="hidden"
         />
       )}
-      {/* 鈺愨晲鈺?Top-right pill (unchanged) 鈺愨晲鈺?*/}
+      {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
         className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
@@ -739,7 +739,7 @@ function HomePage() {
         initialSection={settingsSection}
       />
 
-      {/* 鈺愨晲鈺?Background Decor 鈺愨晲鈺?*/}
+      {/* ═══ Background Decor ═══ */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
           className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"
@@ -751,7 +751,7 @@ function HomePage() {
         />
       </div>
 
-      {/* 鈺愨晲鈺?Hero section: title + input (centered, wider) 鈺愨晲鈺?*/}
+      {/* ═══ Hero section: title + input (centered, wider) ═══ */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -761,7 +761,7 @@ function HomePage() {
           classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
         )}
       >
-        {/* 鈹€鈹€ Logo 鈹€鈹€ */}
+        {/* ── Logo ── */}
         <motion.img
           src="/logo-horizontal.png"
           alt="OpenMAIC"
@@ -776,7 +776,7 @@ function HomePage() {
           className="h-12 md:h-16 mb-2 -ml-2 md:-ml-3"
         />
 
-        {/* 鈹€鈹€ Slogan 鈹€鈹€ */}
+        {/* ── Slogan ── */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -786,7 +786,7 @@ function HomePage() {
           {t('home.slogan')}
         </motion.p>
 
-        {/* 鈹€鈹€ Unified input area 鈹€鈹€ */}
+        {/* ── Unified input area ── */}
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -794,7 +794,7 @@ function HomePage() {
           className="w-full"
         >
           <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
-            {/* 鈹€鈹€ Greeting + Profile + Agents 鈹€鈹€ */}
+            {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex items-start justify-between">
               <GreetingBar />
               <div className="pr-3 pt-3.5 shrink-0">
@@ -961,10 +961,10 @@ function HomePage() {
                   )}
                 >
                   <span className="rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-cyan-700 dark:bg-cyan-900/45 dark:text-cyan-300">
-                    娴嬭瘯鍔熻兘
+                    测试功能
                   </span>
                   <Sparkles className="size-3.5" />
-                  <span>鑱屾暀浠诲姟</span>
+                  <span>职教任务</span>
                   <span
                     className={cn(
                       'relative h-3.5 w-6 rounded-full transition-colors',
@@ -981,13 +981,13 @@ function HomePage() {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                浠庡綋鍓嶈緭鍏ユ鎻愪氦鑱屾暀瀹炴搷璁粌娴嬭瘯
+                从当前输入框提交职教实操训练测试
               </TooltipContent>
             </Tooltip>
           </motion.div>
         )}
 
-        {/* 鈹€鈹€ Error 鈹€鈹€ */}
+        {/* ── Error ── */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -1001,7 +1001,7 @@ function HomePage() {
           )}
         </AnimatePresence>
 
-        {/* 鈹€鈹€ Import buttons (empty state) 鈹€鈹€ */}
+        {/* ── Import buttons (empty state) ── */}
         {listedClassrooms.length === 0 && (
           <div className="relative z-10 mt-4 flex items-center gap-4">
             <button
@@ -1026,7 +1026,7 @@ function HomePage() {
         )}
       </motion.div>
 
-      {/* 鈺愨晲鈺?Recent classrooms 鈥?collapsible 鈺愨晲鈺?*/}
+      {/* ═══ Recent classrooms — collapsible ═══ */}
       {listedClassrooms.length > 0 && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -1264,7 +1264,7 @@ function HomePage() {
   );
 }
 
-// 鈹€鈹€鈹€ Greeting Bar 鈥?avatar + "Hi, Name", click to edit in-place 鈹€鈹€鈹€鈹€
+// ─── Greeting Bar — avatar + "Hi, Name", click to edit in-place ────
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
 
 function isCustomAvatar(src: string) {
@@ -1356,7 +1356,7 @@ function GreetingBar() {
         onChange={handleAvatarUpload}
       />
 
-      {/* 鈹€鈹€ Collapsed pill (always in flow) 鈹€鈹€ */}
+      {/* ── Collapsed pill (always in flow) ── */}
       {!open && (
         <div
           className="flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
@@ -1388,7 +1388,7 @@ function GreetingBar() {
         </div>
       )}
 
-      {/* 鈹€鈹€ Expanded panel (absolute, floating) 鈹€鈹€ */}
+      {/* ── Expanded panel (absolute, floating) ── */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -1399,7 +1399,7 @@ function GreetingBar() {
             className="absolute left-4 top-3.5 z-50 w-64"
           >
             <div className="rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06] shadow-[0_1px_8px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_8px_-2px_rgba(0,0,0,0.3)] px-2.5 py-2">
-              {/* 鈹€鈹€ Row: avatar + name 鈹€鈹€ */}
+              {/* ── Row: avatar + name ── */}
               <div
                 className="flex items-center gap-2.5 cursor-pointer transition-all duration-200"
                 onClick={() => {
@@ -1485,7 +1485,7 @@ function GreetingBar() {
                 </motion.div>
               </div>
 
-              {/* 鈹€鈹€ Expandable content 鈹€鈹€ */}
+              {/* ── Expandable content ── */}
               <div className="pt-2" onClick={(e) => e.stopPropagation()}>
                 {/* Avatar picker */}
                 <AnimatePresence>
@@ -1549,7 +1549,7 @@ function GreetingBar() {
   );
 }
 
-// 鈹€鈹€鈹€ Classroom Card 鈥?clean, minimal style 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ─── Classroom Card — clean, minimal style ──────────────────────
 function ClassroomCard({
   classroom,
   slide,
