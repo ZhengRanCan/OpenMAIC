@@ -68,6 +68,7 @@ import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { db } from '@/lib/utils/database';
+import { shouldPromptFormalMaterialCompatibility } from '@/app/generation-preview/formal-material-compatibility';
 
 const log = createLogger('Home');
 
@@ -184,6 +185,7 @@ function HomePage() {
   const [isTestingFormalFusion, setIsTestingFormalFusion] = useState(false);
   const [isConnectingFormalFusion, setIsConnectingFormalFusion] = useState(false);
   const [formalFusionError, setFormalFusionError] = useState<string | null>(null);
+  const [showFormalMaterialWarning, setShowFormalMaterialWarning] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [sharedClassrooms, setSharedClassrooms] = useState<SharedClassroomResponse[]>([]);
@@ -508,7 +510,7 @@ function HomePage() {
     }));
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (forceOrdinary = false) => {
     // No model/provider guard here: generation is gated by `canGenerate`
     // (requires a usable provider), and under the #580 invariant a usable
     // provider always has a concrete model. State A (no usable provider)
@@ -518,10 +520,21 @@ function HomePage() {
       return;
     }
 
+    if (
+      shouldPromptFormalMaterialCompatibility({
+        formalLessonSessionId,
+        courseMaterialsCount: form.courseMaterials.length,
+        forceOrdinary,
+      })
+    ) {
+      setShowFormalMaterialWarning(true);
+      return;
+    }
+
     setError(null);
 
     try {
-      const lessonSessionId = formalLessonSessionId ?? undefined;
+      const lessonSessionId = forceOrdinary ? undefined : (formalLessonSessionId ?? undefined);
 
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
@@ -609,6 +622,13 @@ function HomePage() {
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
     }
+  };
+
+  const switchToOrdinaryClassroom = () => {
+    setFormalLessonSessionId(null);
+    setShowFormalMaterialWarning(false);
+    setFormalFusionError(null);
+    void handleGenerate(true);
   };
 
   const formatClassroomTimestamp = (timestamp: number) =>
@@ -876,6 +896,37 @@ function HomePage() {
                   {formalFusionError}
                 </p>
               )}
+              {showFormalMaterialWarning &&
+                formalLessonSessionId &&
+                form.courseMaterials.length > 0 && (
+                  <div
+                    className="mt-2 rounded-lg border border-amber-300/80 bg-amber-50/80 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+                    role="alert"
+                  >
+                    <p className="font-medium">
+                      {t('home.formalFusion.materialsUnsupportedTitle')}
+                    </p>
+                    <p className="mt-1 leading-relaxed">
+                      {t('home.formalFusion.materialsUnsupportedDesc')}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={switchToOrdinaryClassroom}
+                        className="rounded-md bg-amber-600 px-2.5 py-1.5 font-medium text-white hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                      >
+                        {t('home.formalFusion.materialsUseOrdinary')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowFormalMaterialWarning(false)}
+                        className="rounded-md border border-amber-300 px-2.5 py-1.5 font-medium hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900/30"
+                      >
+                        {t('home.formalFusion.materialsKeepFusion')}
+                      </button>
+                    </div>
+                  </div>
+                )}
             </div>
 
             {/* Toolbar row */}
@@ -923,7 +974,9 @@ function HomePage() {
 
               {/* Send button */}
               <button
-                onClick={handleGenerate}
+                onClick={() => {
+                  void handleGenerate();
+                }}
                 disabled={!canGenerate}
                 className={cn(
                   'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',

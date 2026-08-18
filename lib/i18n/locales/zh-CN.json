@@ -1012,7 +1012,11 @@
     "clarificationSubmitting": "提交中",
     "clarificationFailed": "澄清提交失败，请重试。",
     "nonFusionRecoveryDesc": "本次不会使用个性化 Fusion 上下文。你可以改用独立的普通课堂。",
-    "nonFusionRecoveryAction": "开始普通课堂"
+    "nonFusionRecoveryAction": "开始普通课堂",
+    "materialsUnsupportedTitle": "正式 Fusion 暂不支持课程材料",
+    "materialsUnsupportedDesc": "浏览器上传的 PDF 或图片材料暂时不能进入正式 Fusion。请改用普通课堂来使用这些材料，或移除材料后继续使用 Fusion。",
+    "materialsUseOrdinary": "改用普通课堂",
+    "materialsKeepFusion": "保留 Fusion"
   },
   "settings": {
     "title": "设置",

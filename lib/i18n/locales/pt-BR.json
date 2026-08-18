@@ -1012,7 +1012,11 @@
     "clarificationSubmitting": "Submitting",
     "clarificationFailed": "Clarification could not be submitted. Please try again.",
     "nonFusionRecoveryDesc": "Personalized Fusion context was not used. Start a separate ordinary classroom instead.",
-    "nonFusionRecoveryAction": "Start ordinary classroom"
+    "nonFusionRecoveryAction": "Start ordinary classroom",
+    "materialsUnsupportedTitle": "Materials are not supported in formal Fusion",
+    "materialsUnsupportedDesc": "Browser-uploaded PDF or image materials cannot enter formal Fusion yet. Use an ordinary classroom to include them, or remove the materials to continue with Fusion.",
+    "materialsUseOrdinary": "Use ordinary classroom",
+    "materialsKeepFusion": "Keep Fusion"
   },
   "settings": {
     "title": "Configurações",

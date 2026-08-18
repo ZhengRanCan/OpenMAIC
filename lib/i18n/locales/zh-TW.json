@@ -997,7 +997,11 @@
     "clarificationSubmitting": "提交中",
     "clarificationFailed": "澄清提交失敗，請重試。",
     "nonFusionRecoveryDesc": "這次不會使用個人化 Fusion 上下文。你可以改用獨立的普通課堂。",
-    "nonFusionRecoveryAction": "開始普通課堂"
+    "nonFusionRecoveryAction": "開始普通課堂",
+    "materialsUnsupportedTitle": "正式 Fusion 暫不支援課堂材料",
+    "materialsUnsupportedDesc": "瀏覽器上傳的 PDF 或圖片材料目前不能進入正式 Fusion。請改用普通課堂來使用這些材料，或移除材料後繼續使用 Fusion。",
+    "materialsUseOrdinary": "改用普通課堂",
+    "materialsKeepFusion": "保留 Fusion"
   },
   "settings": {
     "title": "設定",
