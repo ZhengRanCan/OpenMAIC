@@ -144,13 +144,42 @@ function storedOutline(value: unknown): SceneOutline | undefined {
           questionTypes?: unknown;
         })
       : undefined;
-  return {
+  const preserved: SceneOutline = {
     id,
     type: type as SceneOutline['type'],
     title,
     description,
     keyPoints,
     order: typeof entry.order === 'number' && Number.isFinite(entry.order) ? entry.order : 0,
+    ...(typeof entry.teachingObjective === 'string' && entry.teachingObjective.trim()
+      ? { teachingObjective: entry.teachingObjective }
+      : {}),
+    ...(typeof entry.estimatedDuration === 'number' && Number.isFinite(entry.estimatedDuration)
+      ? { estimatedDuration: entry.estimatedDuration }
+      : {}),
+    ...(typeof entry.languageNote === 'string' && entry.languageNote.trim()
+      ? { languageNote: entry.languageNote }
+      : {}),
+    ...(Array.isArray(entry.suggestedImageIds)
+      ? {
+          suggestedImageIds: entry.suggestedImageIds.filter(
+            (imageId): imageId is string => typeof imageId === 'string' && !!imageId.trim(),
+          ),
+        }
+      : {}),
+    ...(Array.isArray(entry.mediaGenerations) ? { mediaGenerations: entry.mediaGenerations as SceneOutline['mediaGenerations'] } : {}),
+    ...(entry.interactiveConfig && typeof entry.interactiveConfig === 'object' && !Array.isArray(entry.interactiveConfig)
+      ? { interactiveConfig: entry.interactiveConfig as SceneOutline['interactiveConfig'] }
+      : {}),
+    ...(entry.widgetType && typeof entry.widgetType === 'string' && entry.widgetOutline && typeof entry.widgetOutline === 'object' && !Array.isArray(entry.widgetOutline)
+      ? {
+          widgetType: entry.widgetType as SceneOutline['widgetType'],
+          widgetOutline: entry.widgetOutline as SceneOutline['widgetOutline'],
+        }
+      : {}),
+    ...(entry.pblConfig && typeof entry.pblConfig === 'object' && !Array.isArray(entry.pblConfig)
+      ? { pblConfig: entry.pblConfig as SceneOutline['pblConfig'] }
+      : {}),
     ...(quizConfig &&
     typeof quizConfig.questionCount === 'number' &&
     ['easy', 'medium', 'hard'].includes(String(quizConfig.difficulty)) &&
@@ -170,6 +199,7 @@ function storedOutline(value: unknown): SceneOutline | undefined {
       ? { fusionCheckpoint: entry.fusionCheckpoint as SceneOutline['fusionCheckpoint'] }
       : {}),
   };
+  return preserved;
 }
 
 function outlinesFrom(record: FusionSessionRecord): SceneOutline[] | undefined {
@@ -424,14 +454,21 @@ export function completeFormalLessonOutlines(
   const reserved = new Set([checkpointSceneId, remediationSceneId]);
   const base = source
     .filter((outline) => !reserved.has(outline.id))
-    .map((outline, index) => ({
-      id: outline.id,
-      type: outline.type,
-      title: outline.title,
-      description: outline.description,
-      keyPoints: [...outline.keyPoints],
-      order: index + 1,
-    }));
+    .map((outline, index) => {
+      // Browser/model supplied checkpoint bindings are never carried into the
+      // formal lesson. Only the Catalog-owned checkpoint below may contain
+      // server Fusion metadata.
+      const { fusionCheckpoint: _browserCheckpoint, ...sourceFields } = outline;
+      return {
+        ...sourceFields,
+        id: outline.id,
+        type: outline.type,
+        title: outline.title,
+        description: outline.description,
+        keyPoints: [...outline.keyPoints],
+        order: index + 1,
+      };
+    });
   const localizedFallback = base[0] ?? {
     title: context.semanticRequest.normalizedTopic,
     description: context.semanticRequest.normalizedTopic,

@@ -177,9 +177,27 @@ describe('F23 formal generation session', () => {
         title: 'Server generated teaching scene',
         description: 'Teach the frozen requirement.',
         keyPoints: ['point-1'],
+        teachingObjective: 'Interpret slope and intercept',
+        estimatedDuration: 90,
+        widgetType: 'simulation',
+        widgetOutline: { concept: 'linear functions', keyVariables: ['m', 'b'] },
+        fusionCheckpoint: {
+          checkpointId: 'forged',
+          mappingId: 'forged',
+          mappingRevision: 'forged',
+          lessonKnowledgePointIds: ['forged'],
+          remediationStrategy: 'forged',
+        },
         order: 1,
       },
     ]);
+    expect(outlines[0].fusionCheckpoint).toBeUndefined();
+    expect(outlines[0]).toMatchObject({
+      teachingObjective: 'Interpret slope and intercept',
+      estimatedDuration: 90,
+      widgetType: 'simulation',
+      widgetOutline: { concept: 'linear functions', keyVariables: ['m', 'b'] },
+    });
     expect(outlines).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -248,6 +266,10 @@ describe('F23 formal generation session', () => {
         title: 'Server generated teaching scene',
         description: 'Teach the frozen requirement.',
         keyPoints: ['point-1'],
+        teachingObjective: 'Interpret slope and intercept',
+        estimatedDuration: 90,
+        widgetType: 'simulation',
+        widgetOutline: { concept: 'linear functions', keyVariables: ['m', 'b'] },
         order: 1,
       },
     ]);
