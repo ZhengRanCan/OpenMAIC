@@ -12,6 +12,7 @@ export interface OutlineFallbackEvidence {
 export type OutlineReconciliationReason =
   | 'server-canonical'
   | 'browser-fallback-compatible'
+  | 'browser-effective-outline-compatible'
   | 'content-compatible'
   | 'mismatch-fail-closed';
 
@@ -74,7 +75,8 @@ export function reconcileFusionOutline(input: {
     browserOutline.type === 'slide' &&
     contentShape === 'slide-shaped' &&
     input.fallbackEvidence?.reason === 'content-route-fallback' &&
-    input.fallbackEvidence.requestedType === browserOutline.type &&
+    (input.fallbackEvidence.requestedType === browserOutline.type ||
+      (browserOutline.type === 'slide' && input.fallbackEvidence.requestedType === 'interactive')) &&
     input.fallbackEvidence.effectiveType === 'slide' &&
     input.fallbackEvidence.contentShape === contentShape
   ) {
