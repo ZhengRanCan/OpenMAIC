@@ -35,10 +35,25 @@ interface SceneContentResult {
   success: boolean;
   content?: unknown;
   effectiveOutline?: SceneOutline;
+  fallbackReason?: {
+    reason: 'content-route-fallback';
+    requestedType: SceneOutline['type'];
+    effectiveType: SceneOutline['type'];
+    contentShape: string;
+  };
   error?: string;
   errorCode?: string;
   statusCode?: number;
   recovery?: unknown;
+}
+
+export function synchronizeEffectiveOutline(outline: SceneOutline, effectiveOutline?: SceneOutline): SceneOutline {
+  if (!effectiveOutline || effectiveOutline.id !== outline.id) return outline;
+  const current = useStageStore.getState().outlines;
+  if (JSON.stringify(current.find((item) => item.id === outline.id)) !== JSON.stringify(effectiveOutline)) {
+    useStageStore.getState().setOutlines(current.map((item) => item.id === outline.id ? effectiveOutline : item));
+  }
+  return effectiveOutline;
 }
 
 interface SceneActionsResult {
@@ -202,6 +217,12 @@ export async function fetchSceneActions(
     previousSpeeches?: string[];
     userProfile?: string;
     languageDirective?: string;
+    fallbackReason?: {
+    reason: 'content-route-fallback';
+    requestedType: SceneOutline['type'];
+    effectiveType: SceneOutline['type'];
+    contentShape: string;
+  };
     /** Opaque formal F23 session id; the server validates its paired cookie. */
     lessonSessionId?: string;
   },
@@ -592,6 +613,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             contentResult = await fetchContent(outline);
           }
 
+          const effectiveOutline = synchronizeEffectiveOutline(outline, contentResult.effectiveOutline);
+
           if (!contentResult.success || !contentResult.content) {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
@@ -622,9 +645,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           options.onPhaseChange?.('actions', outline);
           const actionsResult = await fetchSceneActions(
             {
-              outline: contentResult.effectiveOutline || outline,
-              allOutlines: outlines,
+              outline: effectiveOutline,
+              allOutlines: store.getState().outlines,
               content: contentResult.content,
+              fallbackReason: contentResult.fallbackReason,
               stageId: stage.id,
               agents: params.agents,
               previousSpeeches,
@@ -787,8 +811,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           signal,
         );
 
+        const effectiveOutline = synchronizeEffectiveOutline(outline, contentResult.effectiveOutline);
+
         if (!contentResult.success || !contentResult.content) {
-          store.getState().addFailedOutline(outline);
+          store.getState().addFailedOutline(effectiveOutline);
           return;
         }
 
@@ -803,7 +829,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         const actionsResult = await fetchSceneActions(
           {
-            outline: contentResult.effectiveOutline || outline,
+            outline: effectiveOutline,
             allOutlines: state.outlines,
             content: contentResult.content,
             stageId: state.stage.id,

@@ -33,6 +33,11 @@ import {
   FormalFusionError,
   resolveFormalFusion,
 } from '@/lib/fusion/generation-session';
+import {
+  classifyOutlineContent,
+  OutlineContentTypeMismatchError,
+  reconcileFusionOutline,
+} from '@/lib/generation/outline-reconciliation';
 
 const log = createLogger('Scene Actions API');
 
@@ -53,6 +58,7 @@ export async function POST(req: NextRequest) {
       previousSpeeches: incomingPreviousSpeeches,
       userProfile,
       languageDirective,
+      fallbackReason,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -66,6 +72,12 @@ export async function POST(req: NextRequest) {
       previousSpeeches?: string[];
       userProfile?: string;
       languageDirective?: string;
+      fallbackReason?: {
+        reason: 'content-route-fallback';
+        requestedType: SceneOutline['type'];
+        effectiveType: SceneOutline['type'];
+        contentShape: 'slide-shaped' | 'quiz-shaped' | 'interactive-shaped' | 'pbl-shaped' | 'unknown';
+      };
     };
 
     // Validate required fields
@@ -96,7 +108,7 @@ export async function POST(req: NextRequest) {
       modelString,
       thinkingConfig,
     } = await resolveModelFromRequest(req, body, 'scene-actions');
-    const effectiveOutline =
+    const serverOutline =
       formalFusion.kind === 'resolved'
         ? (() => {
             const stored = formalFusion.outlines?.find((candidate) => candidate.id === outline.id);
@@ -104,6 +116,28 @@ export async function POST(req: NextRequest) {
             return stored;
           })()
         : outline;
+    const reconciliation =
+      formalFusion.kind === 'resolved'
+        ? reconcileFusionOutline({
+            serverOutline,
+            browserOutline: outline,
+            content,
+            fallbackEvidence: fallbackReason,
+          })
+        : {
+            outline: outline,
+            contentShape: classifyOutlineContent(content),
+            reason: 'server-canonical' as const,
+          };
+    const effectiveOutline = reconciliation.outline;
+    log.info('Resolved scene outline for actions', {
+      sceneId: effectiveOutline.id,
+      browserType: outline.type,
+      serverType: serverOutline.type,
+      effectiveType: effectiveOutline.type,
+      contentShape: reconciliation.contentShape,
+      reason: reconciliation.reason,
+    });
     outlineTitle = effectiveOutline?.title;
     resolvedModelString = modelString;
 
@@ -153,7 +187,13 @@ export async function POST(req: NextRequest) {
 
     // ── Build cross-scene context ──
     const effectiveAllOutlines =
-      formalFusion.kind === 'resolved' ? (formalFusion.outlines ?? []) : allOutlines;
+      formalFusion.kind === 'resolved'
+        ? (formalFusion.outlines ?? []).map((candidate) =>
+            candidate.id === effectiveOutline.id ? effectiveOutline : candidate,
+          )
+        : allOutlines.map((candidate) =>
+            candidate.id === effectiveOutline.id ? effectiveOutline : candidate,
+          );
     const allTitles = effectiveAllOutlines.map((o) => o.title);
     const pageIndex = effectiveAllOutlines.findIndex((o) => o.id === effectiveOutline.id);
     const ctx: SceneGenerationContext = {
@@ -183,9 +223,25 @@ export async function POST(req: NextRequest) {
     const scene = buildCompleteScene(effectiveOutline, content, actions, stageId);
 
     if (!scene) {
-      log.error(`Failed to build scene: "${outline.title}"`);
+      const contentKind =
+        content && typeof content === 'object'
+          ? 'type' in content
+            ? String((content as { type?: unknown }).type)
+            : 'elements' in content
+              ? 'slide-shaped'
+              : 'html' in content
+                ? 'interactive-shaped'
+                : 'unknown'
+          : 'unknown';
+      log.error(
+        `Failed to build scene: "${effectiveOutline.title}" (sceneId=${effectiveOutline.id}, browserType=${outline.type}, serverType=${serverOutline.type}, outlineType=${effectiveOutline.type}, contentType=${contentKind}, fallbackReason=${fallbackReason ?? 'none-or-upstream'})`,
+      );
 
-      return apiError('GENERATION_FAILED', 500, `Failed to build scene: ${outline.title}`);
+      return apiError(
+        'GENERATION_FAILED',
+        500,
+        `Failed to build scene: ${effectiveOutline.title} (scene id=${effectiveOutline.id}, browser type=${outline.type}, server type=${serverOutline.type}, outline type=${effectiveOutline.type}, content type=${contentKind}, fallback reason=${fallbackReason ?? 'none-or-upstream'})`,
+      );
     }
 
     // ── Extract speeches for cross-scene coherence ──
@@ -200,6 +256,14 @@ export async function POST(req: NextRequest) {
     return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
   } catch (error) {
     if (error instanceof FormalFusionError) return formalFusionErrorResponse(error);
+    if (error instanceof OutlineContentTypeMismatchError) {
+      log.error('Outline/content reconciliation rejected generation', error.diagnostics);
+      return apiError(
+        error.code,
+        409,
+        `${error.message} (reconciliation reason=${error.diagnostics.reason})`,
+      );
+    }
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

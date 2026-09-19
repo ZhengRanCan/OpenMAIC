@@ -685,7 +685,13 @@ function GenerationPreviewContent() {
                         } else if (evt.type === 'courseTitle') {
                           title = evt.data;
                         } else if (evt.type === 'outline') {
-                          collected.push(evt.data);
+                          const outline = evt.data as SceneOutline;
+                          const existingIndex = collected.findIndex((item) => item.id === outline.id);
+                          if (existingIndex >= 0) {
+                            collected[existingIndex] = outline;
+                          } else {
+                            collected.push(outline);
+                          }
                           setStreamingOutlines([...collected]);
                         } else if (evt.type === 'retry') {
                           collected.length = 0;

@@ -35,6 +35,19 @@ function parseSseEvents(text: string) {
     .map((line) => JSON.parse(line.slice(6)));
 }
 
+function parseClientOutlines(events: Array<{ type: string; data?: { id: string }; outlines?: Array<{ id: string }> }>) {
+  const collected: Array<{ id: string }> = [];
+  for (const event of events) {
+    if (event.type === 'outline' && event.data) {
+      const index = collected.findIndex((outline) => outline.id === event.data!.id);
+      if (index >= 0) collected[index] = event.data;
+      else collected.push(event.data);
+    }
+    if (event.type === 'done' && event.outlines) return event.outlines;
+  }
+  return collected;
+}
+
 function mockRequest(requirements: Record<string, unknown>) {
   return {
     json: async () => ({
@@ -200,6 +213,7 @@ describe('task-engine outline route', () => {
     expect(done).toBeDefined();
     expect(done.taskEngineMode).toBe(true);
     expect(done.outlines).toHaveLength(8);
+    expect(parseClientOutlines(events)).toEqual(done.outlines);
     expect(done.outlines[0]).toMatchObject({
       type: 'slide',
       title: '高压风险边界',

@@ -25,6 +25,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import { classifyOutlineContent } from '@/lib/generation/outline-reconciliation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import {
   appendFormalTeachingPrompt,
@@ -166,6 +167,15 @@ export async function POST(req: NextRequest) {
     const effectiveOutline = applyOutlineFallbacks(outline, !!languageModel, {
       allowProceduralSkill: vocationalActive,
     });
+    const fallbackReason =
+      effectiveOutline.type !== outline.type
+        ? {
+            reason: 'content-route-fallback' as const,
+            requestedType: outline.type,
+            effectiveType: effectiveOutline.type,
+            contentShape: 'unknown',
+          }
+        : undefined;
 
     // ── Filter images assigned to this outline ──
     let assignedImages: PdfImage[] | undefined;
@@ -222,7 +232,11 @@ export async function POST(req: NextRequest) {
 
     log.info(`Content generated successfully: "${effectiveOutline.title}"`);
 
-    return apiSuccess({ content, effectiveOutline });
+    const finalFallbackReason = fallbackReason
+      ? { ...fallbackReason, contentShape: classifyOutlineContent(content) }
+      : undefined;
+
+    return apiSuccess({ content, effectiveOutline, fallbackReason: finalFallbackReason });
   } catch (error) {
     if (error instanceof FormalFusionError) return formalFusionErrorResponse(error);
     log.error(
