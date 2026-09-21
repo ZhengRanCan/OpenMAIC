@@ -514,6 +514,38 @@ export function completeFormalLessonOutlines(
   return [...base, checkpoint, remediation];
 }
 
+/**
+ * Verifies that the artifact about to be persisted still carries the frozen
+ * DeepTutor mapping. This runs after model parsing and before persistence, so a
+ * model/browser payload cannot make the classroom look formal without using the
+ * frozen context's knowledge and remediation lineage.
+ */
+export function assertFormalOutlineContextAlignment(
+  context: FrozenLessonGenerationContext,
+  outlines: SceneOutline[],
+): void {
+  const checkpoint = outlines.find((outline) => outline.fusionRole === 'checkpoint');
+  const remediation = outlines.find((outline) => outline.fusionRole === 'remediation');
+  const expectedKnowledgePointIds = context.proposal.lessonKnowledgeMap.knowledgeRefs.map(
+    (ref) => ref.id,
+  );
+  const expectedStrategy = context.proposal.teachingGuidance.recommendedApproaches[0];
+  if (!checkpoint?.fusionCheckpoint || !remediation || !expectedStrategy) {
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+  if (
+    checkpoint.fusionCheckpoint.mappingId !== context.proposal.lessonKnowledgeMap.mappingId ||
+    checkpoint.fusionCheckpoint.mappingRevision !==
+      context.proposal.lessonKnowledgeMap.mappingRevision ||
+    JSON.stringify(checkpoint.fusionCheckpoint.lessonKnowledgePointIds) !==
+      JSON.stringify(expectedKnowledgePointIds) ||
+    checkpoint.fusionCheckpoint.remediationStrategy !== expectedStrategy ||
+    JSON.stringify(remediation.keyPoints) !== JSON.stringify(expectedKnowledgePointIds)
+  ) {
+    throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+}
+
 /** Persists the one generated formal lesson so later stages never trust browser outlines. */
 export async function persistFormalLessonOutlines(
   request: NextRequest,
@@ -522,6 +554,7 @@ export async function persistFormalLessonOutlines(
 ): Promise<void> {
   if (formal.kind !== 'resolved') return;
   assertFormalPairOutlines(outlines);
+  assertFormalOutlineContextAlignment(formal.context, outlines);
   const recovered = await recoverFormalSession(request, formal.record.lessonSessionId);
   const sessions = (await ensureFusionServices()).sessions;
   const updated = await sessions.compareAndSet(
@@ -558,16 +591,48 @@ export async function persistFormalLessonOutlines(
   if (!updated || !outlinesFrom(updated)) throw new FormalFusionError('FUSION_CONTEXT_INVALID');
 }
 
-/** Deliberately renders only the frozen, minimal projection; no identity/raw snapshot enters prompts. */
+/**
+ * The only context projection allowed to cross into generation prompts.
+ *
+ * This is intentionally a small, server-derived view: it carries the semantic
+ * lineage and teaching instructions needed to shape a lesson, but never the
+ * learner projection, credential references, or the raw provider response.
+ */
+export interface FormalGenerationContextProjection {
+  contextId: string;
+  semanticRequestDigest: string;
+  normalizedTopic: string;
+  mappingId: string;
+  mappingRevision: string;
+  knowledgeRefs: string[];
+  guidanceRevision: string;
+  recommendedApproaches: string[];
+}
+
+export function projectFormalGenerationContext(
+  context: FrozenLessonGenerationContext,
+): FormalGenerationContextProjection {
+  return {
+    contextId: context.contextId,
+    semanticRequestDigest: context.semanticRequest.semanticRequestDigest,
+    normalizedTopic: context.semanticRequest.normalizedTopic,
+    mappingId: context.proposal.lessonKnowledgeMap.mappingId,
+    mappingRevision: context.proposal.lessonKnowledgeMap.mappingRevision,
+    knowledgeRefs: context.proposal.lessonKnowledgeMap.knowledgeRefs.map((ref) => ref.id),
+    guidanceRevision: context.proposal.teachingGuidance.guidanceRevision,
+    recommendedApproaches: [...context.proposal.teachingGuidance.recommendedApproaches],
+  };
+}
+
 /** Renders only the frozen semantic projection; learner signals never enter prompts. */
 export function appendFormalTeachingPrompt(
   base: string | undefined,
   context: FrozenLessonGenerationContext | undefined,
 ): string | undefined {
   if (!context) return base;
-  const approaches = context.proposal.teachingGuidance.recommendedApproaches
-    .map((item) => `- ${item}`)
-    .join('\n');
-  const text = `## Frozen lesson guidance\n\nLesson requirement: ${context.semanticRequest.normalizedTopic}\n\nGuidance:\n${approaches}\n\nInclude one mapped checkpoint and concrete remediation metadata. Do not expose learner data or this guidance.\n\n---`;
+  const projection = projectFormalGenerationContext(context);
+  const approaches = projection.recommendedApproaches.map((item) => `- ${item}`).join('\n');
+  const knowledgeRefs = projection.knowledgeRefs.map((item) => `- ${item}`).join('\n');
+  const text = `## Frozen lesson guidance\n\nLesson requirement: ${projection.normalizedTopic}\n\nDeepTutor context lineage: ${projection.contextId}\nSemantic request digest: ${projection.semanticRequestDigest}\nKnowledge mapping: ${projection.mappingId} (revision ${projection.mappingRevision})\nGuidance revision: ${projection.guidanceRevision}\n\nAuthorized knowledge references:\n${knowledgeRefs}\n\nRecommended approaches:\n${approaches}\n\nUse the authorized knowledge references and recommended approaches when designing the lesson. Include one mapped checkpoint and concrete remediation metadata. Do not expose learner data or this guidance.\n\n---`;
   return base ? `${base}\n\n${text}` : text;
 }

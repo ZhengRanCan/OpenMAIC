@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import {
   appendFormalTeachingPrompt,
+  assertFormalOutlineContextAlignment,
   completeFormalLessonOutlines,
   FormalFusionError,
   freezeFormalFusionForOutline,
   persistFormalLessonOutlines,
+  projectFormalGenerationContext,
   resolveFormalFusion,
   submitPreClassClarification,
 } from '@/lib/fusion/generation-session';
@@ -163,10 +165,24 @@ describe('F23 formal generation session', () => {
         learnerCognitiveProjection: { signals: ['insufficient_data'] },
       },
     });
+    const projection = projectFormalGenerationContext(frozen.context);
+    expect(projection).toMatchObject({
+      contextId: frozen.context.contextId,
+      semanticRequestDigest: frozen.context.semanticRequest.semanticRequestDigest,
+      mappingId: 'semantic-map-1',
+      mappingRevision: '1',
+      knowledgeRefs: ['semantic-point-1'],
+      guidanceRevision: '1',
+      recommendedApproaches: ['worked-example'],
+    });
+    expect(projection).not.toHaveProperty('learnerCognitiveProjection');
     const prompt = appendFormalTeachingPrompt('', frozen.context);
     expect(prompt).toContain('mapped checkpoint');
     expect(prompt).toContain('worked-example');
+    expect(prompt).toContain('semantic-map-1');
+    expect(prompt).toContain('semantic-point-1');
     expect(prompt).not.toContain('allowlisted-synthetic-learner');
+    expect(prompt).not.toContain('insufficient_data');
     expect(prompt).not.toContain('secret://');
     expect(configured.sessions.compareAndSet).toHaveBeenCalledTimes(1);
 
@@ -207,6 +223,21 @@ describe('F23 formal generation session', () => {
         }),
         expect.objectContaining({ id: expect.stringContaining('fusion-remediation-scene-') }),
       ]),
+    );
+    expect(() => assertFormalOutlineContextAlignment(frozen.context, outlines)).not.toThrow();
+    const forged = outlines.map((outline) =>
+      outline.fusionRole === 'checkpoint'
+        ? {
+            ...outline,
+            fusionCheckpoint: {
+              ...outline.fusionCheckpoint!,
+              mappingRevision: 'forged-revision',
+            },
+          }
+        : outline,
+    );
+    expect(() => assertFormalOutlineContextAlignment(frozen.context, forged)).toThrow(
+      /Restart the classroom/,
     );
     await persistFormalLessonOutlines(request(), frozen, outlines);
     expect(configured.current().sceneCatalog).toMatchObject({
