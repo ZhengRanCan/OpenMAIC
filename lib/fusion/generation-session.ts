@@ -25,6 +25,7 @@ import {
   resolveFormalPreClassContext,
 } from './adapter/preclass-context-provider';
 import { buildFormalSceneCatalog, isFormalSceneCatalog } from './scene-catalog';
+import { assertFormalPairOutlines } from './materialization';
 
 const COOKIE = 'openmaic_fusion_session';
 export type FormalFusionResolution =
@@ -198,6 +199,9 @@ function storedOutline(value: unknown): SceneOutline | undefined {
     ...(entry.fusionCheckpoint && typeof entry.fusionCheckpoint === 'object'
       ? { fusionCheckpoint: entry.fusionCheckpoint as SceneOutline['fusionCheckpoint'] }
       : {}),
+    ...(entry.fusionRole === 'teach' || entry.fusionRole === 'checkpoint' || entry.fusionRole === 'remediation'
+      ? { fusionRole: entry.fusionRole }
+      : {}),
   };
   return preserved;
 }
@@ -273,6 +277,13 @@ export async function resolveFormalFusion(
   if (!context) throw new FormalFusionError('FUSION_CONTEXT_INVALID');
   if (record.generatedOutlines && !outlinesFrom(record)) {
     throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+  }
+  if (record.generatedOutlines) {
+    try {
+      assertFormalPairOutlines(outlinesFrom(record) ?? []);
+    } catch {
+      throw new FormalFusionError('FUSION_CONTEXT_INVALID');
+    }
   }
   if (record.generatedOutlines && !isFormalSceneCatalog(record.sceneCatalog)) {
     throw new FormalFusionError('FUSION_CONTEXT_INVALID');
@@ -463,6 +474,7 @@ export function completeFormalLessonOutlines(
         ...sourceFields,
         id: outline.id,
         type: outline.type,
+        ...(outline.fusionRole ? { fusionRole: outline.fusionRole } : {}),
         title: outline.title,
         description: outline.description,
         keyPoints: [...outline.keyPoints],
@@ -481,6 +493,7 @@ export function completeFormalLessonOutlines(
     keyPoints: knowledgePointIds,
     order: base.length + 1,
     quizConfig: { questionCount: 1, difficulty: 'easy', questionTypes: ['single'] },
+    fusionRole: 'checkpoint',
     fusionCheckpoint: {
       checkpointId,
       mappingId: context.proposal.lessonKnowledgeMap.mappingId,
@@ -496,6 +509,7 @@ export function completeFormalLessonOutlines(
     description: localizedFallback.description,
     keyPoints: knowledgePointIds,
     order: base.length + 2,
+    fusionRole: 'remediation',
   };
   return [...base, checkpoint, remediation];
 }
@@ -507,6 +521,7 @@ export async function persistFormalLessonOutlines(
   outlines: SceneOutline[],
 ): Promise<void> {
   if (formal.kind !== 'resolved') return;
+  assertFormalPairOutlines(outlines);
   const recovered = await recoverFormalSession(request, formal.record.lessonSessionId);
   const sessions = (await ensureFusionServices()).sessions;
   const updated = await sessions.compareAndSet(
@@ -522,6 +537,16 @@ export async function persistFormalLessonOutlines(
               formal.context,
               outlines,
             ) as unknown as FusionJsonObject,
+            materializationLedger: {
+              status: 'planned',
+              ...(outlines.find((outline) => outline.fusionRole === 'checkpoint')?.id
+                ? { checkpointSceneId: outlines.find((outline) => outline.fusionRole === 'checkpoint')!.id }
+                : {}),
+              ...(outlines.find((outline) => outline.fusionRole === 'remediation')?.id
+                ? { remediationSceneId: outlines.find((outline) => outline.fusionRole === 'remediation')!.id }
+                : {}),
+              updatedAt: new Date().toISOString(),
+            } as FusionJsonObject,
             runtimeState: JSON.parse(
               JSON.stringify({
                 ...(current.runtimeState as Record<string, unknown>),

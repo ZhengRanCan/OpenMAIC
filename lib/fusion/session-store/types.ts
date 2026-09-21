@@ -56,6 +56,8 @@ export interface FusionSessionRecord {
   preClassClarification?: FusionJsonObject;
   /** Server-owned outlines from the sole formal generation request. */
   generatedOutlines?: FusionJsonObject[];
+  /** Server-owned materialization ledger for formal pair recovery/export diagnostics. */
+  materializationLedger?: FusionJsonObject;
   /** F45-retired default catalog; historical records keep their stored value. */
   sceneCatalog?: FusionJsonObject;
   runtimeState: FusionJsonObject;

@@ -145,6 +145,11 @@ export function buildCompleteScene(
     scene && {
       ...scene,
       outlineId: outline.id,
+      ...(outline.id.startsWith('fusion-checkpoint-scene-')
+        ? { fusionRole: 'checkpoint' as const }
+        : outline.id.startsWith('fusion-remediation-scene-')
+          ? { fusionRole: 'remediation' as const }
+          : {}),
       ...(outline.fusionCheckpoint
         ? {
             fusionCheckpoint: {
@@ -167,7 +172,12 @@ function buildCompleteSceneInner(
   actions: Action[],
   stageId: string,
 ): Scene | null {
-  const sceneId = nanoid();
+  // Formal Fusion scenes use the server-owned outline identity as their durable
+  // classroom identity; ordinary scenes retain the historical generated id.
+  const sceneId = outline.id.startsWith('fusion-checkpoint-scene-') ||
+    outline.id.startsWith('fusion-remediation-scene-')
+    ? outline.id
+    : nanoid();
 
   if (outline.type === 'slide' && 'elements' in content) {
     // Build Slide object

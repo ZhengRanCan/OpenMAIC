@@ -12,6 +12,7 @@ import {
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
+import { assertFormalPairScenes } from '@/lib/fusion/materialization';
 import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { migrateScene } from '@/lib/edit/slide-schema';
@@ -155,7 +156,7 @@ function isDeckComplete({
   return (
     outlines.length > 0 &&
     failedOutlines.length === 0 &&
-    outlines.every((o) => scenes.some((s) => s.order === o.order))
+    outlines.every((o) => scenes.some((s) => s.outlineId === o.id || s.order === o.order))
   );
 }
 
@@ -342,6 +343,13 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setGenerationComplete: (generationComplete) => {
+    if (generationComplete) {
+      const state = get();
+      const hasFormalPair = state.outlines.some((outline) => outline.fusionCheckpoint || outline.fusionRole);
+      if (hasFormalPair) {
+        assertFormalPairScenes(state.outlines, state.scenes);
+      }
+    }
     set({ generationComplete });
     // Persist alongside the outlines record so resume-on-mount can read it.
     const stageId = get().stage?.id;
@@ -532,7 +540,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           // as a pending placeholder or drive resume regeneration.
           generatingOutlines: generationComplete
             ? []
-            : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+            : outlines.filter((o) => !migrated.some((s) => s.outlineId === o.id || s.order === o.order)),
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user

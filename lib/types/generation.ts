@@ -174,6 +174,8 @@ export interface SceneOutline {
     lessonKnowledgePointIds: string[];
     remediationStrategy: string;
   };
+  /** Server-owned role for the formal Fusion pair. */
+  fusionRole?: 'teach' | 'checkpoint' | 'remediation';
 }
 
 // ==================== Stage 3 Output: Generated Content ====================

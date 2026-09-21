@@ -27,6 +27,7 @@ import {
 import { createProxiedFetch } from './proxied-fetch';
 import type { SceneContent } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
+import { assertFormalPairScenes, FormalMaterializationError } from '@/lib/fusion/materialization';
 
 export async function inlineSceneContent(
   content: SceneContent,
@@ -46,7 +47,7 @@ export function useExportClassroom() {
   const { t } = useI18n();
 
   const exportClassroomZip = useCallback(async () => {
-    const { stage, scenes } = useStageStore.getState();
+    const { stage, scenes, outlines } = useStageStore.getState();
     if (!stage?.id || scenes.length === 0) return;
 
     setExporting(true);
@@ -56,6 +57,18 @@ export function useExportClassroom() {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
       const documentScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
+      if (outlines.some((outline) => outline.fusionCheckpoint)) {
+        try {
+          assertFormalPairScenes(outlines, documentScenes);
+        } catch (error) {
+          if (error instanceof FormalMaterializationError) {
+            toast.error(t('export.exportFailed'), { id: toastId });
+            log.error('Formal Fusion export rejected', error);
+            return;
+          }
+          throw error;
+        }
+      }
 
       // 1. Read latest stage name from IndexedDB (may have been renamed on home page)
       const freshStage = await db.stages.get(stage.id);
@@ -132,6 +145,19 @@ export function useExportClassroom() {
             type: scene.type,
             title: scene.title,
             order: scene.order,
+            ...(scene.outlineId ? { outlineId: scene.outlineId } : {}),
+            ...(scene.fusionRole ? { fusionRole: scene.fusionRole } : {}),
+            ...(scene.fusionCheckpoint
+              ? {
+                  fusionCheckpoint: {
+                    checkpointId: scene.fusionCheckpoint.checkpointId,
+                    mappingId: scene.fusionCheckpoint.mappingId,
+                    mappingRevision: scene.fusionCheckpoint.mappingRevision,
+                    lessonKnowledgePointIds: [...scene.fusionCheckpoint.lessonKnowledgePointIds],
+                    remediationStrategy: scene.fusionCheckpoint.remediationStrategy,
+                  },
+                }
+              : {}),
             content,
             actions: scene.actions
               ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex)

@@ -6,6 +6,8 @@ export interface SceneCatalogEntry {
   order: number;
   role: 'teach' | 'checkpoint' | 'remediation';
   checkpointId?: string;
+  mappingId?: string;
+  mappingRevision?: string;
   lessonKnowledgePointIds: string[];
   remediationForCheckpointId?: string;
   teachingStrategyTags: string[];
@@ -25,7 +27,7 @@ export function buildFormalSceneCatalog(
   context: FrozenLessonGenerationContext,
   outlines: SceneOutline[],
 ): SceneCatalog {
-  const checkpoint = outlines.find((outline) => outline.fusionCheckpoint);
+  const checkpoint = outlines.find((outline) => outline.fusionRole === 'checkpoint' || outline.fusionCheckpoint);
   if (!checkpoint?.fusionCheckpoint) throw new Error('formal_checkpoint_missing');
   const checkpointMetadata = checkpoint.fusionCheckpoint;
   const remediation = outlines.find(
@@ -39,6 +41,8 @@ export function buildFormalSceneCatalog(
         order: index + 1,
         role: 'checkpoint',
         checkpointId: checkpointMetadata.checkpointId,
+        mappingId: checkpointMetadata.mappingId,
+        mappingRevision: checkpointMetadata.mappingRevision,
         lessonKnowledgePointIds: [...checkpointMetadata.lessonKnowledgePointIds],
         teachingStrategyTags: [],
       };
@@ -49,6 +53,8 @@ export function buildFormalSceneCatalog(
         order: index + 1,
         role: 'remediation',
         remediationForCheckpointId: checkpointMetadata.checkpointId,
+        mappingId: checkpointMetadata.mappingId,
+        mappingRevision: checkpointMetadata.mappingRevision,
         lessonKnowledgePointIds: [...checkpointMetadata.lessonKnowledgePointIds],
         teachingStrategyTags: [checkpointMetadata.remediationStrategy],
       };

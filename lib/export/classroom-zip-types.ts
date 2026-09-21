@@ -42,6 +42,16 @@ export interface ManifestScene {
   type: SceneType;
   title: string;
   order: number;
+  /** Safe, server-owned Fusion traceability; no learner or provider data. */
+  outlineId?: string;
+  fusionRole?: 'teach' | 'checkpoint' | 'remediation';
+  fusionCheckpoint?: {
+    checkpointId: string;
+    mappingId: string;
+    mappingRevision: string;
+    lessonKnowledgePointIds: string[];
+    remediationStrategy: string;
+  };
   content: SceneContent;
   actions?: ManifestAction[];
   whiteboards?: Slide[];
