@@ -50,6 +50,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local package-manager caches
+.npm-cache/
+.pnpm-store/
+
 # server provider config (contains API keys)
 server-providers.yml
 server-providers-*.yml
