@@ -1,0 +1,205 @@
+{
+  "fixtureSchemaVersion": "fusion-canonical-digest-fixtures-v1",
+  "canonicalization": "fusion-c14n-v1",
+  "successCases": [
+    {
+      "id": "semantic-request-basic-nfc",
+      "purpose": "semantic-request",
+      "valueSchemaVersion": "fusion-semantic-request-digest-v1",
+      "canonicalValue": {
+        "audienceSemantics": {
+          "audienceType": "learner",
+          "language": "zh-CN",
+          "priorKnowledgeBand": "beginner"
+        },
+        "authorizedKnowledgeScope": {
+          "allowedKnowledgeRefs": [
+            {
+              "id": "kp-linear-slope",
+              "namespace": "deeptutor",
+              "scopeId": "path-math-01"
+            }
+          ],
+          "namespace": "deeptutor",
+          "scopeId": "path-math-01"
+        },
+        "normalizedLearningObjectives": [
+          "理解一次函数斜率",
+          "能够解释 Café 示例"
+        ],
+        "normalizedTopic": "一次函数：Café 中的斜率",
+        "requestedKnowledgeRefs": [
+          {
+            "id": "kp-linear-slope",
+            "namespace": "deeptutor",
+            "scopeId": "path-math-01"
+          }
+        ],
+        "sourceMaterialRefs": [
+          {
+            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "materialId": "material-01",
+            "purpose": "example-context"
+          }
+        ],
+        "teachingConstraints": {
+          "durationMinutes": 20,
+          "maxSceneCount": 8,
+          "prohibitedModes": [
+            "unbounded-chat"
+          ],
+          "requiredModes": [
+            "checkpoint",
+            "worked-example"
+          ]
+        }
+      },
+      "canonicalJson": "{\"canonicalization\":\"fusion-c14n-v1\",\"purpose\":\"semantic-request\",\"value\":{\"audienceSemantics\":{\"audienceType\":\"learner\",\"language\":\"zh-CN\",\"priorKnowledgeBand\":\"beginner\"},\"authorizedKnowledgeScope\":{\"allowedKnowledgeRefs\":[{\"id\":\"kp-linear-slope\",\"namespace\":\"deeptutor\",\"scopeId\":\"path-math-01\"}],\"namespace\":\"deeptutor\",\"scopeId\":\"path-math-01\"},\"normalizedLearningObjectives\":[\"理解一次函数斜率\",\"能够解释 Café 示例\"],\"normalizedTopic\":\"一次函数：Café 中的斜率\",\"requestedKnowledgeRefs\":[{\"id\":\"kp-linear-slope\",\"namespace\":\"deeptutor\",\"scopeId\":\"path-math-01\"}],\"sourceMaterialRefs\":[{\"digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"materialId\":\"material-01\",\"purpose\":\"example-context\"}],\"teachingConstraints\":{\"durationMinutes\":20,\"maxSceneCount\":8,\"prohibitedModes\":[\"unbounded-chat\"],\"requiredModes\":[\"checkpoint\",\"worked-example\"]}},\"valueSchemaVersion\":\"fusion-semantic-request-digest-v1\"}",
+      "utf8ByteLength": 962,
+      "sha256": "sha256:74d4a48af2f8ada02d860e5c79978c5c98f0d4ef78e63626c691aaa3bc51a31f"
+    },
+    {
+      "id": "lesson-fact-set-time-and-negative-zero",
+      "purpose": "lesson-fact-set",
+      "valueSchemaVersion": "fusion-lesson-fact-set-digest-v1",
+      "canonicalValue": {
+        "factSetRevision": "3",
+        "facts": [
+          {
+            "attemptId": "attempt-01",
+            "checkpointId": "checkpoint-01",
+            "eventId": "event-01",
+            "factId": "fact-01",
+            "factKind": "checkpoint-submitted",
+            "lessonKnowledgePointIds": [
+              "kp-linear-slope"
+            ],
+            "localAssessment": {
+              "confidence": 0.8,
+              "correctness": false,
+              "gradingMode": "deterministic",
+              "maxScore": 1,
+              "score": 0
+            },
+            "occurredAt": "2026-07-31T15:00:00.000Z",
+            "questionRef": {
+              "questionDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "questionId": "question-01",
+              "questionRevision": "2"
+            },
+            "submittedEvidence": {
+              "answerText": "斜率是 Café 每小时的变化量"
+            }
+          }
+        ],
+        "lessonSessionId": "lesson-01",
+        "mappingId": "mapping-01",
+        "mappingRevision": "2",
+        "semanticRequestDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "canonicalJson": "{\"canonicalization\":\"fusion-c14n-v1\",\"purpose\":\"lesson-fact-set\",\"value\":{\"factSetRevision\":\"3\",\"facts\":[{\"attemptId\":\"attempt-01\",\"checkpointId\":\"checkpoint-01\",\"eventId\":\"event-01\",\"factId\":\"fact-01\",\"factKind\":\"checkpoint-submitted\",\"lessonKnowledgePointIds\":[\"kp-linear-slope\"],\"localAssessment\":{\"confidence\":0.8,\"correctness\":false,\"gradingMode\":\"deterministic\",\"maxScore\":1,\"score\":0},\"occurredAt\":\"2026-07-31T15:00:00.000Z\",\"questionRef\":{\"questionDigest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"questionId\":\"question-01\",\"questionRevision\":\"2\"},\"submittedEvidence\":{\"answerText\":\"斜率是 Café 每小时的变化量\"}}],\"lessonSessionId\":\"lesson-01\",\"mappingId\":\"mapping-01\",\"mappingRevision\":\"2\",\"semanticRequestDigest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"},\"valueSchemaVersion\":\"fusion-lesson-fact-set-digest-v1\"}",
+      "utf8ByteLength": 898,
+      "sha256": "sha256:2c7d40fd8021f13fb39b27d86bba71922128205dff6712d6d121a01839711425"
+    },
+    {
+      "id": "profile-update-candidate-absent-optionals",
+      "purpose": "profile-update-candidate",
+      "valueSchemaVersion": "fusion-profile-update-candidate-digest-v1",
+      "canonicalValue": {
+        "candidateId": "candidate-01",
+        "createdAt": "2026-07-31T15:05:00.000Z",
+        "factSetDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "factSetRevision": "3",
+        "idempotencyKey": "profile-update:lesson-01:3",
+        "lessonSessionId": "lesson-01",
+        "mappingId": "mapping-01",
+        "mappingRevision": "2",
+        "observations": [
+          {
+            "authoritativeRef": {
+              "id": "kp-linear-slope",
+              "namespace": "deeptutor",
+              "scopeId": "path-math-01"
+            },
+            "kind": "assessment_result",
+            "lessonKnowledgePointId": "kp-linear-slope",
+            "observationId": "observation-01",
+            "provenance": {
+              "source": "openmaic_observation",
+              "sourceEventId": "event-01"
+            },
+            "value": {
+              "correctness": false,
+              "score": 0
+            }
+          }
+        ],
+        "schemaVersion": "v1",
+        "semanticRequestDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "sourceEventIds": [
+          "event-01"
+        ]
+      },
+      "canonicalJson": "{\"canonicalization\":\"fusion-c14n-v1\",\"purpose\":\"profile-update-candidate\",\"value\":{\"candidateId\":\"candidate-01\",\"createdAt\":\"2026-07-31T15:05:00.000Z\",\"factSetDigest\":\"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"factSetRevision\":\"3\",\"idempotencyKey\":\"profile-update:lesson-01:3\",\"lessonSessionId\":\"lesson-01\",\"mappingId\":\"mapping-01\",\"mappingRevision\":\"2\",\"observations\":[{\"authoritativeRef\":{\"id\":\"kp-linear-slope\",\"namespace\":\"deeptutor\",\"scopeId\":\"path-math-01\"},\"kind\":\"assessment_result\",\"lessonKnowledgePointId\":\"kp-linear-slope\",\"observationId\":\"observation-01\",\"provenance\":{\"source\":\"openmaic_observation\",\"sourceEventId\":\"event-01\"},\"value\":{\"correctness\":false,\"score\":0}}],\"schemaVersion\":\"v1\",\"semanticRequestDigest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sourceEventIds\":[\"event-01\"]},\"valueSchemaVersion\":\"fusion-profile-update-candidate-digest-v1\"}",
+      "utf8ByteLength": 930,
+      "sha256": "sha256:e088ebda68180199084008e5d1f35691be4925e5692c2a53ad722484459bf409"
+    }
+  ],
+  "rejectionCases": [
+    {
+      "id": "unicode-normalized-key-collision",
+      "stage": "unicode-normalization",
+      "rawJson": "{\"e\\u0301\":1,\"é\":2}",
+      "reasonCode": "normalized_key_collision"
+    },
+    {
+      "id": "timestamp-more-than-milliseconds",
+      "stage": "semantic-normalization",
+      "input": "2026-07-31T15:00:00.1234Z",
+      "reasonCode": "timestamp_precision_unsupported"
+    },
+    {
+      "id": "timestamp-without-zone",
+      "stage": "semantic-normalization",
+      "input": "2026-07-31T15:00:00",
+      "reasonCode": "invalid_timestamp"
+    },
+    {
+      "id": "integer-outside-javascript-safe-range",
+      "stage": "schema-validation",
+      "input": "9007199254740992",
+      "reasonCode": "unsafe_integer"
+    },
+    {
+      "id": "duplicate-set-member",
+      "stage": "digest-profile-projection",
+      "input": [
+        "event-01",
+        "event-01"
+      ],
+      "reasonCode": "duplicate_set_member"
+    },
+    {
+      "id": "non-ascii-identifier",
+      "stage": "schema-validation",
+      "input": "课堂-01",
+      "reasonCode": "invalid_ascii_identifier"
+    },
+    {
+      "id": "unknown-candidate-field",
+      "stage": "schema-validation",
+      "input": {
+        "debugNote": "must not be silently dropped"
+      },
+      "reasonCode": "unknown_field"
+    },
+    {
+      "id": "null-for-optional-field-not-allowed-by-v1",
+      "stage": "schema-validation",
+      "input": {
+        "sourceDiagnosisId": null
+      },
+      "reasonCode": "invalid_null"
+    }
+  ]
+}

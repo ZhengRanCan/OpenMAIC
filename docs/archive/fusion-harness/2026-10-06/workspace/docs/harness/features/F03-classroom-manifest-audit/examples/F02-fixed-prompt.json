@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "testId": "F02-linear-function-profile-comparison-v1",
+  "featureId": "F02",
+  "control": {
+    "mustMatch": ["promptSha256"],
+    "groups": ["baseline", "A", "B"]
+  },
+  "artifacts": [
+    {
+      "id": "baseline",
+      "group": "baseline",
+      "manifest": "classroom/F02-baseline/second-prompt-fix/manifest.json",
+      "controlledInput": {
+        "promptId": "linear-function-neutral-v1",
+        "promptSha256": "e5c03599e473b1796057ca9454d330d391e4703344cf2ac5662ca2dee0c2610d"
+      }
+    },
+    {
+      "id": "student-a",
+      "group": "A",
+      "manifest": "classroom/F02-A/second-prompt-fix/manifest.json",
+      "controlledInput": {
+        "promptId": "linear-function-neutral-v1",
+        "promptSha256": "e5c03599e473b1796057ca9454d330d391e4703344cf2ac5662ca2dee0c2610d"
+      }
+    },
+    {
+      "id": "student-b",
+      "group": "B",
+      "manifest": "classroom/F02-B/second-prompt-fix/manifest.json",
+      "controlledInput": {
+        "promptId": "linear-function-neutral-v1",
+        "promptSha256": "e5c03599e473b1796057ca9454d330d391e4703344cf2ac5662ca2dee0c2610d"
+      }
+    }
+  ],
+  "manifestStandard": {
+    "requiredFields": ["formatVersion", "stage", "scenes"],
+    "minimumScenes": 6,
+    "requiredSceneContentTypes": ["slide", "interactive"]
+  },
+  "sharedRequirements": [
+    {
+      "id": "linear-function-core",
+      "requirement": "课堂围绕一次函数，并解释斜率或截距。",
+      "automated": { "allOf": ["一次函数"], "anyOf": ["斜率", "截距"] },
+      "aiReview": "依据引用场景，判断课程是否确实围绕一次函数概念，而非只在标题中提及。"
+    },
+    {
+      "id": "real-world-context",
+      "requirement": "至少包含一个现实生活情境或建模案例。",
+      "automated": { "anyOf": ["出租车", "水费", "手机套餐", "匀速运动", "计费", "建模"], "minScenes": 1 },
+      "aiReview": "依据引用场景，判断生活情境是否被用来解释或应用一次函数。"
+    },
+    {
+      "id": "practice-or-interaction",
+      "requirement": "至少包含一个供学习者操作、练习或检查的环节。",
+      "automated": { "contentTypes": ["interactive"], "minScenes": 1 },
+      "aiReview": "依据互动场景和讲解动作，判断学习者是否有明确可执行的练习或检查任务。"
+    }
+  ],
+  "groupRequirements": {
+    "A": [
+      {
+        "id": "a-scaffolded-learning",
+        "requirement": "体现分步骤支架、图像或情境辅助，并关注斜率和截距的理解。",
+        "automated": { "allOf": ["斜率", "截距"], "anyOf": ["观察", "调整", "拖动", "步骤"], "minScenes": 3 },
+        "aiReview": "判断 A 的证据是否体现由概念到操作的分步骤支架，而不只是普通互动堆叠。"
+      }
+    ],
+    "B": [
+      {
+        "id": "b-representation-transfer",
+        "requirement": "强调解析式、图像和生活情境之间的转换或建模。",
+        "automated": { "allOf": ["图像"], "anyOf": ["解析式", "转换", "建模", "拟合"], "minScenes": 2 },
+        "aiReview": "判断 B 的证据是否要求学习者在表示法或情境之间转换，而非分别介绍多个概念。"
+      },
+      {
+        "id": "b-integrated-challenge",
+        "requirement": "包含综合、挑战或课程检查点。",
+        "automated": { "anyOf": ["综合", "挑战", "检查点"], "minScenes": 1 },
+        "aiReview": "判断该环节是否确实要求整合一次函数知识，而非仅给出复习标题。"
+      }
+    ]
+  }
+}

@@ -1,0 +1,422 @@
+[
+    {
+        "id": "F01",
+        "title": "F01-simulated-deeptutor-profile",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F01-simulated-deeptutor-profile",
+        "version": "v0.1"
+    },
+    {
+        "id": "F02",
+        "title": "F02-profile-driven-ppt",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F02-profile-driven-ppt",
+        "version": "v0.1"
+    },
+    {
+        "id": "F03",
+        "title": "F03-classroom-manifest-audit",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F03-classroom-manifest-audit",
+        "version": "v0.1"
+    },
+    {
+        "id": "F04",
+        "title": "F04-harness-documentation",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F04-harness-documentation",
+        "version": "v0.1"
+    },
+    {
+        "id": "F05",
+        "title": "F05-progress-dashboard-guard",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F05-progress-dashboard-guard",
+        "version": "v0.1"
+    },
+    {
+        "id": "F06",
+        "title": "F06-adapter-architecture-discussion",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F06-adapter-architecture-discussion",
+        "version": "v0.1"
+    },
+    {
+        "id": "F07",
+        "title": "F07-fusion-dev-contracts-and-adapter-skeleton",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F07-fusion-dev-contracts-and-adapter-skeleton",
+        "version": "v0.1"
+    },
+    {
+        "id": "F08",
+        "title": "F08-deeptutor-sync-diagnosis-api",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F08-deeptutor-sync-diagnosis-api",
+        "version": "v0.1"
+    },
+    {
+        "id": "F09",
+        "title": "F09-openmaic-quiz-event-and-adapter-call",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F09-openmaic-quiz-event-and-adapter-call",
+        "version": "v0.1"
+    },
+    {
+        "id": "F10",
+        "title": "F10-scene-catalog-and-directive-planner",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F10-scene-catalog-and-directive-planner",
+        "version": "v0.1"
+    },
+    {
+        "id": "F11",
+        "title": "F11-in-class-dynamic-adjustment-e2e",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F11-in-class-dynamic-adjustment-e2e",
+        "version": "v0.1"
+    },
+    {
+        "id": "F12",
+        "title": "F12-classroom-observation-ledger",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F12-classroom-observation-ledger",
+        "version": "v0.1"
+    },
+    {
+        "id": "F13",
+        "title": "F13-profile-update-candidate-and-api",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F13-profile-update-candidate-and-api",
+        "version": "v0.1"
+    },
+    {
+        "id": "F14",
+        "title": "F14-development-outbox-worker",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F14-development-outbox-worker",
+        "version": "v0.1"
+    },
+    {
+        "id": "F15",
+        "title": "F15-post-lesson-writeback-e2e",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F15-post-lesson-writeback-e2e",
+        "version": "v0.1"
+    },
+    {
+        "id": "F16",
+        "title": "F16-launch-code-and-server-delegation",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F16-launch-code-and-server-delegation",
+        "version": "v0.1"
+    },
+    {
+        "id": "F17",
+        "title": "F17-openmaic-session-recovery",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F17-openmaic-session-recovery",
+        "version": "v0.1"
+    },
+    {
+        "id": "F18",
+        "title": "F18-real-fusion-providers",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F18-real-fusion-providers",
+        "version": "v0.1"
+    },
+    {
+        "id": "F19",
+        "title": "F19-production-persistence-and-reliability",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F19-production-persistence-and-reliability",
+        "version": "v0.1"
+    },
+    {
+        "id": "F20",
+        "title": "F20-integrated-mvp-security-and-e2e",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F20-integrated-mvp-security-and-e2e",
+        "version": "v0.1"
+    },
+    {
+        "id": "F21",
+        "title": "F21-openmaic-lan-demo-deployment",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F21-openmaic-lan-demo-deployment",
+        "version": "v0.1"
+    },
+    {
+        "id": "F22",
+        "title": "F22-openmaic-lan-shared-workspace",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F22-openmaic-lan-shared-workspace",
+        "version": "v0.1"
+    },
+    {
+        "id": "F23",
+        "title": "F23-prelesson-fusion-session-generation-entry",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F23-prelesson-fusion-session-generation-entry",
+        "version": "v0.2"
+    },
+    {
+        "id": "F24",
+        "title": "F24-prelesson-personalization-e2e",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F24-prelesson-personalization-e2e",
+        "version": "v0.2"
+    },
+    {
+        "id": "F25",
+        "title": "F25-prelesson-fusion-readonly-review",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F25-prelesson-fusion-readonly-review",
+        "version": "v0.1"
+    },
+    {
+        "id": "F26",
+        "title": "F26-inlesson-fusion-readonly-review",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F26-inlesson-fusion-readonly-review",
+        "version": "v0.1"
+    },
+    {
+        "id": "F27",
+        "title": "F27-postlesson-fusion-readonly-review",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F27-postlesson-fusion-readonly-review",
+        "version": "v0.1"
+    },
+    {
+        "id": "F28",
+        "title": "F28-fusion-information-exchange-upgrade-plan",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F28-fusion-information-exchange-upgrade-plan",
+        "version": "v0.1"
+    },
+    {
+        "id": "F29",
+        "title": "F29-in-post-class-semantic-exchange-design",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F29-in-post-class-semantic-exchange-design",
+        "version": "v0.1"
+    },
+    {
+        "id": "F30",
+        "title": "F30-deeptutor-fusion-identity-and-profile-pipeline",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F30-deeptutor-fusion-identity-and-profile-pipeline",
+        "version": "v0.1"
+    },
+    {
+        "id": "F31",
+        "title": "F31-fusion-cross-language-canonical-digest",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F31-fusion-cross-language-canonical-digest",
+        "version": "v0.1"
+    },
+    {
+        "id": "F32",
+        "title": "F32-in-post-class-code-migration-roadmaps",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F32-in-post-class-code-migration-roadmaps",
+        "version": "v0.1"
+    },
+    {
+        "id": "F33",
+        "title": "F33-fusion-document-consistency",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F33-fusion-document-consistency",
+        "version": "v0.1"
+    },
+    {
+        "id": "F34",
+        "title": "F34-architecture-split-reorganization",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F34-architecture-split-reorganization",
+        "version": "v0.1"
+    },
+    {
+        "id": "F35",
+        "title": "F35-architecture-nine-fragments",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F35-architecture-nine-fragments",
+        "version": "v0.1"
+    },
+    {
+        "id": "F36",
+        "title": "F36-fusion-document-restructure",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F36-fusion-document-restructure",
+        "version": "v0.1"
+    },
+    {
+        "id": "F37",
+        "title": "F37-architecture-split-merge-confirmation",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F37-architecture-split-merge-confirmation",
+        "version": "v0.1"
+    },
+    {
+        "id": "F38",
+        "title": "F38-architecture-prefusion-review-fixes",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F38-architecture-prefusion-review-fixes",
+        "version": "v0.1"
+    },
+    {
+        "id": "F39",
+        "title": "F39-fusion-protocol-consistency-closure",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F39-fusion-protocol-consistency-closure",
+        "version": "v0.1"
+    },
+    {
+        "id": "F40",
+        "title": "F40-preclass-fusion-contract-kernel",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F40-preclass-fusion-contract-kernel",
+        "version": "v0.1"
+    },
+    {
+        "id": "F41",
+        "title": "F41-deeptutor-preclass-context-route",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F41-deeptutor-preclass-context-route",
+        "version": "v0.1"
+    },
+    {
+        "id": "F42",
+        "title": "F42-openmaic-preclass-context-shadow",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F42-openmaic-preclass-context-shadow",
+        "version": "v0.1"
+    },
+    {
+        "id": "F43",
+        "title": "F43-openmaic-frozen-context-read-switch",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F43-openmaic-frozen-context-read-switch",
+        "version": "v0.1"
+    },
+    {
+        "id": "F44",
+        "title": "F44-deeptutor-real-preclass-decision-pipeline",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline",
+        "version": "v0.1"
+    },
+    {
+        "id": "F45",
+        "title": "F45-preclass-legacy-route-retirement",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F45-preclass-legacy-route-retirement",
+        "version": "v0.1"
+    },
+    {
+        "id": "F46",
+        "title": "F46-formal-scene-catalog-binding",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F46-formal-scene-catalog-binding",
+        "version": "v0.1"
+    },
+    {
+        "id": "F47",
+        "title": "F47-formal-source-material-boundary",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F47-formal-source-material-boundary",
+        "version": "v0.1"
+    },
+    {
+        "id": "F48",
+        "title": "F48-preclass-clarification-revision",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F48-preclass-clarification-revision",
+        "version": "v0.1"
+    },
+    {
+        "id": "F49",
+        "title": "F49-preclass-shadow-wiring",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F49-preclass-shadow-wiring",
+        "version": "v0.1"
+    },
+    {
+        "id": "F50",
+        "title": "F50-f02-demo-retirement",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F50-f02-demo-retirement",
+        "version": "v0.1"
+    },
+    {
+        "id": "F51",
+        "title": "F51-preclass-clarification-i18n",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F51-preclass-clarification-i18n",
+        "version": "v0.1"
+    },
+    {
+        "id": "F52",
+        "title": "F52-non-fusion-recovery-entry",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F52-non-fusion-recovery-entry",
+        "version": "v0.1"
+    },
+    {
+        "id": "F53",
+        "title": "F53-formal-material-compatibility",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F53-formal-material-compatibility",
+        "version": "v0.1"
+    },
+    {
+        "id": "F54",
+        "title": "F54-formal-fusion-checkpoint-materialization",
+        "status": "blocked",
+        "feature_folder": "docs/harness/features/F54-formal-fusion-checkpoint-materialization",
+        "version": "v0.1"
+    },
+    {
+        "id": "F55",
+        "title": "F55-outline-fallback-state-consistency",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F55-outline-fallback-state-consistency",
+        "version": "v0.1"
+    },
+    {
+        "id": "F56",
+        "title": "F56-fusion-outline-reconciliation",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F56-fusion-outline-reconciliation",
+        "version": "v0.1"
+    },
+    {
+        "id": "F57",
+        "title": "F57-outline-field-preservation",
+        "status": "passing",
+        "feature_folder": "docs/harness/features/F57-outline-field-preservation",
+        "version": "v0.1"
+    },
+    {
+        "id": "F58",
+        "title": "F58-preclass-fusion-checkpoint-materialization-recovery",
+        "status": "blocked",
+        "feature_folder": "docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery",
+        "version": "v0.1"
+    },
+    {
+        "id": "F59",
+        "title": "F59-preclass-fusion-semantic-context-roundtrip-proof",
+        "status": "blocked",
+        "feature_folder": "docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof",
+        "version": "v0.1"
+    },
+    {
+        "id": "F60",
+        "title": "F60-preclass-fusion-remove-checkpoint-remediation",
+        "status": "blocked",
+        "feature_folder": "docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation",
+        "version": "v0.1"
+    }
+]

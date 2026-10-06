@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "testId": "F24-slope-linear-function-baseline-ab-v1",
+  "featureId": "F24",
+  "control": {
+    "mustMatch": ["promptSha256"],
+    "groups": ["baseline", "A", "B"]
+  },
+  "artifacts": [
+    {
+      "id": "baseline",
+      "group": "baseline",
+      "manifest": "classroom/F24/F24-baseline/fixed-requirement-v1/1/manifest.json",
+      "controlledInput": {
+        "promptId": "f24-slope-linear-function-v1",
+        "promptSha256": "4d6b303b8fe5b9b0c6766510f241e9a946a9050907f54724c88305f3b2d89582"
+      }
+    },
+    {
+      "id": "baseline-2-former-ab-run",
+      "group": "baseline",
+      "manifest": "classroom/F24/F24-baseline/fixed-requirement-v1/2/manifest.json",
+      "controlledInput": {
+        "promptId": "f24-slope-linear-function-v1",
+        "promptSha256": "4d6b303b8fe5b9b0c6766510f241e9a946a9050907f54724c88305f3b2d89582"
+      }
+    },
+    {
+      "id": "baseline-3-former-ab-run",
+      "group": "baseline",
+      "manifest": "classroom/F24/F24-baseline/fixed-requirement-v1/3/manifest.json",
+      "controlledInput": {
+        "promptId": "f24-slope-linear-function-v1",
+        "promptSha256": "4d6b303b8fe5b9b0c6766510f241e9a946a9050907f54724c88305f3b2d89582"
+      }
+    },
+    {
+      "id": "synthetic-a",
+      "group": "A",
+      "manifest": "classroom/F24/F24-A/fixed-requirement-v1/manifest.json",
+      "controlledInput": {
+        "promptId": "f24-slope-linear-function-v1",
+        "promptSha256": "4d6b303b8fe5b9b0c6766510f241e9a946a9050907f54724c88305f3b2d89582"
+      }
+    },
+    {
+      "id": "synthetic-b",
+      "group": "B",
+      "manifest": "classroom/F24/F24-B/fixed-requirement-v1/manifest.json",
+      "controlledInput": {
+        "promptId": "f24-slope-linear-function-v1",
+        "promptSha256": "4d6b303b8fe5b9b0c6766510f241e9a946a9050907f54724c88305f3b2d89582"
+      }
+    }
+  ],
+  "manifestStandard": {
+    "requiredFields": ["formatVersion", "stage", "scenes"],
+    "minimumScenes": 10,
+    "requiredSceneContentTypes": ["slide", "interactive"]
+  },
+  "sharedRequirements": [
+    {
+      "id": "slope-and-linear-function-core",
+      "requirement": "课堂围绕斜率与一次函数图像，并包含概念讲解、例题、互动和总结。",
+      "automated": { "allOf": ["斜率", "一次函数"], "contentTypes": ["interactive"], "minScenes": 2 },
+      "aiReview": "依据引用场景，判断课堂是否实际解释斜率与一次函数图像，并具有连贯的讲解、练习/互动和总结结构。"
+    }
+  ],
+  "groupRequirements": {
+    "A": [
+      {
+        "id": "a-conservative-scaffolding",
+        "requirement": "A 应体现数据不足时的保守引导：先确认基础、使用分步或图像辅助，再进入应用。",
+        "automated": { "allOf": ["斜率"], "anyOf": ["基础", "分步", "步骤", "观察", "引导"], "minScenes": 2 },
+        "aiReview": "判断 A 是否有明确的前置确认或基础回顾、分步支架和循序推进，而不仅是出现若干互动标题。"
+      }
+    ],
+    "B": [
+      {
+        "id": "b-direct-application",
+        "requirement": "B 应体现已有观察数据时更直接的应用或挑战：减少重复基础铺垫，更快进入整合性任务。",
+        "automated": { "anyOf": ["应用", "挑战", "综合", "拟合", "两点", "配对"], "minScenes": 1 },
+        "aiReview": "判断 B 是否真正以应用、转换或综合任务推进，而非仅把普通基础回顾改写为挑战性标题。"
+      }
+    ]
+  }
+}

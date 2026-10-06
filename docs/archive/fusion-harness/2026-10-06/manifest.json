@@ -1,0 +1,1090 @@
+{
+  "schemaVersion": "fusion-harness-archive-v1",
+  "capturedOn": "2026-10-06",
+  "archiveBranch": "archive/fusion-2026-10-06",
+  "openmaic": {
+    "repository": "https://github.com/ZhengRanCan/OpenMAIC",
+    "originalFusionCommit": "33b01a2628f7d62031187221e8015f03ee4a894a",
+    "codeSnapshotBeforeHarness": "1c7282e5d429b6892f4273267d2a9a6e39c66aaf",
+    "originalMain": "84b1907255208ad39fd04beac7c9087d202d146c"
+  },
+  "deeptutor": {
+    "repository": "https://github.com/ZhengRanCan/DeepTutor",
+    "originalFusionCommit": "bfb148ef8631bf76bf4075e154ee3b365431723b",
+    "archiveCommit": "24de083c39cf7ae88c04cc8ecfee443a06e63306"
+  },
+  "nativeBaseline": {
+    "repository": "https://github.com/THU-MAIC/OpenMAIC",
+    "branch": "main",
+    "commit": "7230053af019b89c83d22dcab0a94f38fe193856",
+    "packageVersion": "1.2.0-rc.1",
+    "nodeEngine": ">=22.19.0"
+  },
+  "excluded": [
+    "docs/log/**",
+    "docs/harness/incidents/**",
+    "**/artifacts/**",
+    "**/evidence/**",
+    "**/evidence.md",
+    "classroom/**",
+    ".env*",
+    "runtime databases",
+    "learner data",
+    "attachments",
+    "node_modules",
+    "provider configuration values"
+  ],
+  "credentialPatternScan": "passed; prior task-engine filename matches were false positives",
+  "files": [
+    {
+      "sourcePath": "AGENTS.md",
+      "archivePath": "workspace/AGENTS.md",
+      "sha256": "b376a8c760cf509f2e24d29b0949bf219bd794467f338f480a5023556d219cae",
+      "bytes": 3313
+    },
+    {
+      "sourcePath": "docs/classroom-review-workflow.md",
+      "archivePath": "workspace/docs/classroom-review-workflow.md",
+      "sha256": "e1d687fb5c9e8af098feb4338dd2e404560a55bc95b6c18499d8581f57b1a9ba",
+      "bytes": 3893
+    },
+    {
+      "sourcePath": "docs/git-workflow.md",
+      "archivePath": "workspace/docs/git-workflow.md",
+      "sha256": "0c751f65838e61e03cb07bceb191c5406f721b12f995aca568b54aadcbaf66ef",
+      "bytes": 2719
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE.md",
+      "sha256": "a8ebedb3fb93ef8d8efd325bbec82863945f9e4536b0d797bfca8ceccec5be3c",
+      "bytes": 28614
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/01-system-responsibilities-and-domain-ownership.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/01-system-responsibilities-and-domain-ownership.md",
+      "sha256": "75d5806bba82ab3eb17438938cb11aee93db3944d618cd509158d30f319a5014",
+      "bytes": 3054
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/02-fusion-adapter-layering-and-trust-boundaries.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/02-fusion-adapter-layering-and-trust-boundaries.md",
+      "sha256": "0de670111ed280dd4049bc2ec91ffcc5dfc10ae45c5a8007adeb08ad2c6c2eaf",
+      "bytes": 2947
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/03-identity-lesson-binding-and-authoritative-state.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/03-identity-lesson-binding-and-authoritative-state.md",
+      "sha256": "c112138f3678404c0596cd08a3553ff6ba2972310ca1ff77bb2b52442bc37b5d",
+      "bytes": 4076
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/04-core-domain-objects-and-stage-handoffs.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/04-core-domain-objects-and-stage-handoffs.md",
+      "sha256": "82f0d32d3d95d11e10b06a88d396cc4eb77a8a9ea22cd3fc0cebeb7fe794988c",
+      "bytes": 3907
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/05-pre-in-post-class-main-flow.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/05-pre-in-post-class-main-flow.md",
+      "sha256": "48631aecc1a9297d4f622d891babce0548b67a506aff20d7c60a49c05303ab68",
+      "bytes": 5688
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/06-deeptutor-profile-processing-boundary.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/06-deeptutor-profile-processing-boundary.md",
+      "sha256": "3444795fc1b6ef5ed7c0253a44603069be0e9b6570a4f8ed212eff508b993f38",
+      "bytes": 2855
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/07-integrity-reliability-security-and-lifecycle.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/07-integrity-reliability-security-and-lifecycle.md",
+      "sha256": "9cdfa9798d8326d23ce7d6a4fd3debb1a2f1a0c905409b74feef9516afe6a032",
+      "bytes": 4177
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/08-implementation-maturity-and-migration-status.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/08-implementation-maturity-and-migration-status.md",
+      "sha256": "0211b025ee27631bcd1101dcd39cc7aa57c444828e88c402f47d8d3e46feb31f",
+      "bytes": 4198
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/09-open-decisions.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/09-open-decisions.md",
+      "sha256": "18a70a686a0306c4b51e11bbd0e9372efd4ebe49afc3c821ad356be66e9288f7",
+      "bytes": 2794
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/README.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/README.md",
+      "sha256": "e5f63ee2213454fed8fd6be2a6ed615f2543369d5cd3689fc96f3b24c53d0fe8",
+      "bytes": 3342
+    },
+    {
+      "sourcePath": "docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/REVIEW.md",
+      "archivePath": "workspace/docs/harness/ARCHITECTURE/F35_ARCHITECTURE_SPLIT/REVIEW.md",
+      "sha256": "fbca4fbb425f13e1406de610167fb0ad564d48e6a44a5c747d403f2dfe7f2e50",
+      "bytes": 4266
+    },
+    {
+      "sourcePath": "docs/harness/CONSTRAINTS.md",
+      "archivePath": "workspace/docs/harness/CONSTRAINTS.md",
+      "sha256": "ea431fd5384aa0d723dbc5d6ae12229404b9145b1cee296dcd84cc158030bed1",
+      "bytes": 2639
+    },
+    {
+      "sourcePath": "docs/harness/DESIGN.md",
+      "archivePath": "workspace/docs/harness/DESIGN.md",
+      "sha256": "376b9744cb5ac207ce27e15bece51873fac084454e9f417be9aeef56c9055c3b",
+      "bytes": 3783
+    },
+    {
+      "sourcePath": "docs/harness/draft/11-pre-class-outline-shaping-and-coverage-concept.md",
+      "archivePath": "workspace/docs/harness/draft/11-pre-class-outline-shaping-and-coverage-concept.md",
+      "sha256": "a27454a7b364a0a4ecfc642484962674e2bbfb0dba074c033bae8f1992ac123a",
+      "bytes": 7726
+    },
+    {
+      "sourcePath": "docs/harness/draft/12-context-consumption-and-output-alignment.md",
+      "archivePath": "workspace/docs/harness/draft/12-context-consumption-and-output-alignment.md",
+      "sha256": "1b48c10700d025299ba331aeae7320ea707569e618338d39faffdf2417c31b7b",
+      "bytes": 8183
+    },
+    {
+      "sourcePath": "docs/harness/draft/13-alignment-requirement-levels.md",
+      "archivePath": "workspace/docs/harness/draft/13-alignment-requirement-levels.md",
+      "sha256": "26cb0865af3ed1b97a60c7b0dfe10ce40a3a43dc321e1c491384a36ae8fe8b7c",
+      "bytes": 9074
+    },
+    {
+      "sourcePath": "docs/harness/draft/14-guidance-constraint-strength-and-failure-semantics.md",
+      "archivePath": "workspace/docs/harness/draft/14-guidance-constraint-strength-and-failure-semantics.md",
+      "sha256": "c44db720d22d4d0158f960cf292779ed68eba01996b995f79e0113586fa3f76d",
+      "bytes": 13268
+    },
+    {
+      "sourcePath": "docs/harness/draft/15-output-alignment-stage-lifecycle.md",
+      "archivePath": "workspace/docs/harness/draft/15-output-alignment-stage-lifecycle.md",
+      "sha256": "ed9a55f210473f999c037924c3fb64eaf9796dccc21a1ea64b7e002fb5ad40af",
+      "bytes": 10215
+    },
+    {
+      "sourcePath": "docs/harness/draft/16-output-alignment-semantic-model.md",
+      "archivePath": "workspace/docs/harness/draft/16-output-alignment-semantic-model.md",
+      "sha256": "927f9e454d256db84e9138aa3850d6e02ccb0294e23ed2fbcdbcac5a6d05c633",
+      "bytes": 22659
+    },
+    {
+      "sourcePath": "docs/harness/draft/17-output-alignment-conceptual-json.md",
+      "archivePath": "workspace/docs/harness/draft/17-output-alignment-conceptual-json.md",
+      "sha256": "2ba2fffaaada9bd8ef4b5d6f5d3c375d040328d5684e232906ee184997af5c71",
+      "bytes": 26488
+    },
+    {
+      "sourcePath": "docs/harness/draft/18-context-consumption-semantic-model.md",
+      "archivePath": "workspace/docs/harness/draft/18-context-consumption-semantic-model.md",
+      "sha256": "338bb2d632f800b53b20b1fcaa10ec235fdf7154107acb7925f87da27cb11c6a",
+      "bytes": 22296
+    },
+    {
+      "sourcePath": "docs/harness/draft/19-pre-class-fusion-information-exchange-discussion.md",
+      "archivePath": "workspace/docs/harness/draft/19-pre-class-fusion-information-exchange-discussion.md",
+      "sha256": "569ef208bcda5eb85607bb313fd6c3ae501e5bb837a826580ecb813eac014b36",
+      "bytes": 13950
+    },
+    {
+      "sourcePath": "docs/harness/draft/20-fusion-freeze-and-native-openmaic-branch-plan.md",
+      "archivePath": "workspace/docs/harness/draft/20-fusion-freeze-and-native-openmaic-branch-plan.md",
+      "sha256": "4cfc69e34c773b3ca97c03c978b626e8ceaf94c8f373a47ee82a3644795f3d1f",
+      "bytes": 21389
+    },
+    {
+      "sourcePath": "docs/harness/features/F01-simulated-deeptutor-profile/feature.md",
+      "archivePath": "workspace/docs/harness/features/F01-simulated-deeptutor-profile/feature.md",
+      "sha256": "4050e7a838a13131e252c980601a3d718da887329c47c54716266b18e45251e7",
+      "bytes": 6908
+    },
+    {
+      "sourcePath": "docs/harness/features/F01-simulated-deeptutor-profile/verification.md",
+      "archivePath": "workspace/docs/harness/features/F01-simulated-deeptutor-profile/verification.md",
+      "sha256": "8a6c43b37d3ee639707a1a7806c8e556d7d4a4b134aa18ba8b07ae697444d1ae",
+      "bytes": 1561
+    },
+    {
+      "sourcePath": "docs/harness/features/F02-profile-driven-ppt/feature.md",
+      "archivePath": "workspace/docs/harness/features/F02-profile-driven-ppt/feature.md",
+      "sha256": "eb3c9eda3f86d587699af799e59711d12346963e8a4a78392031ea34cf19fb9a",
+      "bytes": 5154
+    },
+    {
+      "sourcePath": "docs/harness/features/F02-profile-driven-ppt/verification.md",
+      "archivePath": "workspace/docs/harness/features/F02-profile-driven-ppt/verification.md",
+      "sha256": "e93e99d93daf1f51defbf2db23f088307db3b9a798632c71686fda8caca995d9",
+      "bytes": 1513
+    },
+    {
+      "sourcePath": "docs/harness/features/F03-classroom-manifest-audit/examples/F02-fixed-prompt.json",
+      "archivePath": "workspace/docs/harness/features/F03-classroom-manifest-audit/examples/F02-fixed-prompt.json",
+      "sha256": "ff7c842322ca77536771933c4e627446aad441998aae7dc51f1a5c56f6ea9568",
+      "bytes": 3568
+    },
+    {
+      "sourcePath": "docs/harness/features/F03-classroom-manifest-audit/feature.md",
+      "archivePath": "workspace/docs/harness/features/F03-classroom-manifest-audit/feature.md",
+      "sha256": "d6a46a800d387ca160dbef4374d3473e1071c26f17b1d656d5f524100e29beb3",
+      "bytes": 5810
+    },
+    {
+      "sourcePath": "docs/harness/features/F03-classroom-manifest-audit/verification.md",
+      "archivePath": "workspace/docs/harness/features/F03-classroom-manifest-audit/verification.md",
+      "sha256": "f1625b6a4d0081f2d0af411927cb626d33cffe4e7420cfecb645f3bac10f17ea",
+      "bytes": 1689
+    },
+    {
+      "sourcePath": "docs/harness/features/F04-harness-documentation/feature.md",
+      "archivePath": "workspace/docs/harness/features/F04-harness-documentation/feature.md",
+      "sha256": "e5e4ca3afbd0790d2c9e11baf688d14424552eabb1f2790475da90cd5421ea22",
+      "bytes": 4773
+    },
+    {
+      "sourcePath": "docs/harness/features/F04-harness-documentation/verification.md",
+      "archivePath": "workspace/docs/harness/features/F04-harness-documentation/verification.md",
+      "sha256": "517e753944ebda52f95e5f87f4464cfa4c9bf0c2fa12e244efb2c015164202f2",
+      "bytes": 1084
+    },
+    {
+      "sourcePath": "docs/harness/features/F05-progress-dashboard-guard/feature.md",
+      "archivePath": "workspace/docs/harness/features/F05-progress-dashboard-guard/feature.md",
+      "sha256": "cb2c4a48504756c1104a2c3a7045edbfef801641d39c09ea5f66b317d529be42",
+      "bytes": 3266
+    },
+    {
+      "sourcePath": "docs/harness/features/F05-progress-dashboard-guard/verification.md",
+      "archivePath": "workspace/docs/harness/features/F05-progress-dashboard-guard/verification.md",
+      "sha256": "75104ca73e010fd8992661672c99048a6666248271025acb3768cda840407368",
+      "bytes": 915
+    },
+    {
+      "sourcePath": "docs/harness/features/F06-adapter-architecture-discussion/feature.md",
+      "archivePath": "workspace/docs/harness/features/F06-adapter-architecture-discussion/feature.md",
+      "sha256": "2b1455f182a15ec169903a5961f317aebd814290bd1778fd15cd38d63df39f9c",
+      "bytes": 2998
+    },
+    {
+      "sourcePath": "docs/harness/features/F06-adapter-architecture-discussion/verification.md",
+      "archivePath": "workspace/docs/harness/features/F06-adapter-architecture-discussion/verification.md",
+      "sha256": "5a2df74522a4a04f41c775eb1ecf3463f558d2aac29ba66fbc83fe7190dc63d3",
+      "bytes": 675
+    },
+    {
+      "sourcePath": "docs/harness/features/F07-fusion-dev-contracts-and-adapter-skeleton/feature.md",
+      "archivePath": "workspace/docs/harness/features/F07-fusion-dev-contracts-and-adapter-skeleton/feature.md",
+      "sha256": "79b54f04d43b1552d10561c857d830da8d04be47729379aeb3f358e304325611",
+      "bytes": 7703
+    },
+    {
+      "sourcePath": "docs/harness/features/F07-fusion-dev-contracts-and-adapter-skeleton/verification.md",
+      "archivePath": "workspace/docs/harness/features/F07-fusion-dev-contracts-and-adapter-skeleton/verification.md",
+      "sha256": "1a05c5ba654dad7657ffa37441bd6575485248e73f66f4c4eaf135ed7e8f3be8",
+      "bytes": 1332
+    },
+    {
+      "sourcePath": "docs/harness/features/F08-deeptutor-sync-diagnosis-api/feature.md",
+      "archivePath": "workspace/docs/harness/features/F08-deeptutor-sync-diagnosis-api/feature.md",
+      "sha256": "9c8ee57e18cc590fdaec9067c5459659052d98142938e91fe92989f24674aaa0",
+      "bytes": 4586
+    },
+    {
+      "sourcePath": "docs/harness/features/F08-deeptutor-sync-diagnosis-api/verification.md",
+      "archivePath": "workspace/docs/harness/features/F08-deeptutor-sync-diagnosis-api/verification.md",
+      "sha256": "8f3b3670f64e0ea88c0f3c4c5a825e60fb0071d82212c08cb63babd561cd81a0",
+      "bytes": 1131
+    },
+    {
+      "sourcePath": "docs/harness/features/F09-openmaic-quiz-event-and-adapter-call/feature.md",
+      "archivePath": "workspace/docs/harness/features/F09-openmaic-quiz-event-and-adapter-call/feature.md",
+      "sha256": "d10ed51b0406f006fbe7bf7758f9448f784f9353bdf275373a1652ab10510dde",
+      "bytes": 4616
+    },
+    {
+      "sourcePath": "docs/harness/features/F09-openmaic-quiz-event-and-adapter-call/verification.md",
+      "archivePath": "workspace/docs/harness/features/F09-openmaic-quiz-event-and-adapter-call/verification.md",
+      "sha256": "392ea830ffd51257cf786878b1b2a0e329b8147166d2e5689d965d54e6714e4f",
+      "bytes": 1138
+    },
+    {
+      "sourcePath": "docs/harness/features/F10-scene-catalog-and-directive-planner/feature.md",
+      "archivePath": "workspace/docs/harness/features/F10-scene-catalog-and-directive-planner/feature.md",
+      "sha256": "c8c3d0da42252f521c8f6aca18373f8efab2e6a5e733da36f90476b383f8f84d",
+      "bytes": 4351
+    },
+    {
+      "sourcePath": "docs/harness/features/F10-scene-catalog-and-directive-planner/verification.md",
+      "archivePath": "workspace/docs/harness/features/F10-scene-catalog-and-directive-planner/verification.md",
+      "sha256": "b44f170aa06098ad5b9fbadfc566998159dd3553af3a3d75f27918b9194b21be",
+      "bytes": 962
+    },
+    {
+      "sourcePath": "docs/harness/features/F11-in-class-dynamic-adjustment-e2e/feature.md",
+      "archivePath": "workspace/docs/harness/features/F11-in-class-dynamic-adjustment-e2e/feature.md",
+      "sha256": "c606191962e9801eecc2574969631718cfc8eeccb316c62285c1fe1fa1bcacd6",
+      "bytes": 4799
+    },
+    {
+      "sourcePath": "docs/harness/features/F11-in-class-dynamic-adjustment-e2e/verification.md",
+      "archivePath": "workspace/docs/harness/features/F11-in-class-dynamic-adjustment-e2e/verification.md",
+      "sha256": "ec4eca3114e4feb876ad246b75b040ece591efaf30928fc8df932fe71e9a2854",
+      "bytes": 1308
+    },
+    {
+      "sourcePath": "docs/harness/features/F12-classroom-observation-ledger/feature.md",
+      "archivePath": "workspace/docs/harness/features/F12-classroom-observation-ledger/feature.md",
+      "sha256": "35581e2ede2ef327bdca4e55ff1f8cea772f51825b4957b9362412656b22d935",
+      "bytes": 5463
+    },
+    {
+      "sourcePath": "docs/harness/features/F12-classroom-observation-ledger/verification.md",
+      "archivePath": "workspace/docs/harness/features/F12-classroom-observation-ledger/verification.md",
+      "sha256": "e94392e0385269b5669700b5aa2d23d0a8de6096b77cb685be069749ff845b5b",
+      "bytes": 1104
+    },
+    {
+      "sourcePath": "docs/harness/features/F13-profile-update-candidate-and-api/feature.md",
+      "archivePath": "workspace/docs/harness/features/F13-profile-update-candidate-and-api/feature.md",
+      "sha256": "d13b580f987c5187fe748fe648b83fa9925c31478e0ec48abb52ff11a29589db",
+      "bytes": 5089
+    },
+    {
+      "sourcePath": "docs/harness/features/F13-profile-update-candidate-and-api/verification.md",
+      "archivePath": "workspace/docs/harness/features/F13-profile-update-candidate-and-api/verification.md",
+      "sha256": "b0bec459a344d917c4194f788609ed55888b6c4f5295b05eaf21c2c6b0efe22a",
+      "bytes": 1147
+    },
+    {
+      "sourcePath": "docs/harness/features/F14-development-outbox-worker/feature.md",
+      "archivePath": "workspace/docs/harness/features/F14-development-outbox-worker/feature.md",
+      "sha256": "e6f10e0c9fd9c8216b8f3fa30bc9f633354f55a19e2c18fb4691e054a0be4f87",
+      "bytes": 4377
+    },
+    {
+      "sourcePath": "docs/harness/features/F14-development-outbox-worker/verification.md",
+      "archivePath": "workspace/docs/harness/features/F14-development-outbox-worker/verification.md",
+      "sha256": "32b093d917e0cbae82dec5fb00a03522679b11a86d9e136279442fbf79b30f4f",
+      "bytes": 1105
+    },
+    {
+      "sourcePath": "docs/harness/features/F15-post-lesson-writeback-e2e/feature.md",
+      "archivePath": "workspace/docs/harness/features/F15-post-lesson-writeback-e2e/feature.md",
+      "sha256": "07866c2e969a7612b62ea48ea3af709e94870dc56696d263c2e37da440c2ffb4",
+      "bytes": 4850
+    },
+    {
+      "sourcePath": "docs/harness/features/F15-post-lesson-writeback-e2e/verification.md",
+      "archivePath": "workspace/docs/harness/features/F15-post-lesson-writeback-e2e/verification.md",
+      "sha256": "8122eeb3336052ca0849183cf973706f390005e22c45595352f73590c45033b8",
+      "bytes": 1403
+    },
+    {
+      "sourcePath": "docs/harness/features/F16-launch-code-and-server-delegation/feature.md",
+      "archivePath": "workspace/docs/harness/features/F16-launch-code-and-server-delegation/feature.md",
+      "sha256": "f37b11e4a866b4d07c440f7ba5448ae75693daec6ebe6fc3d40dce65804fbaeb",
+      "bytes": 4509
+    },
+    {
+      "sourcePath": "docs/harness/features/F16-launch-code-and-server-delegation/verification.md",
+      "archivePath": "workspace/docs/harness/features/F16-launch-code-and-server-delegation/verification.md",
+      "sha256": "d4654acec2d273b756bb6e28a23d8caf303eb74f5c4b3a9feb76e11879c6ced3",
+      "bytes": 840
+    },
+    {
+      "sourcePath": "docs/harness/features/F17-openmaic-session-recovery/feature.md",
+      "archivePath": "workspace/docs/harness/features/F17-openmaic-session-recovery/feature.md",
+      "sha256": "5bbb86b0b52c93e5d0c11dd8a7a8daac775bfc8c51c02118f438c931933cf919",
+      "bytes": 3080
+    },
+    {
+      "sourcePath": "docs/harness/features/F17-openmaic-session-recovery/verification.md",
+      "archivePath": "workspace/docs/harness/features/F17-openmaic-session-recovery/verification.md",
+      "sha256": "01b38b9da2b659e2afe717464fe214be0c4e4412ae1c111f636a87e5ec992204",
+      "bytes": 593
+    },
+    {
+      "sourcePath": "docs/harness/features/F18-real-fusion-providers/feature.md",
+      "archivePath": "workspace/docs/harness/features/F18-real-fusion-providers/feature.md",
+      "sha256": "dd681400efcbbaa5a1e61ea6e88075d7bd6a440a5fc5b4c9bfbbfe47c4fccfbc",
+      "bytes": 4431
+    },
+    {
+      "sourcePath": "docs/harness/features/F18-real-fusion-providers/verification.md",
+      "archivePath": "workspace/docs/harness/features/F18-real-fusion-providers/verification.md",
+      "sha256": "17ec5299dfe2a4b6bc530777ce30688e48bb7b12cd25c7a839b0ac865c73ba70",
+      "bytes": 853
+    },
+    {
+      "sourcePath": "docs/harness/features/F19-production-persistence-and-reliability/feature.md",
+      "archivePath": "workspace/docs/harness/features/F19-production-persistence-and-reliability/feature.md",
+      "sha256": "071928eb4a55e2bde39f09b63fe38540689860af8b8b4070b40263a72cc20e55",
+      "bytes": 6364
+    },
+    {
+      "sourcePath": "docs/harness/features/F19-production-persistence-and-reliability/verification.md",
+      "archivePath": "workspace/docs/harness/features/F19-production-persistence-and-reliability/verification.md",
+      "sha256": "8831e7d07e8a27fa7e8ed313c9ca88894ead4e4d15aa1ef92ce439fa389378a7",
+      "bytes": 1801
+    },
+    {
+      "sourcePath": "docs/harness/features/F20-integrated-mvp-security-and-e2e/feature.md",
+      "archivePath": "workspace/docs/harness/features/F20-integrated-mvp-security-and-e2e/feature.md",
+      "sha256": "d89650136e5851cc8c2b85dea21bfadc8f4f739f5fbc439ca2f52a48b8c88afd",
+      "bytes": 5178
+    },
+    {
+      "sourcePath": "docs/harness/features/F20-integrated-mvp-security-and-e2e/verification.md",
+      "archivePath": "workspace/docs/harness/features/F20-integrated-mvp-security-and-e2e/verification.md",
+      "sha256": "f85fb1525b1669de437a344ade94d7038f1ab806945e387fe444ab47bcee8480",
+      "bytes": 2183
+    },
+    {
+      "sourcePath": "docs/harness/features/F21-openmaic-lan-demo-deployment/feature.md",
+      "archivePath": "workspace/docs/harness/features/F21-openmaic-lan-demo-deployment/feature.md",
+      "sha256": "5b5e5077b7099a71dcbeee9eb9213a520c12d31616a69dd304aa85ed83a1c6ec",
+      "bytes": 6284
+    },
+    {
+      "sourcePath": "docs/harness/features/F21-openmaic-lan-demo-deployment/verification.md",
+      "archivePath": "workspace/docs/harness/features/F21-openmaic-lan-demo-deployment/verification.md",
+      "sha256": "a74ddeddba6d4c52dfffc0c5334bae1d09ad744cc9360939cbe114c27f9ad054",
+      "bytes": 1370
+    },
+    {
+      "sourcePath": "docs/harness/features/F22-openmaic-lan-shared-workspace/feature.md",
+      "archivePath": "workspace/docs/harness/features/F22-openmaic-lan-shared-workspace/feature.md",
+      "sha256": "0e2562cadfa8322928d0d6f48fe628451d2495098d21e5664b881e896a924564",
+      "bytes": 4608
+    },
+    {
+      "sourcePath": "docs/harness/features/F22-openmaic-lan-shared-workspace/verification.md",
+      "archivePath": "workspace/docs/harness/features/F22-openmaic-lan-shared-workspace/verification.md",
+      "sha256": "eb23e5f5d82cea013abe5266709253c116c1a5d69fd104d96f5431d69c4debc9",
+      "bytes": 1377
+    },
+    {
+      "sourcePath": "docs/harness/features/F23-prelesson-fusion-session-generation-entry/feature.md",
+      "archivePath": "workspace/docs/harness/features/F23-prelesson-fusion-session-generation-entry/feature.md",
+      "sha256": "66120933c8acbeb206e0cbb9c5a9c21aeb9e5748f828d917d6be4430b25ed048",
+      "bytes": 5182
+    },
+    {
+      "sourcePath": "docs/harness/features/F23-prelesson-fusion-session-generation-entry/verification.md",
+      "archivePath": "workspace/docs/harness/features/F23-prelesson-fusion-session-generation-entry/verification.md",
+      "sha256": "d4cdf7a0b354a2b86c5bec852e88d64527620f0360ab3cca1833fa484cda9a69",
+      "bytes": 1375
+    },
+    {
+      "sourcePath": "docs/harness/features/F24-prelesson-personalization-e2e/details/design.md",
+      "archivePath": "workspace/docs/harness/features/F24-prelesson-personalization-e2e/details/design.md",
+      "sha256": "944f3bee124061af10b0b595fa197dd3f5a6db9624333f6fa5db4a35f2e46517",
+      "bytes": 2008
+    },
+    {
+      "sourcePath": "docs/harness/features/F24-prelesson-personalization-e2e/examples/F24-fixed-requirement-v1.json",
+      "archivePath": "workspace/docs/harness/features/F24-prelesson-personalization-e2e/examples/F24-fixed-requirement-v1.json",
+      "sha256": "e82f5b14f43a1b00f696c99f82b5f8f456eb7d88c87734e9dbfabca281a75a24",
+      "bytes": 3494
+    },
+    {
+      "sourcePath": "docs/harness/features/F24-prelesson-personalization-e2e/feature.md",
+      "archivePath": "workspace/docs/harness/features/F24-prelesson-personalization-e2e/feature.md",
+      "sha256": "03c5d27f17cc41aa70a6f297b42c496ddd840ca81a95c1db70d10414d6d732e6",
+      "bytes": 7866
+    },
+    {
+      "sourcePath": "docs/harness/features/F24-prelesson-personalization-e2e/verification.md",
+      "archivePath": "workspace/docs/harness/features/F24-prelesson-personalization-e2e/verification.md",
+      "sha256": "61df3ae714d1b0bb57b25950733bdf09e9c5af345d853a24ea622af1e5949c9b",
+      "bytes": 2715
+    },
+    {
+      "sourcePath": "docs/harness/features/F25-prelesson-fusion-readonly-review/feature.md",
+      "archivePath": "workspace/docs/harness/features/F25-prelesson-fusion-readonly-review/feature.md",
+      "sha256": "6623670c69891882c1f9607c58fab2fddbdecae173512ca482443e1d3c002d11",
+      "bytes": 4350
+    },
+    {
+      "sourcePath": "docs/harness/features/F25-prelesson-fusion-readonly-review/verification.md",
+      "archivePath": "workspace/docs/harness/features/F25-prelesson-fusion-readonly-review/verification.md",
+      "sha256": "e1854b46e89d0d297b3b53868cb2633fe0de499c80482f73925b748a95968d5e",
+      "bytes": 890
+    },
+    {
+      "sourcePath": "docs/harness/features/F26-inlesson-fusion-readonly-review/feature.md",
+      "archivePath": "workspace/docs/harness/features/F26-inlesson-fusion-readonly-review/feature.md",
+      "sha256": "18bece43c092bd319baa6c02c177a8408d6bc471cb4904784afe23d998e71061",
+      "bytes": 4438
+    },
+    {
+      "sourcePath": "docs/harness/features/F26-inlesson-fusion-readonly-review/verification.md",
+      "archivePath": "workspace/docs/harness/features/F26-inlesson-fusion-readonly-review/verification.md",
+      "sha256": "ec82b3b35ad3ee4f049b3dedaaa05ecebfeb6049e68832131489d7763673fc8b",
+      "bytes": 850
+    },
+    {
+      "sourcePath": "docs/harness/features/F27-postlesson-fusion-readonly-review/feature.md",
+      "archivePath": "workspace/docs/harness/features/F27-postlesson-fusion-readonly-review/feature.md",
+      "sha256": "82d5a8855b0507557f8c13e912d81540b6d6f8c61d30684608078074f5cc93df",
+      "bytes": 5191
+    },
+    {
+      "sourcePath": "docs/harness/features/F27-postlesson-fusion-readonly-review/verification.md",
+      "archivePath": "workspace/docs/harness/features/F27-postlesson-fusion-readonly-review/verification.md",
+      "sha256": "4749c360e5d8169933f63e6881943945a38a59961f8b9e42e418dbd298dba021",
+      "bytes": 884
+    },
+    {
+      "sourcePath": "docs/harness/features/F28-fusion-information-exchange-upgrade-plan/feature.md",
+      "archivePath": "workspace/docs/harness/features/F28-fusion-information-exchange-upgrade-plan/feature.md",
+      "sha256": "5e1cebaa63268c87059b421cfe5fdf1168c289aec00bf6dd9d5ad9e93c73e2f7",
+      "bytes": 14318
+    },
+    {
+      "sourcePath": "docs/harness/features/F28-fusion-information-exchange-upgrade-plan/verification.md",
+      "archivePath": "workspace/docs/harness/features/F28-fusion-information-exchange-upgrade-plan/verification.md",
+      "sha256": "068c37643ebdac6ebc47a9f132aabf5e1d48c90dfaaf58fe52c12f1ebcf74247",
+      "bytes": 2242
+    },
+    {
+      "sourcePath": "docs/harness/features/F29-in-post-class-semantic-exchange-design/feature.md",
+      "archivePath": "workspace/docs/harness/features/F29-in-post-class-semantic-exchange-design/feature.md",
+      "sha256": "79d65088980c313a54cb9006c839a87f1143d860945e165f6411940e88d732db",
+      "bytes": 7014
+    },
+    {
+      "sourcePath": "docs/harness/features/F29-in-post-class-semantic-exchange-design/verification.md",
+      "archivePath": "workspace/docs/harness/features/F29-in-post-class-semantic-exchange-design/verification.md",
+      "sha256": "b06c90c066e7795067f2fa595c9bfae9bb0bdf1db12b582ecedff2d47ae9d194",
+      "bytes": 1250
+    },
+    {
+      "sourcePath": "docs/harness/features/F30-deeptutor-fusion-identity-and-profile-pipeline/feature.md",
+      "archivePath": "workspace/docs/harness/features/F30-deeptutor-fusion-identity-and-profile-pipeline/feature.md",
+      "sha256": "fe477a7ceb0465b9b4680aa23585c3d2c2872a6ace25730bbcc692cc2a80a00b",
+      "bytes": 3851
+    },
+    {
+      "sourcePath": "docs/harness/features/F30-deeptutor-fusion-identity-and-profile-pipeline/verification.md",
+      "archivePath": "workspace/docs/harness/features/F30-deeptutor-fusion-identity-and-profile-pipeline/verification.md",
+      "sha256": "0ea11facfcd4a3ddbdb2f754e3130d842b927ddf1e989e3f3163d7e7ad62b89e",
+      "bytes": 992
+    },
+    {
+      "sourcePath": "docs/harness/features/F31-fusion-cross-language-canonical-digest/feature.md",
+      "archivePath": "workspace/docs/harness/features/F31-fusion-cross-language-canonical-digest/feature.md",
+      "sha256": "9531fa303136184fa5d867f15e06e1cfd99288bce1a501f7dd987df58fc4f287",
+      "bytes": 3985
+    },
+    {
+      "sourcePath": "docs/harness/features/F31-fusion-cross-language-canonical-digest/verification.md",
+      "archivePath": "workspace/docs/harness/features/F31-fusion-cross-language-canonical-digest/verification.md",
+      "sha256": "862de8941fbbc041758cd9cffa837c93d9923550786a5a406a4eed1fd3f75787",
+      "bytes": 892
+    },
+    {
+      "sourcePath": "docs/harness/features/F32-in-post-class-code-migration-roadmaps/feature.md",
+      "archivePath": "workspace/docs/harness/features/F32-in-post-class-code-migration-roadmaps/feature.md",
+      "sha256": "bdf9a9a19b50e36d1e59fcbed457610e674637b7b604475011a5cd8c9c7617a3",
+      "bytes": 4166
+    },
+    {
+      "sourcePath": "docs/harness/features/F32-in-post-class-code-migration-roadmaps/verification.md",
+      "archivePath": "workspace/docs/harness/features/F32-in-post-class-code-migration-roadmaps/verification.md",
+      "sha256": "12b24f41117cc3df56c4dd770b922737d59bfb95962a887069d07ca40ae6d3f7",
+      "bytes": 946
+    },
+    {
+      "sourcePath": "docs/harness/features/F33-fusion-document-consistency/feature.md",
+      "archivePath": "workspace/docs/harness/features/F33-fusion-document-consistency/feature.md",
+      "sha256": "f27c2a634c109086750113892ce17a81bede13df5c2fad342f2797dba392f422",
+      "bytes": 3319
+    },
+    {
+      "sourcePath": "docs/harness/features/F33-fusion-document-consistency/verification.md",
+      "archivePath": "workspace/docs/harness/features/F33-fusion-document-consistency/verification.md",
+      "sha256": "4e9e013c891272c4e14811e6a4d373353e63a1058988b7d4fc1ef62de0e75d38",
+      "bytes": 811
+    },
+    {
+      "sourcePath": "docs/harness/features/F34-architecture-split-reorganization/feature.md",
+      "archivePath": "workspace/docs/harness/features/F34-architecture-split-reorganization/feature.md",
+      "sha256": "f5f62926b47f8f5da4ea6fafc4db0514d5af543fcc72749fb529316c9c6234c0",
+      "bytes": 3430
+    },
+    {
+      "sourcePath": "docs/harness/features/F34-architecture-split-reorganization/verification.md",
+      "archivePath": "workspace/docs/harness/features/F34-architecture-split-reorganization/verification.md",
+      "sha256": "7807357b735567dc1b06b1ad2520d6649c2a7fa25b306a7cbdda0978e5fe1eef",
+      "bytes": 804
+    },
+    {
+      "sourcePath": "docs/harness/features/F35-architecture-nine-fragments/feature.md",
+      "archivePath": "workspace/docs/harness/features/F35-architecture-nine-fragments/feature.md",
+      "sha256": "8b78e4e843795921d0d2f35284b7c8b4f920c1bd7afe78e21431eead4874c571",
+      "bytes": 2323
+    },
+    {
+      "sourcePath": "docs/harness/features/F35-architecture-nine-fragments/verification.md",
+      "archivePath": "workspace/docs/harness/features/F35-architecture-nine-fragments/verification.md",
+      "sha256": "2662cfb97415013d1c0d6af7c46d5ec847dd3be4c34afc2749d197886072a70b",
+      "bytes": 415
+    },
+    {
+      "sourcePath": "docs/harness/features/F36-fusion-document-restructure/feature.md",
+      "archivePath": "workspace/docs/harness/features/F36-fusion-document-restructure/feature.md",
+      "sha256": "ec33ece555658f0d1aed49d9a1390c9938634c86a6587da5257c043d99167933",
+      "bytes": 2750
+    },
+    {
+      "sourcePath": "docs/harness/features/F36-fusion-document-restructure/verification.md",
+      "archivePath": "workspace/docs/harness/features/F36-fusion-document-restructure/verification.md",
+      "sha256": "cbcf9b55f4cd4c9308eb4ca9ddef870e56a9bd1aee1981d9dd95ca1d95bd76fe",
+      "bytes": 691
+    },
+    {
+      "sourcePath": "docs/harness/features/F37-architecture-split-merge-confirmation/feature.md",
+      "archivePath": "workspace/docs/harness/features/F37-architecture-split-merge-confirmation/feature.md",
+      "sha256": "95d12072320522a9c7e7ca808dbfdec0e79a4c13806dafc6882060b65f78bd02",
+      "bytes": 2531
+    },
+    {
+      "sourcePath": "docs/harness/features/F37-architecture-split-merge-confirmation/verification.md",
+      "archivePath": "workspace/docs/harness/features/F37-architecture-split-merge-confirmation/verification.md",
+      "sha256": "4c66371b250a3c7de5eb67a27607b283336f7972576cefad87308232d22d76c7",
+      "bytes": 438
+    },
+    {
+      "sourcePath": "docs/harness/features/F38-architecture-prefusion-review-fixes/feature.md",
+      "archivePath": "workspace/docs/harness/features/F38-architecture-prefusion-review-fixes/feature.md",
+      "sha256": "0182eb79ef1cc215c916b3b4614d1392114340b05efa3e097839995f9516d68e",
+      "bytes": 2816
+    },
+    {
+      "sourcePath": "docs/harness/features/F38-architecture-prefusion-review-fixes/verification.md",
+      "archivePath": "workspace/docs/harness/features/F38-architecture-prefusion-review-fixes/verification.md",
+      "sha256": "cb58efadfb3559615ca5616afc777c7461ec98ba9b7e4ec022e763eff2effd68",
+      "bytes": 449
+    },
+    {
+      "sourcePath": "docs/harness/features/F39-fusion-protocol-consistency-closure/feature.md",
+      "archivePath": "workspace/docs/harness/features/F39-fusion-protocol-consistency-closure/feature.md",
+      "sha256": "d355231067fda5dea6d68750842245b078dd4e62cb98cd56ceac93bd9035ee10",
+      "bytes": 3596
+    },
+    {
+      "sourcePath": "docs/harness/features/F39-fusion-protocol-consistency-closure/verification.md",
+      "archivePath": "workspace/docs/harness/features/F39-fusion-protocol-consistency-closure/verification.md",
+      "sha256": "31726ee78fd39f4b1d34cb7d9b68e77fd70b1c019de7539c9effc7edaef6b2d7",
+      "bytes": 436
+    },
+    {
+      "sourcePath": "docs/harness/features/F40-preclass-fusion-contract-kernel/feature.md",
+      "archivePath": "workspace/docs/harness/features/F40-preclass-fusion-contract-kernel/feature.md",
+      "sha256": "da2fefaa07ce544e555ecae7c6c0e1654f26e4a23b17dafac752189165bfc339",
+      "bytes": 5115
+    },
+    {
+      "sourcePath": "docs/harness/features/F40-preclass-fusion-contract-kernel/verification.md",
+      "archivePath": "workspace/docs/harness/features/F40-preclass-fusion-contract-kernel/verification.md",
+      "sha256": "6ebf064a110d79a4b99cbff8cec2553607d1a3cb73150dbfd0d3e1f3fe457b58",
+      "bytes": 972
+    },
+    {
+      "sourcePath": "docs/harness/features/F41-deeptutor-preclass-context-route/feature.md",
+      "archivePath": "workspace/docs/harness/features/F41-deeptutor-preclass-context-route/feature.md",
+      "sha256": "642992d81625e5666577de26c5ee6f13339d1c3d3e2c652b6c20e62e5a291f99",
+      "bytes": 4179
+    },
+    {
+      "sourcePath": "docs/harness/features/F41-deeptutor-preclass-context-route/verification.md",
+      "archivePath": "workspace/docs/harness/features/F41-deeptutor-preclass-context-route/verification.md",
+      "sha256": "03c93a9017bfa1f8ea2d56fa28b18350e9e8767d03814b77bd24e40a73ed53e6",
+      "bytes": 479
+    },
+    {
+      "sourcePath": "docs/harness/features/F42-openmaic-preclass-context-shadow/feature.md",
+      "archivePath": "workspace/docs/harness/features/F42-openmaic-preclass-context-shadow/feature.md",
+      "sha256": "30a3c00f1e4301468fa3a63d511e851fb091f86dd0dcb1cd73116d2a854dc819",
+      "bytes": 3508
+    },
+    {
+      "sourcePath": "docs/harness/features/F42-openmaic-preclass-context-shadow/verification.md",
+      "archivePath": "workspace/docs/harness/features/F42-openmaic-preclass-context-shadow/verification.md",
+      "sha256": "e5ab1196dcd2d011fe0dfacc1753483d00d816e5a50fd46343caa410620e6db6",
+      "bytes": 482
+    },
+    {
+      "sourcePath": "docs/harness/features/F43-openmaic-frozen-context-read-switch/feature.md",
+      "archivePath": "workspace/docs/harness/features/F43-openmaic-frozen-context-read-switch/feature.md",
+      "sha256": "f069afcd97ebb62459ed648b7d12844f3f7486a7e83068713d092d49f0dfaeba",
+      "bytes": 6400
+    },
+    {
+      "sourcePath": "docs/harness/features/F43-openmaic-frozen-context-read-switch/verification.md",
+      "archivePath": "workspace/docs/harness/features/F43-openmaic-frozen-context-read-switch/verification.md",
+      "sha256": "e5fc6e015fbe03adee63248694bc92eb3de9e0f179376d1abe772ae13928c2e2",
+      "bytes": 903
+    },
+    {
+      "sourcePath": "docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline/design-memo.md",
+      "archivePath": "workspace/docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline/design-memo.md",
+      "sha256": "a7d0769eed501b1ecce55589d17fce457651319a0d7e14965d3e59e0a77af7f7",
+      "bytes": 2813
+    },
+    {
+      "sourcePath": "docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline/feature.md",
+      "archivePath": "workspace/docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline/feature.md",
+      "sha256": "c0ed2b6e59e26403cd1fcd8527f88aecb4d23ea3ac9ac6f8dfe20e41978c9697",
+      "bytes": 6222
+    },
+    {
+      "sourcePath": "docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline/verification.md",
+      "archivePath": "workspace/docs/harness/features/F44-deeptutor-real-preclass-decision-pipeline/verification.md",
+      "sha256": "c0c8c6bbf3dcf3eae91290eff9e1cd03c59381cb2a5a7de75795f1b1db06f407",
+      "bytes": 3768
+    },
+    {
+      "sourcePath": "docs/harness/features/F45-preclass-legacy-route-retirement/feature.md",
+      "archivePath": "workspace/docs/harness/features/F45-preclass-legacy-route-retirement/feature.md",
+      "sha256": "e66a15906435f23bf1be157a6e70c3549c5a6a954af46788e1c221d340624e0e",
+      "bytes": 5867
+    },
+    {
+      "sourcePath": "docs/harness/features/F45-preclass-legacy-route-retirement/verification.md",
+      "archivePath": "workspace/docs/harness/features/F45-preclass-legacy-route-retirement/verification.md",
+      "sha256": "df6b350be615faff8a7e654c0a136f31aa310f84031e5eddddc1b552495fe4a4",
+      "bytes": 1878
+    },
+    {
+      "sourcePath": "docs/harness/features/F46-formal-scene-catalog-binding/feature.md",
+      "archivePath": "workspace/docs/harness/features/F46-formal-scene-catalog-binding/feature.md",
+      "sha256": "5f0a5d47888eaad4b627f8adbde040cac1ff80570bf36de8935eafc75c35a6ab",
+      "bytes": 4206
+    },
+    {
+      "sourcePath": "docs/harness/features/F46-formal-scene-catalog-binding/verification.md",
+      "archivePath": "workspace/docs/harness/features/F46-formal-scene-catalog-binding/verification.md",
+      "sha256": "8fa824768941b9f4f94b5be47aba962f1c0d602beb859ef32ea739dee810cc96",
+      "bytes": 1077
+    },
+    {
+      "sourcePath": "docs/harness/features/F47-formal-source-material-boundary/feature.md",
+      "archivePath": "workspace/docs/harness/features/F47-formal-source-material-boundary/feature.md",
+      "sha256": "99d5e9a5548f31b496f1b10221ed26bdbf875757d884a8326fb0137174a8158f",
+      "bytes": 3681
+    },
+    {
+      "sourcePath": "docs/harness/features/F47-formal-source-material-boundary/verification.md",
+      "archivePath": "workspace/docs/harness/features/F47-formal-source-material-boundary/verification.md",
+      "sha256": "da544159a8ed5b48c4bea27d9028a6bc03be8f2f9f37046cb18dcde70e47d8ce",
+      "bytes": 898
+    },
+    {
+      "sourcePath": "docs/harness/features/F48-preclass-clarification-revision/feature.md",
+      "archivePath": "workspace/docs/harness/features/F48-preclass-clarification-revision/feature.md",
+      "sha256": "3eaba82cb1443b592e83f1e045c4d5545d565054f0527f642bc634402cc32727",
+      "bytes": 4203
+    },
+    {
+      "sourcePath": "docs/harness/features/F48-preclass-clarification-revision/verification.md",
+      "archivePath": "workspace/docs/harness/features/F48-preclass-clarification-revision/verification.md",
+      "sha256": "fdd0b0414342bf5bc7559714cd189236aa1087f6bce4d3f51a317c9865dff6c5",
+      "bytes": 1371
+    },
+    {
+      "sourcePath": "docs/harness/features/F49-preclass-shadow-wiring/feature.md",
+      "archivePath": "workspace/docs/harness/features/F49-preclass-shadow-wiring/feature.md",
+      "sha256": "68e4f75e44a6fe30ded06d5fff805c1552d0f61a499159489fc90beba26c7e8d",
+      "bytes": 4114
+    },
+    {
+      "sourcePath": "docs/harness/features/F49-preclass-shadow-wiring/verification.md",
+      "archivePath": "workspace/docs/harness/features/F49-preclass-shadow-wiring/verification.md",
+      "sha256": "f9cce6e9b9324b6d54fc36f4fdfb86143bb7fa627cabdadb74554b70b5fb2681",
+      "bytes": 1752
+    },
+    {
+      "sourcePath": "docs/harness/features/F50-f02-demo-retirement/feature.md",
+      "archivePath": "workspace/docs/harness/features/F50-f02-demo-retirement/feature.md",
+      "sha256": "693ec5eec9ce8b5ec7c71283ee399288e1afe6a2f41e400545fe49c0c5969008",
+      "bytes": 6802
+    },
+    {
+      "sourcePath": "docs/harness/features/F50-f02-demo-retirement/verification.md",
+      "archivePath": "workspace/docs/harness/features/F50-f02-demo-retirement/verification.md",
+      "sha256": "880c67c29867e3d476aebc6967f912346905d9b4cccbe77105e144ea5b2468b3",
+      "bytes": 3824
+    },
+    {
+      "sourcePath": "docs/harness/features/F51-preclass-clarification-i18n/feature.md",
+      "archivePath": "workspace/docs/harness/features/F51-preclass-clarification-i18n/feature.md",
+      "sha256": "62d0fcf13cb83731dea442f8dc276d2dc07f4f2a028f7f5b4573fe8773bb7a1c",
+      "bytes": 3426
+    },
+    {
+      "sourcePath": "docs/harness/features/F51-preclass-clarification-i18n/verification.md",
+      "archivePath": "workspace/docs/harness/features/F51-preclass-clarification-i18n/verification.md",
+      "sha256": "26485bc847b88cb8de25f8a74cdb957c14ed2643579ef993f4898aec48279d25",
+      "bytes": 1294
+    },
+    {
+      "sourcePath": "docs/harness/features/F52-non-fusion-recovery-entry/feature.md",
+      "archivePath": "workspace/docs/harness/features/F52-non-fusion-recovery-entry/feature.md",
+      "sha256": "418e01335e69725cb224464a1bdae5327aa06cd0ff998cb41fb06bda43a3bb97",
+      "bytes": 3827
+    },
+    {
+      "sourcePath": "docs/harness/features/F52-non-fusion-recovery-entry/verification.md",
+      "archivePath": "workspace/docs/harness/features/F52-non-fusion-recovery-entry/verification.md",
+      "sha256": "c03dbfd5afa62a95e721f42dab7ab3b010d2ef653243dfde122bc699ae238601",
+      "bytes": 1245
+    },
+    {
+      "sourcePath": "docs/harness/features/F53-formal-material-compatibility/feature.md",
+      "archivePath": "workspace/docs/harness/features/F53-formal-material-compatibility/feature.md",
+      "sha256": "ef4552f2f536d1d3115e64e92ca6f699f804b92666c0472430daacd395476f08",
+      "bytes": 4329
+    },
+    {
+      "sourcePath": "docs/harness/features/F53-formal-material-compatibility/verification.md",
+      "archivePath": "workspace/docs/harness/features/F53-formal-material-compatibility/verification.md",
+      "sha256": "22c789e9798dd09ca22048f3efd47ea6af7f1ec46eff9926836619d54aa8b630",
+      "bytes": 1962
+    },
+    {
+      "sourcePath": "docs/harness/features/F54-formal-fusion-checkpoint-materialization/feature.md",
+      "archivePath": "workspace/docs/harness/features/F54-formal-fusion-checkpoint-materialization/feature.md",
+      "sha256": "1f0399148127777ec334b7231f5d19e493d3d6f7861dcb9b29bbab71f20da019",
+      "bytes": 6395
+    },
+    {
+      "sourcePath": "docs/harness/features/F54-formal-fusion-checkpoint-materialization/verification.md",
+      "archivePath": "workspace/docs/harness/features/F54-formal-fusion-checkpoint-materialization/verification.md",
+      "sha256": "64d291248da57aee3324c629ba41f76d4784f2e880ddda7937ca7412b878c70d",
+      "bytes": 4376
+    },
+    {
+      "sourcePath": "docs/harness/features/F55-outline-fallback-state-consistency/feature.md",
+      "archivePath": "workspace/docs/harness/features/F55-outline-fallback-state-consistency/feature.md",
+      "sha256": "765fc75167c56c449ae0ccf80c021a9e7c8cba416b9a4669009ef3a9a58ce65d",
+      "bytes": 5110
+    },
+    {
+      "sourcePath": "docs/harness/features/F55-outline-fallback-state-consistency/verification.md",
+      "archivePath": "workspace/docs/harness/features/F55-outline-fallback-state-consistency/verification.md",
+      "sha256": "9967849f71de0e52ac846ab0c57b868272f0f22623b1f395b0a9b89b908c3219",
+      "bytes": 4750
+    },
+    {
+      "sourcePath": "docs/harness/features/F56-fusion-outline-reconciliation/feature.md",
+      "archivePath": "workspace/docs/harness/features/F56-fusion-outline-reconciliation/feature.md",
+      "sha256": "5dd700a67d89a90dd8417a6ab5a9a618a4536da4cbb9afc36895384d00ab341b",
+      "bytes": 6876
+    },
+    {
+      "sourcePath": "docs/harness/features/F56-fusion-outline-reconciliation/verification.md",
+      "archivePath": "workspace/docs/harness/features/F56-fusion-outline-reconciliation/verification.md",
+      "sha256": "a4be9ab3c02dcf83acd63115d3e90331e2d6d452d7e44e367ca0f3f4458e6af0",
+      "bytes": 5416
+    },
+    {
+      "sourcePath": "docs/harness/features/F57-outline-field-preservation/feature.md",
+      "archivePath": "workspace/docs/harness/features/F57-outline-field-preservation/feature.md",
+      "sha256": "bfc4ed606709814c181e69155accd74af36fe56e7147a3c5e9691b46f67c6d3e",
+      "bytes": 2387
+    },
+    {
+      "sourcePath": "docs/harness/features/F57-outline-field-preservation/verification.md",
+      "archivePath": "workspace/docs/harness/features/F57-outline-field-preservation/verification.md",
+      "sha256": "4db73cde48192348b3645a73bff2f546bc511da78c5fe9f1d69d945c1ec695f8",
+      "bytes": 2183
+    },
+    {
+      "sourcePath": "docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery/block.md",
+      "archivePath": "workspace/docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery/block.md",
+      "sha256": "67d85f2843b9c1f682c130232b050c2a2b60f199c75d5de7143eb56301393271",
+      "bytes": 4042
+    },
+    {
+      "sourcePath": "docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery/feature.md",
+      "archivePath": "workspace/docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery/feature.md",
+      "sha256": "1e2ceafa5556689d7d93b94af009857adac2a21ca52eca43a7a0cf3e3726d5e9",
+      "bytes": 12604
+    },
+    {
+      "sourcePath": "docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery/verification.md",
+      "archivePath": "workspace/docs/harness/features/F58-preclass-fusion-checkpoint-materialization-recovery/verification.md",
+      "sha256": "1e5d92a01ac1b95d17667a59ebf5f03ea5d8f3872f4d82d3b05988d6d863f67e",
+      "bytes": 8406
+    },
+    {
+      "sourcePath": "docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof/block.md",
+      "archivePath": "workspace/docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof/block.md",
+      "sha256": "1d9880a0ac65b0c95735555abd6225530a93e5639a30b87171b2a02d49dd8e0e",
+      "bytes": 1468
+    },
+    {
+      "sourcePath": "docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof/feature.md",
+      "archivePath": "workspace/docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof/feature.md",
+      "sha256": "507e9efe15f1efa013529658cdf61b5fb70e8540c95dc8d518e1691ddca1c7e6",
+      "bytes": 9900
+    },
+    {
+      "sourcePath": "docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof/verification.md",
+      "archivePath": "workspace/docs/harness/features/F59-preclass-fusion-semantic-context-roundtrip-proof/verification.md",
+      "sha256": "0f10def697850dccb82bdad9f2894c5b8a22bad25f339a7bbb1d501907668c8b",
+      "bytes": 6114
+    },
+    {
+      "sourcePath": "docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation/feature.md",
+      "archivePath": "workspace/docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation/feature.md",
+      "sha256": "ef66df692712c330e215d689e41592e75277b08e502e109347a785b2b6b2636a",
+      "bytes": 9784
+    },
+    {
+      "sourcePath": "docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation/freeze.md",
+      "archivePath": "workspace/docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation/freeze.md",
+      "sha256": "3b40384c8810acc54998e800666b378e7e90cdeccfa3acef493e53c50d41d52b",
+      "bytes": 1279
+    },
+    {
+      "sourcePath": "docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation/verification.md",
+      "archivePath": "workspace/docs/harness/features/F60-preclass-fusion-remove-checkpoint-remediation/verification.md",
+      "sha256": "81779a3ae7025aa3d13108933c5312d3962726652a3e7e3e604e51a54cab69fa",
+      "bytes": 2450
+    },
+    {
+      "sourcePath": "docs/harness/features/feature-index.json",
+      "archivePath": "workspace/docs/harness/features/feature-index.json",
+      "sha256": "25850eea444d6a0042f036c9b6e5e8d3bb5b5fa6cae21dcb4d843445a0d3b684",
+      "bytes": 14013
+    },
+    {
+      "sourcePath": "docs/harness/features/feature-template.md",
+      "archivePath": "workspace/docs/harness/features/feature-template.md",
+      "sha256": "1b0fd10b2569ca2ea6ae0f049b80448e7beef43e6d373f21a066885eb06a4781",
+      "bytes": 1411
+    },
+    {
+      "sourcePath": "docs/harness/features/README.md",
+      "archivePath": "workspace/docs/harness/features/README.md",
+      "sha256": "746fde7f149927fa83feea28ab5af907a14148e79fe9bc41095ed023845ffee9",
+      "bytes": 4595
+    },
+    {
+      "sourcePath": "docs/harness/features/verification-template.md",
+      "archivePath": "workspace/docs/harness/features/verification-template.md",
+      "sha256": "890013046e3a11a49e544b276283a9ba78840a8eac79b24d4cd1d57a43eb7b59",
+      "bytes": 1010
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/01-fusion-document-routing-and-reading-index.md",
+      "archivePath": "workspace/docs/harness/FUSION/01-fusion-document-routing-and-reading-index.md",
+      "sha256": "b6515738db5afb9fc545ab757861a8e2e492a002ece51a4cdb29f96ba76884a7",
+      "bytes": 4430
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/02-pre-class-semantic-exchange-protocol.md",
+      "archivePath": "workspace/docs/harness/FUSION/02-pre-class-semantic-exchange-protocol.md",
+      "sha256": "8982c8aa766e78e2b6e6036255c0f5b858ca4fa6061bfa7440d4c32b3b49511a",
+      "bytes": 22798
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/03-pre-class-fusion-code-migration-roadmap.md",
+      "archivePath": "workspace/docs/harness/FUSION/03-pre-class-fusion-code-migration-roadmap.md",
+      "sha256": "267b5db50412967efeb28f9c5b0f46cf6b1cb7ecf4eeaaa4aff7ba4be2749da6",
+      "bytes": 18867
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/04-in-class-semantic-exchange-protocol.md",
+      "archivePath": "workspace/docs/harness/FUSION/04-in-class-semantic-exchange-protocol.md",
+      "sha256": "e84fff41d75de01a210bd89218dcd1822c8afe5f133ad43b5f8e7a5daf0f4ed1",
+      "bytes": 12371
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/05-in-class-fusion-code-migration-roadmap.md",
+      "archivePath": "workspace/docs/harness/FUSION/05-in-class-fusion-code-migration-roadmap.md",
+      "sha256": "64def8b5fb5928323547c73773995cb57b211dd56b9a00cd6c8e4f22a7197eab",
+      "bytes": 26740
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/06-post-class-semantic-exchange-protocol.md",
+      "archivePath": "workspace/docs/harness/FUSION/06-post-class-semantic-exchange-protocol.md",
+      "sha256": "604787f520c3553e50108265353e225353505986649787eef5325eac5153482d",
+      "bytes": 12532
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/07-post-class-fusion-code-migration-roadmap.md",
+      "archivePath": "workspace/docs/harness/FUSION/07-post-class-fusion-code-migration-roadmap.md",
+      "sha256": "5b93ef6375028af8ccf422cc983e562562c4fc253baae583551622becd1d2ba0",
+      "bytes": 28069
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/08-deeptutor-learner-state-and-identity-resolution.md",
+      "archivePath": "workspace/docs/harness/FUSION/08-deeptutor-learner-state-and-identity-resolution.md",
+      "sha256": "f52df1e78324d7b11666b44ac1d1f970d6a550cce6896e154133c0b03268bd5b",
+      "bytes": 12979
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/09-candidate-inbox-driven-profile-pipeline.md",
+      "archivePath": "workspace/docs/harness/FUSION/09-candidate-inbox-driven-profile-pipeline.md",
+      "sha256": "f66dbd412bb90bd73dd9cfd9ffad18b2495bb9b141c2f5b0dc70cf79542afcaa",
+      "bytes": 21712
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/10-canonical-hash-digest-and-integrity-specification.md",
+      "archivePath": "workspace/docs/harness/FUSION/10-canonical-hash-digest-and-integrity-specification.md",
+      "sha256": "08d52471285f7cd95cd8dec296a30f9ac0d3f7d54c102bed7328a7c9f8f2e89a",
+      "bytes": 20244
+    },
+    {
+      "sourcePath": "docs/harness/FUSION/fixtures/canonical-digest-v1.json",
+      "archivePath": "workspace/docs/harness/FUSION/fixtures/canonical-digest-v1.json",
+      "sha256": "7097148577ebb03e9742e57c97b1c6dad7bcad4c361323717636bec68f6ef3b8",
+      "bytes": 9573
+    },
+    {
+      "sourcePath": "docs/harness/INITIALIZATION_CONTRACT.md",
+      "archivePath": "workspace/docs/harness/INITIALIZATION_CONTRACT.md",
+      "sha256": "624017c217753a71e770df52858219266df8c1dd9651e4fa6bb4571bc13135c9",
+      "bytes": 6337
+    },
+    {
+      "sourcePath": "docs/harness/PRODUCT_SPEC.md",
+      "archivePath": "workspace/docs/harness/PRODUCT_SPEC.md",
+      "sha256": "064998dec3c6ab4c487de3c365c0272f8f78ef35951596494c675567941fe2b5",
+      "bytes": 3022
+    },
+    {
+      "sourcePath": "docs/progress.md",
+      "archivePath": "workspace/docs/progress.md",
+      "sha256": "3ae34fd0a2a27a9a3138e40fe0b26f16ab9d23d6c4e697fa39a6ac001abe330c",
+      "bytes": 4440
+    },
+    {
+      "sourcePath": "scripts/architecture-split.mjs",
+      "archivePath": "workspace/scripts/architecture-split.mjs",
+      "sha256": "a1fe3041c1b1d5edda2ea049e34daa97a80bac75f5d4ccc4b33d84075667a9b7",
+      "bytes": 10625
+    },
+    {
+      "sourcePath": "scripts/classroom-manifest-audit.mjs",
+      "archivePath": "workspace/scripts/classroom-manifest-audit.mjs",
+      "sha256": "4a90e3341e65760cd86ef748edf11aa6287d20e5cf4d98cb55520ed68e9b04de",
+      "bytes": 15382
+    },
+    {
+      "sourcePath": "scripts/harness-gate.mjs",
+      "archivePath": "workspace/scripts/harness-gate.mjs",
+      "sha256": "43f621bcb4a4e09be8737849018c751c88a2f1b31c9efbf4bc4149a8d9b1230e",
+      "bytes": 11389
+    }
+  ]
+}
