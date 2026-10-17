@@ -1,73 +1,64 @@
 import type { QuestionResult } from '@/lib/quiz/grading';
 import type { QuizAnswers } from '@/lib/quiz/persistence';
-import { loadQuizAttemptState, type QuizAttemptState } from '@/lib/quiz/runtime';
-import { createLogger } from '@/lib/logger';
-
-const log = createLogger('ChatQuizContext');
-const QUIZ_CONTEXT_TIMEOUT_MS = 1500;
+import { loadQuizForPlay } from '@/lib/quiz/trace-client';
 
 export interface QuizResultsForStoreState {
   sceneId: string;
   answers: QuizAnswers;
   results: QuestionResult[];
+  versionId?: string;
+  submissionId?: string;
+  reviewId?: string;
+  limitations?: string[];
 }
-
 export function didActiveSceneRemainUnchanged(
   scenesBefore: readonly { id: string }[],
   currentSceneIdBefore: string | null,
   scenesAfter: readonly { id: string }[],
   currentSceneIdAfter: string | null,
 ): boolean {
-  // Identity comparison would be stricter than the intent (don't leak a stale
-  // scene's results into the NEXT scene's request): a store update may
-  // reallocate the scene object during the async quiz read while the learner
-  // never left the scene, and dropping their graded answers for that turn
-  // degrades the reply for no safety gain. The scene id is the boundary.
-  if (!currentSceneIdBefore || currentSceneIdAfter !== currentSceneIdBefore) return false;
   return (
-    scenesBefore.some((scene) => scene.id === currentSceneIdBefore) &&
-    scenesAfter.some((scene) => scene.id === currentSceneIdAfter)
+    !!currentSceneIdBefore &&
+    currentSceneIdAfter === currentSceneIdBefore &&
+    scenesBefore.some((s) => s.id === currentSceneIdBefore) &&
+    scenesAfter.some((s) => s.id === currentSceneIdAfter)
   );
 }
-
-/**
- * Hydrate graded quiz context for chat. An empty result list still marks the
- * QuizView as reviewed, but carries no feedback that the agent can use.
- */
+/** Only server-bound usable evaluations; never migrate old data while preparing chat. */
 export async function buildQuizResultsForStoreState(
   scenes: { id: string; type?: string; stageId?: string }[],
   currentSceneId: string | null,
 ): Promise<QuizResultsForStoreState | undefined> {
-  if (!currentSceneId) return undefined;
-  const scene = scenes.find((candidate) => candidate.id === currentSceneId);
-  if (!scene || scene.type !== 'quiz' || !scene.stageId) return undefined;
-  let state: QuizAttemptState | undefined;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const scene = scenes.find((s) => s.id === currentSceneId && s.type === 'quiz');
+  if (!scene?.stageId) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    ({ state } = await Promise.race([
-      loadQuizAttemptState({
-        stageId: scene.stageId,
-        sceneId: currentSceneId,
-      }),
+    const state = await Promise.race([
+      loadQuizForPlay(scene.stageId, scene.id),
       new Promise<never>((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error('Timed out loading quiz context from RuntimeStore')),
-          QUIZ_CONTEXT_TIMEOUT_MS,
-        );
+        timer = setTimeout(() => reject(new Error('Quiz context timeout')), 1500);
       }),
-    ]));
-  } catch (error) {
-    log.warn('Failed to load quiz context:', error);
-    return undefined;
+    ]);
+    if (!state?.submission || !state.review) return;
+    const results = state.review.results.filter((r) => r.evaluation.state === 'normal');
+    if (!results.length) return;
+    return {
+      sceneId: scene.id,
+      answers: state.submission.answers,
+      results,
+      versionId: state.version.id,
+      submissionId: state.submission.id,
+      reviewId: state.review.id,
+      limitations: [
+        'Task-specific evaluation; no independent mastery or help inference.',
+        ...(state.review.summary.status !== 'complete'
+          ? ['Some questions have no usable evaluation.']
+          : []),
+      ],
+    };
+  } catch {
+    return;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
-  if (state?.phase !== 'reviewed' || !state.results || state.results.length === 0) {
-    return undefined;
-  }
-  return {
-    sceneId: currentSceneId,
-    answers: state.answers,
-    results: state.results,
-  };
 }

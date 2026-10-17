@@ -226,7 +226,8 @@ export interface AssetStore {
    * Advances and returns the entry's revision. The exact value lets an HTTP
    * handler report the revision produced by this write without a racy follow-up
    * read. Rejects an unknown id and another principal's id identically, with
-   * {@link AssetNotFoundError}.
+   * {@link AssetNotFoundError}. Retained historical entries reject mutations
+   * with ASSET_RETAINED rather than changing their captured bytes.
    */
   replace(
     principal: AssetPrincipal,

@@ -1,3 +1,4 @@
+import { rekeyQuizTraceIn } from './quiz-trace-lifecycle';
 /**
  * Claiming anonymous work on sign-in.
  *
@@ -134,6 +135,7 @@ export const CORE_CLAIM_PARTICIPANTS = [
   'legacy-import-bindings',
   'workspace-model-config',
   'custom-agents',
+  'quiz-trace',
 ] as const;
 
 /**
@@ -352,9 +354,11 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
 function participantsInOrder(provider: ServerPersistenceProvider): ClaimParticipant[] {
   const state = registry();
   state.sealed = true;
-  return [...coreParticipants(provider), ...state.participants].sort(
-    (a, b) => a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
-  );
+  return [
+    ...coreParticipants(provider),
+    { name: 'quiz-trace', order: 1000, rekey: rekeyQuizTraceIn },
+    ...state.participants,
+  ].sort((a, b) => a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 export type OwnerClaimRefusal =

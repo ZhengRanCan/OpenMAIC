@@ -1,3 +1,4 @@
+import { guardQuizRuntime } from './quiz-runtime-guard';
 /**
  * Runtime data of a deleted course is gone from the product's point of view.
  *
@@ -51,7 +52,7 @@ export function guardedServerRuntimeStore(
   inner: RuntimeStore,
   queryable: Parameters<typeof readStageMeta>[0],
 ): RuntimeStore {
-  return createTombstoneGuardedRuntimeStore(inner, (stageId) =>
+  return createTombstoneGuardedRuntimeStore(guardQuizRuntime(inner, queryable), (stageId) =>
     isStageTombstoned(queryable, stageId),
   );
 }

@@ -1,3 +1,9 @@
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { isSameOriginJsonRequest } from '@/lib/persistence/owner-claim-http';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { QuizTraceService } from '@/lib/persistence/quiz-trace';
+import { gradeSubmittedQuiz } from '@/lib/server/quiz-grade';
+import { QuizTraceError } from '@/lib/quiz/trace-validation';
 /**
  * Quiz Grading API
  *
@@ -12,14 +18,6 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 const log = createLogger('Quiz Grade');
 
-interface GradeRequest {
-  question: string;
-  userAnswer: string;
-  points: number;
-  commentPrompt?: string;
-  language?: string;
-}
-
 interface GradeResponse {
   score: number;
   comment: string;
@@ -29,7 +27,34 @@ export async function POST(req: NextRequest) {
   let questionSnippet: string | undefined;
   let resolvedPoints: number | undefined;
   try {
-    const body = (await req.json()) as GradeRequest;
+    const body = await req.json();
+    if (body && typeof body === 'object' && 'attemptId' in body) {
+      return withRequestOwner(req, async (principal, headers) => {
+        headers.set('cache-control', 'private, no-store');
+        try {
+          if (!isSameOriginJsonRequest(req))
+            return Response.json({ error: { code: 'INVALID_ORIGIN' } }, { status: 403, headers });
+          const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+          const service = new QuizTraceService(provider);
+          const reservation = await service.beginReview(principal.ownerId, body.attemptId, body);
+          if (reservation.existing) return Response.json(reservation.existing, { headers });
+          if (reservation.pending)
+            return Response.json({ pending: true }, { status: 202, headers });
+          const evaluation = await gradeSubmittedQuiz(req, reservation);
+          const result = await service.finishReview(principal.ownerId, reservation, evaluation);
+          return Response.json(result, { headers });
+        } catch (error) {
+          return Response.json(
+            {
+              error: {
+                code: error instanceof QuizTraceError ? error.code : 'QUIZ_REVIEW_UNAVAILABLE',
+              },
+            },
+            { status: error instanceof QuizTraceError ? error.status : 503, headers },
+          );
+        }
+      });
+    }
     const { question, userAnswer, points, commentPrompt, language } = body;
     questionSnippet = question?.substring(0, 60);
     resolvedPoints = points;
@@ -83,18 +108,22 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
     // Parse the LLM response as JSON
     const text = result.text.trim();
     let gradeResult: GradeResponse;
+    let evaluationState: 'normal' | 'fallback' = 'normal';
 
     try {
       // Try to extract JSON from the response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found');
       const parsed = JSON.parse(jsonMatch[0]);
+      if (typeof parsed.score !== 'number' || !Number.isFinite(parsed.score))
+        throw new Error('Invalid score');
       gradeResult = {
         score: Math.max(0, Math.min(points, Math.round(Number(parsed.score)))),
         comment: String(parsed.comment || ''),
       };
     } catch {
       // Fallback: give partial credit with a generic comment
+      evaluationState = 'fallback';
       gradeResult = {
         score: Math.round(points * 0.5),
         comment: isZh
@@ -103,7 +132,14 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
       };
     }
 
-    return apiSuccess({ ...gradeResult });
+    return apiSuccess({
+      ...gradeResult,
+      evaluation: {
+        state: evaluationState,
+        method: 'model',
+        ...(evaluationState === 'fallback' ? { reason: 'invalid-model-result' } : {}),
+      },
+    });
   } catch (error) {
     log.error(
       `Quiz grading failed [question="${questionSnippet ?? 'unknown'}...", points=${resolvedPoints ?? 'unknown'}]:`,

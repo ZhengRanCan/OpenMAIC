@@ -491,7 +491,8 @@ async function stampUnreferencedEntries(
         AND entries.unreferenced_at IS NULL
         AND NOT EXISTS (
               SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
-            )`,
+            )
+              AND NOT EXISTS (SELECT 1 FROM asset_retention_refs AS refs WHERE refs.asset_id = entries.id)`,
     [ids],
   );
 }

@@ -755,7 +755,8 @@ export class AssetCollector {
               AND entries.unreferenced_at IS NULL
               AND NOT EXISTS (
                     SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
-                  )`,
+                  )
+              AND NOT EXISTS (SELECT 1 FROM asset_retention_refs AS refs WHERE refs.asset_id = entries.id)`,
           [ids],
         );
       });
@@ -1093,7 +1094,8 @@ export class AssetCollector {
               AND entries.unreferenced_at IS NULL
               AND NOT EXISTS (
                     SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
-                  )`,
+                  )
+              AND NOT EXISTS (SELECT 1 FROM asset_retention_refs AS refs WHERE refs.asset_id = entries.id)`,
           [ids],
         );
         return ids.length;
@@ -1172,7 +1174,7 @@ export class AssetCollector {
           const entry = locked.rows[0];
           if (!entry) return false;
           const referenced = await queryable.query(
-            'SELECT 1 FROM document_asset_refs WHERE asset_id = $1 LIMIT 1',
+            'SELECT 1 FROM document_asset_refs WHERE asset_id = $1 UNION ALL SELECT 1 FROM asset_retention_refs WHERE asset_id = $1 LIMIT 1',
             [entry.id],
           );
           // What makes "eligible" mean "no document names it" rather than "a

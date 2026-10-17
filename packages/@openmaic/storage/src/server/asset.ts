@@ -1,3 +1,4 @@
+import { AssetRetainedError } from '../asset/retention.js';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import type { AssetMeta } from '@openmaic/dsl';
 import type { AssetId } from '../asset/id.js';
@@ -495,6 +496,13 @@ function declaredStoreErrorCode(error: unknown): string | undefined {
 
 function classifyStoreError(error: unknown): never {
   const code = declaredStoreErrorCode(error);
+  if (error instanceof AssetRetainedError || code === 'ASSET_RETAINED') {
+    throw new AssetHttpError(
+      409,
+      'ASSET_RETAINED',
+      '@openmaic/storage: asset is held by a historical content version',
+    );
+  }
   if (error instanceof AssetNotFoundError || code === 'ASSET_NOT_FOUND') throw missingAsset();
   if (error instanceof AssetQuotaExceededError || code === 'ASSET_QUOTA_EXCEEDED') {
     throw new AssetHttpError(

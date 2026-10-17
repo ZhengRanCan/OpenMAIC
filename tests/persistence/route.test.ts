@@ -1,3 +1,7 @@
+vi.mock('@/lib/persistence/quiz-trace-schema', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ensureQuizTraceSchema: vi.fn().mockResolvedValue(undefined),
+}));
 import type { RequestListener } from 'node:http';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';

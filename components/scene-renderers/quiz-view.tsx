@@ -1,13 +1,12 @@
 'use client';
 
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { answerIncludesOption } from '@/lib/quiz/grading';
 import {
   PieChart,
   CheckCircle2,
   XCircle,
-  RotateCcw,
   ChevronRight,
   Check,
   BookOpenText,
@@ -19,37 +18,40 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('QuizView');
-import type { QuizQuestion } from '@/lib/types/stage';
+import type { QuizQuestion, Scene } from '@/lib/types/stage';
 import { SpeechButton } from '@/components/audio/speech-button';
-import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
+import type { QuestionResult } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
-import { writeDraftRecovery } from '@/lib/quiz/persistence';
+import type { QuizAnswers } from '@/lib/quiz/persistence';
+import type {
+  PreparedQuiz,
+  PrepareQuizInput,
+  QuizHistoryRead,
+  QuizReview,
+} from '@/lib/quiz/trace-types';
 import {
-  createQuizAttemptWriter,
-  loadQuizAttemptState,
-  QuizRetryProgressedError,
-  type QuizAttemptWriter,
-} from '@/lib/quiz/runtime';
-import {
-  createQuizViewLifetime,
-  isQuizRuntimeReady,
-  persistQuizReview,
-  persistQuizRetry,
-  persistQuizSubmission,
-  quizViewStateFromAttempt,
-  runQuizPersistenceTransition,
-  type QuizRuntimeGate,
-  type QuizViewLifetime,
-} from '@/lib/quiz/view-state';
+  createQuizDraftWriter,
+  createQuizOperationId,
+  loadQuizForPlay,
+  prepareQuiz,
+  readQuizHistory,
+  requestQuizReview,
+  submitQuiz,
+  readPendingQuizSubmission,
+  rememberPendingQuizSubmission,
+  readPendingQuizReview,
+  rememberPendingQuizReview,
+  quizReviewRequest,
+  type QuizDraftWriter,
+  type PendingQuizSubmission,
+  type PendingQuizReview,
+} from '@/lib/quiz/trace-client';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type Phase = 'not_started' | 'answering' | 'submitting' | 'grading' | 'reviewing';
-
 interface QuizViewProps {
-  readonly questions: QuizQuestion[];
-  readonly sceneId: string;
-  readonly stageId: string;
+  readonly scene: Scene;
+  readonly planning?: Record<string, unknown>;
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -88,55 +90,6 @@ const QuizMathText = memo(function QuizMathText({
     </span>
   );
 });
-
-/** Call /api/quiz-grade for a single short-answer question. */
-async function gradeShortAnswerQuestion(
-  q: QuizQuestion,
-  userAnswer: string,
-  language: string,
-): Promise<QuestionResult> {
-  const pts = q.points ?? 1;
-  try {
-    // The server grades with the workspace's classroom model.
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-
-    const res = await fetch('/api/quiz-grade', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        question: q.question,
-        userAnswer,
-        points: pts,
-        commentPrompt: q.commentPrompt,
-        language,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as { score: number; comment: string };
-    const earned = Math.max(0, Math.min(pts, data.score));
-    return {
-      questionId: q.id,
-      correct: earned >= pts * 0.8,
-      status: earned >= pts * 0.8 ? 'correct' : 'incorrect',
-      earned,
-      aiComment: data.comment,
-    };
-  } catch (err) {
-    log.error('[quiz-view] AI grading failed for', q.id, err);
-    // Fallback: give half credit
-    return {
-      questionId: q.id,
-      correct: null,
-      status: 'incorrect',
-      earned: Math.round(pts * 0.5),
-      aiComment:
-        language === 'zh-CN'
-          ? '评分服务暂时不可用，已给予基础分。'
-          : 'Grading service unavailable. Base score given.',
-    };
-  }
-}
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
@@ -690,421 +643,828 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
-  const { t, locale } = useI18n();
-
-  const [phase, setPhase] = useState<Phase>('not_started');
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
-  const [results, setResults] = useState<QuestionResult[]>([]);
-  const [runtimeGate, setRuntimeGate] = useState<QuizRuntimeGate>({ status: 'loading' });
-  const [hydrationVersion, setHydrationVersion] = useState(0);
-  const [retrying, setRetrying] = useState(false);
-  const viewLifetimeRef = useRef<QuizViewLifetime | null>(null);
-  viewLifetimeRef.current ??= createQuizViewLifetime();
-  const viewLifetime = viewLifetimeRef.current;
-  const runtimeWriterRef = useRef<QuizAttemptWriter | null>(null);
-  runtimeWriterRef.current ??= createQuizAttemptWriter({
-    onError: (error) => log.warn('Failed to persist quiz runtime:', error),
-  });
-  const runtimeWriter = runtimeWriterRef.current;
-
-  useEffect(() => {
-    return () => {
-      void runtimeWriter.flushDraft();
-    };
-  }, [runtimeWriter]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setRuntimeGate({ status: 'loading' });
-    setRetrying(false);
-    void loadQuizAttemptState({ stageId, sceneId })
-      .then(({ attemptId: nextAttemptId, state }) => {
-        if (cancelled) return;
-        const next = quizViewStateFromAttempt(state);
-        setPhase(next.phase);
-        setAnswers(next.answers);
-        setResults(next.results);
-        setRuntimeGate({ status: 'ready', attemptId: nextAttemptId });
-      })
-      .catch((error) => {
-        log.warn('Failed to hydrate quiz runtime:', error);
-        if (!cancelled) setRuntimeGate({ status: 'error' });
-      });
-    return () => {
-      cancelled = true;
-      viewLifetime.invalidate();
-      void runtimeWriter.flushDraft();
-    };
-  }, [hydrationVersion, runtimeWriter, sceneId, stageId, viewLifetime]);
-
-  const attemptId = isQuizRuntimeReady(runtimeGate) ? runtimeGate.attemptId : null;
-
-  const totalPoints = useMemo(
-    () => questions.reduce((sum, q) => sum + (q.points ?? 1), 0),
-    [questions],
+function QuizQuestions({
+  questions,
+  answers,
+  review,
+  locked,
+  onChange,
+}: {
+  questions: QuizQuestion[];
+  answers: QuizAnswers;
+  review?: QuizReview;
+  locked: boolean;
+  onChange: (id: string, answer: string | string[]) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <>
+      {questions.map((q, index) => {
+        const evaluated = review?.results.find((result) => result.questionId === q.id);
+        const result = evaluated?.evaluation.state === 'normal' ? evaluated : undefined;
+        const props = { question: q, index, disabled: locked, result };
+        return (
+          <div key={q.id}>
+            {q.type === 'single' ? (
+              <SingleChoiceQuestion
+                {...props}
+                value={answers[q.id] as string | undefined}
+                onChange={(value) => onChange(q.id, value)}
+              />
+            ) : q.type === 'multiple' ? (
+              <MultipleChoiceQuestion
+                {...props}
+                value={answers[q.id] as string[] | undefined}
+                onChange={(value) => onChange(q.id, value)}
+              />
+            ) : (
+              <ShortAnswerQuestion
+                {...props}
+                value={answers[q.id] as string | undefined}
+                onChange={(value) => onChange(q.id, value)}
+              />
+            )}
+            {evaluated && evaluated.evaluation.state !== 'normal' && (
+              <p className="mt-2 text-sm text-amber-700 dark:text-amber-300" role="status">
+                {t(
+                  evaluated.evaluation.state === 'fallback'
+                    ? 'quiz.traceFallback'
+                    : 'quiz.traceFailed',
+                )}
+                {evaluated.aiComment && <span> {evaluated.aiComment}</span>}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </>
   );
+}
 
-  const allAnswered = useMemo(() => {
-    return questions.every((q) => {
-      const a = answers[q.id];
-      if (!a) return false;
-      if (Array.isArray(a)) return a.length > 0;
-      return (a as string).trim().length > 0;
-    });
-  }, [questions, answers]);
+function TraceScore({ review }: { review: QuizReview }) {
+  const { t } = useI18n();
+  const summary = review.summary;
+  return (
+    <div className="space-y-2" data-testid="quiz-trace-score">
+      {summary.status === 'complete' && (
+        <ScoreBanner
+          score={summary.usableEarned}
+          total={summary.usablePossible}
+          results={review.results.filter((result) => result.evaluation.state === 'normal')}
+        />
+      )}
+      <p className="text-sm" role="status">
+        {t(
+          summary.status === 'complete'
+            ? 'quiz.traceComplete'
+            : summary.status === 'partial'
+              ? 'quiz.tracePartial'
+              : 'quiz.traceUnavailable',
+          {
+            earned: summary.usableEarned,
+            possible: summary.usablePossible,
+            total: summary.quizPossible,
+            count: summary.unusableQuestionCount,
+          },
+        )}
+      </p>
+    </div>
+  );
+}
 
-  const handleSetAnswer = useCallback(
-    (questionId: string, value: string | string[]) => {
-      setAnswers((prev) => {
-        const next = { ...prev, [questionId]: value };
-        if (attemptId) {
-          writeDraftRecovery(sceneId, attemptId, next);
-          runtimeWriter.scheduleDraft({
+function TraceHistory({
+  history,
+  sceneId,
+  onSelect,
+}: {
+  history: QuizHistoryRead;
+  sceneId: string;
+  onSelect: (attempt: PreparedQuiz) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <section className="space-y-3 rounded-xl border p-4" data-testid="quiz-trace-history">
+      <h4 className="font-semibold">{t('quiz.traceHistory')}</h4>
+      <p role="status">
+        {t(
+          history.completeness === 'complete'
+            ? 'quiz.traceHistoryComplete'
+            : history.completeness === 'partial'
+              ? 'quiz.traceHistoryPartial'
+              : 'quiz.traceHistoryUnknown',
+        )}
+      </p>
+      {history.failures.map((failure) => (
+        <p key={failure.attemptId} className="text-sm text-amber-700">
+          {failure.attemptId}: {failure.code}
+        </p>
+      ))}
+      {history.attempts
+        .filter((attempt) => attempt.sceneId === sceneId)
+        .map((attempt) => (
+          <details key={attempt.attemptId} className="border-t pt-2">
+            <summary className="cursor-pointer break-all">
+              {attempt.version.capturedAt} · {attempt.attemptId}
+            </summary>
+            <p className="text-xs break-all">
+              {t('quiz.traceVersion')}: {attempt.version.id}
+            </p>
+            {Boolean(attempt.version.resourceCoverage?.unavailableBackgroundRefs.length) && (
+              <p role="status" className="text-sm text-amber-800 dark:text-amber-200">
+                {t('quiz.traceResourceLimits', {
+                  count: attempt.version.resourceCoverage!.unavailableBackgroundRefs.length,
+                })}
+              </p>
+            )}
+            {attempt.version.planning && (
+              <details className="text-xs">
+                <summary className="cursor-pointer">{t('quiz.tracePlanning')}</summary>
+                <p>{t('quiz.tracePlanningLimits')}</p>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-all">
+                  {JSON.stringify(attempt.version.planning, null, 2)}
+                </pre>
+              </details>
+            )}
+            <p className="text-sm">
+              {t(attempt.submission ? 'quiz.traceLocked' : 'quiz.traceDraft')}
+            </p>
+            {attempt.version.scene.content.type === 'quiz' && (
+              <div className="space-y-3 mt-3">
+                <QuizQuestions
+                  questions={attempt.version.scene.content.questions}
+                  answers={attempt.submission?.answers ?? attempt.answers}
+                  review={attempt.review}
+                  locked
+                  onChange={() => {}}
+                />
+                {attempt.review && <TraceScore review={attempt.review} />}
+                {attempt.reviews.map((review) => (
+                  <details key={review.id}>
+                    <summary>
+                      {t('quiz.traceEvaluation')} {review.ordinal} · {review.savedAt}
+                    </summary>
+                    <TraceScore review={review} />
+                    <ul>
+                      {review.results.map((result) => (
+                        <li key={result.questionId}>
+                          {result.questionId}:{' '}
+                          {result.evaluation.state === 'normal'
+                            ? result.earned
+                            : t(
+                                result.evaluation.state === 'fallback'
+                                  ? 'quiz.traceFallback'
+                                  : 'quiz.traceFailed',
+                              )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ))}
+                <button
+                  type="button"
+                  className="text-sm underline"
+                  onClick={() => onSelect(attempt)}
+                >
+                  {t('quiz.traceViewAttempt')}
+                </button>
+              </div>
+            )}
+          </details>
+        ))}
+      {history.legacy.map((legacy) => (
+        <details key={legacy.attemptId} className="border-t pt-2">
+          <summary className="cursor-pointer break-all">
+            {legacy.attemptId} · {t('quiz.traceLegacy')}
+          </summary>
+          <p>{t('quiz.traceLegacyExplanation')}</p>
+          <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">
+            {JSON.stringify(legacy.records, null, 2)}
+          </pre>
+        </details>
+      ))}
+    </section>
+  );
+}
+
+export function QuizView({ scene, planning }: QuizViewProps) {
+  const { t, locale } = useI18n();
+  const { stageId, id: sceneId } = scene;
+  const [prepared, setPrepared] = useState<PreparedQuiz | null>(null);
+  const [answers, setAnswers] = useState<QuizAnswers>({});
+  const [started, setStarted] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [busy, setBusy] = useState(false);
+  const [grading, setGrading] = useState(false);
+  const [evaluationRequested, setEvaluationRequested] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [history, setHistory] = useState<QuizHistoryRead | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historical, setHistorical] = useState(false);
+  const [legacyOnly, setLegacyOnly] = useState(false);
+  const preparedRef = useRef<PreparedQuiz | null>(null);
+  const writerRef = useRef<QuizDraftWriter | null>(null);
+  const pendingSubmission = useRef<PendingQuizSubmission | null>(null);
+  const pendingReview = useRef<PendingQuizReview | null>(null);
+  const pendingPrepare = useRef<PrepareQuizInput | null>(null);
+  const generation = useRef(0);
+  const busyRef = useRef(false);
+  const gradingRef = useRef(false);
+
+  const install = useCallback((next: PreparedQuiz, open = true) => {
+    writerRef.current?.cancel();
+    preparedRef.current = next;
+    setPrepared(next);
+    setAnswers(next.submission?.answers ?? next.answers);
+    setStarted(open);
+    setHistorical(false);
+    setLegacyOnly(false);
+    const token = generation.current;
+    writerRef.current = next.submission
+      ? null
+      : createQuizDraftWriter(next, {
+          onSaved: (value) => {
+            if (token !== generation.current || preparedRef.current?.attemptId !== value.attemptId)
+              return;
+            preparedRef.current = value;
+            setPrepared(value);
+          },
+          onError: (error) => {
+            log.warn('Quiz draft needs recovery', error);
+            if (token === generation.current) {
+              setNotice('quiz.traceSaveFailed');
+              setStatus('error');
+            }
+          },
+        });
+  }, []);
+
+  const restore = useCallback(async () => {
+    const token = ++generation.current;
+    writerRef.current?.cancel();
+    setStatus('loading');
+    setNotice(null);
+    setBusy(false);
+    busyRef.current = false;
+    setGrading(false);
+    gradingRef.current = false;
+    try {
+      const next = await loadQuizForPlay(stageId, sceneId);
+      if (token !== generation.current) return;
+      const pending = readPendingQuizSubmission(stageId, sceneId);
+      if (next) {
+        install(next);
+        const savedPendingReview = readPendingQuizReview(stageId, sceneId);
+        pendingReview.current =
+          savedPendingReview?.attemptId === next.attemptId &&
+          savedPendingReview.input.submissionId === next.submission?.id
+            ? savedPendingReview
+            : null;
+        if (
+          pendingReview.current?.reviewId &&
+          next.reviews.some((review) => review.id === pendingReview.current?.reviewId)
+        ) {
+          pendingReview.current = null;
+          rememberPendingQuizReview(stageId, sceneId, null);
+        }
+        setEvaluationRequested(Boolean(next.review || next.pendingReview || pendingReview.current));
+        if (
+          pendingPrepare.current?.mode === 'start' ||
+          (pendingPrepare.current?.mode === 'retry' &&
+            pendingPrepare.current.previousAttemptId !== next.attemptId)
+        ) {
+          pendingPrepare.current = null;
+        }
+        if (next.submission) {
+          pendingSubmission.current = null;
+          rememberPendingQuizSubmission(stageId, sceneId, null);
+          setUncertain(false);
+        } else if (pending?.attemptId === next.attemptId) {
+          pendingSubmission.current = pending;
+          setAnswers(pending.input.answers);
+          setUncertain(true);
+        } else {
+          pendingSubmission.current = null;
+          setUncertain(false);
+        }
+      } else {
+        preparedRef.current = null;
+        setPrepared(null);
+        setAnswers({});
+        setStarted(false);
+        setUncertain(Boolean(pending));
+        pendingSubmission.current = pending;
+        // This read is side-effect free: legacy records never acquire today's questions.
+        try {
+          const read = await readQuizHistory(stageId);
+          if (token !== generation.current) return;
+          setHistory(read);
+          const legacy = read.legacy.some((item) =>
+            item.records.some(
+              (record) =>
+                typeof record === 'object' &&
+                record !== null &&
+                'sceneId' in record &&
+                record.sceneId === sceneId,
+            ),
+          );
+          setLegacyOnly(legacy);
+          setShowHistory(legacy);
+        } catch {
+          if (token === generation.current) setNotice('quiz.traceHistoryUnknown');
+        }
+      }
+      if (token === generation.current) setStatus('ready');
+    } catch (error) {
+      log.warn('Quiz restore failed', error);
+      if (token === generation.current) {
+        setNotice('quiz.traceRestoreFailed');
+        setStatus('error');
+      }
+    }
+  }, [install, sceneId, stageId]);
+
+  useEffect(() => {
+    void restore();
+    return () => {
+      // This counter deliberately invalidates async work from the departing view.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      generation.current++;
+      void writerRef.current?.flush().catch(() => {});
+    };
+  }, [restore]);
+
+  const handleStart = async (retry = false) => {
+    if (busyRef.current) return;
+    if (!retry && preparedRef.current && !historical) {
+      setStarted(true);
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    setNotice(null);
+    const token = ++generation.current;
+    writerRef.current?.cancel();
+    const previous = preparedRef.current;
+    pendingPrepare.current ??=
+      retry && previous
+        ? {
+            operationId: createQuizOperationId(),
+            mode: 'retry',
             stageId,
             sceneId,
-            attemptId,
-            answers: next,
-          });
-        }
-        return next;
-      });
-    },
-    [attemptId, runtimeWriter, sceneId, stageId],
-  );
-
-  const handleSubmit = useCallback(async () => {
-    if (!attemptId) return;
-    setPhase('submitting');
-    await runQuizPersistenceTransition(
-      () => persistQuizSubmission({ stageId, sceneId, attemptId, answers }, runtimeWriter),
-      viewLifetime,
-      () => setPhase('grading'),
-      (error) => {
-        log.warn('Failed to persist quiz submission:', error);
-        setRuntimeGate({ status: 'error' });
-      },
-    );
-  }, [attemptId, answers, runtimeWriter, sceneId, stageId, viewLifetime]);
-
-  // When entering grading phase, grade choice questions locally + call API for short-answer
-  useEffect(() => {
-    if (phase !== 'grading') return;
-    let cancelled = false;
-
-    (async () => {
-      // 1. Grade choice questions locally (instant)
-      const choiceResults = gradeChoiceQuestions(questions, answers);
-
-      // 2. Grade short-answer questions via AI API (parallel)
-      const shortAnswerQs = questions.filter(isShortAnswer);
-      const aiResults = await Promise.all(
-        shortAnswerQs.map((q) =>
-          gradeShortAnswerQuestion(q, (answers[q.id] as string) ?? '', locale),
-        ),
-      );
-
-      if (cancelled) return;
-
-      // 3. Merge results in original question order
-      const allResultsMap = new Map<string, QuestionResult>();
-      for (const r of [...choiceResults, ...aiResults]) {
-        allResultsMap.set(r.questionId, r);
+            previousAttemptId: previous.attemptId,
+          }
+        : {
+            operationId: createQuizOperationId(),
+            mode: 'start',
+            stageId,
+            sceneId,
+            scene: structuredClone(scene),
+            ...(planning ? { planning: structuredClone(planning) } : {}),
+          };
+    try {
+      const next = await prepareQuiz(pendingPrepare.current);
+      if (token !== generation.current) return;
+      pendingPrepare.current = null;
+      pendingSubmission.current = null;
+      rememberPendingQuizSubmission(stageId, sceneId, null);
+      pendingReview.current = null;
+      rememberPendingQuizReview(stageId, sceneId, null);
+      setUncertain(false);
+      setEvaluationRequested(Boolean(next.review || next.pendingReview));
+      install(next, !retry);
+      setStatus('ready');
+    } catch (error) {
+      log.warn('Quiz preparation needs recovery', error);
+      if (token === generation.current) {
+        setNotice('quiz.tracePrepareFailed');
+        setStatus('error');
       }
-      const ordered = questions.map((q) => allResultsMap.get(q.id)!).filter(Boolean);
+    } finally {
+      if (token === generation.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    }
+  };
 
-      if (!attemptId) {
-        setRuntimeGate({ status: 'error' });
+  const requestGrade = async (current: PreparedQuiz, explicitlyNew = false) => {
+    if (!current.submission || gradingRef.current) return;
+    const token = generation.current;
+    gradingRef.current = true;
+    setGrading(true);
+    setEvaluationRequested(true);
+    setNotice(null);
+    const operation = quizReviewRequest(
+      current.attemptId,
+      current.submission.id,
+      locale,
+      pendingReview.current,
+      explicitlyNew,
+    );
+    pendingReview.current = operation;
+    rememberPendingQuizReview(stageId, sceneId, operation);
+    try {
+      const review = await requestQuizReview(current.attemptId, operation.input);
+      if (token !== generation.current || preparedRef.current?.attemptId !== current.attemptId)
+        return;
+      if ('pending' in review) {
+        setNotice('quiz.traceEvaluationPending');
         return;
       }
+      if (
+        review.attemptId !== current.attemptId ||
+        review.submissionId !== current.submission.id ||
+        review.versionId !== current.version.id
+      )
+        throw new Error('Mismatched quiz review');
+      operation.reviewId = review.id;
+      rememberPendingQuizReview(stageId, sceneId, operation);
+      // Adopt the server projection: a late result must not replace a newer adopted review.
+      const next = await loadQuizForPlay(stageId, sceneId);
+      if (token !== generation.current || preparedRef.current?.attemptId !== current.attemptId)
+        return;
+      if (
+        !next ||
+        next.attemptId !== current.attemptId ||
+        next.submission?.id !== current.submission.id ||
+        !next.reviews.some((item) => item.id === review.id)
+      )
+        throw new Error('Review not confirmed in saved state');
+      pendingReview.current = null;
+      rememberPendingQuizReview(stageId, sceneId, null);
+      install(next);
+    } catch (error) {
+      log.warn('Quiz evaluation needs recovery', error);
+      if (token !== generation.current) return;
+      // Reading is safe after an uncertain POST. Unknown review identity is recovered by
+      // replaying the SAME operation, rather than assuming any latest review belongs to it.
       try {
-        await persistQuizReview(
-          { stageId, sceneId, attemptId, answers, results: ordered },
-          runtimeWriter,
-        );
-      } catch (error) {
-        log.warn('Failed to persist quiz review:', error);
-        if (!cancelled) setRuntimeGate({ status: 'error' });
-        return;
-      }
-      if (cancelled) return;
-      setResults(ordered);
-      setPhase('reviewing');
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, questions, answers, locale, sceneId, stageId, attemptId, runtimeWriter]);
-
-  const handleRetry = useCallback(async () => {
-    if (!attemptId || retrying) return;
-    setRetrying(true);
-    runtimeWriter.cancelDraft();
-    await runQuizPersistenceTransition(
-      () => persistQuizRetry({ stageId, sceneId, attemptId }, runtimeWriter),
-      viewLifetime,
-      () => {
-        setPhase('not_started');
-        setAnswers({});
-        setResults([]);
-        setRetrying(false);
-      },
-      (error) => {
-        log.warn('Failed to persist quiz retry:', error);
-        setRetrying(false);
-        if (error instanceof QuizRetryProgressedError) {
-          setHydrationVersion((version) => version + 1);
-          return;
+        const saved = await loadQuizForPlay(stageId, sceneId);
+        if (token !== generation.current) return;
+        if (
+          saved?.attemptId === current.attemptId &&
+          saved.submission?.id === current.submission.id
+        ) {
+          install(saved);
+          if (
+            operation.reviewId &&
+            saved.reviews.some((review) => review.id === operation.reviewId)
+          ) {
+            pendingReview.current = null;
+            rememberPendingQuizReview(stageId, sceneId, null);
+            return;
+          }
         }
-        setRuntimeGate({ status: 'error' });
-      },
-    );
-  }, [attemptId, retrying, runtimeWriter, sceneId, stageId, viewLifetime]);
+      } catch {
+        /* Keep the original operation for explicit recovery. */
+      }
+      if (token === generation.current) setNotice('quiz.traceEvaluationFailed');
+    } finally {
+      if (token === generation.current) {
+        gradingRef.current = false;
+        setGrading(false);
+      }
+    }
+  };
 
-  const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
+  const handleSubmit = async () => {
+    const current = preparedRef.current;
+    if (!current || current.submission || busyRef.current || historical) return;
+    busyRef.current = true;
+    setBusy(true);
+    setUncertain(true);
+    setNotice(null);
+    const token = generation.current;
+    try {
+      if (!pendingSubmission.current) {
+        pendingSubmission.current = {
+          attemptId: current.attemptId,
+          input: {
+            operationId: createQuizOperationId(),
+            submissionId: createQuizOperationId(),
+            answers: structuredClone(answers),
+          },
+        };
+        rememberPendingQuizSubmission(stageId, sceneId, pendingSubmission.current);
+        // Persist the locked intent before awaiting the draft. A refresh during
+        // that flush must recover this same submission, never reopen editing.
+        await writerRef.current?.flush();
+      }
+      const pending = pendingSubmission.current;
+      const submission = await submitQuiz(pending.attemptId, pending.input);
+      if (token !== generation.current || preparedRef.current?.attemptId !== pending.attemptId)
+        return;
+      if (submission.attemptId !== current.attemptId || submission.versionId !== current.version.id)
+        throw new Error('Mismatched quiz submission');
+      const next = {
+        ...preparedRef.current,
+        answers: submission.answers,
+        submission,
+        lastSeq: submission.seq,
+      };
+      pendingSubmission.current = null;
+      rememberPendingQuizSubmission(stageId, sceneId, null);
+      setUncertain(false);
+      install(next);
+      await requestGrade(next);
+    } catch (error) {
+      log.warn('Quiz submission needs recovery', error);
+      if (token === generation.current) setNotice('quiz.traceSubmissionUncertain');
+    } finally {
+      if (token === generation.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    }
+  };
 
-  const resultMap = useMemo(() => {
-    const map: Record<string, QuestionResult> = {};
-    results.forEach((r) => {
-      map[r.questionId] = r;
+  const handleAnswer = (id: string, value: string | string[]) => {
+    if (prepared?.submission || uncertain || busyRef.current || historical) return;
+    setAnswers((previous) => {
+      const next = { ...previous, [id]: value };
+      writerRef.current?.schedule(next);
+      return next;
     });
-    return map;
-  }, [results]);
-
-  if (runtimeGate.status === 'error') {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <button
-          type="button"
-          onClick={() => setHydrationVersion((version) => version + 1)}
-          className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700"
-        >
-          <RotateCcw className="h-4 w-4" />
-          {t('quiz.retry')}
-        </button>
-      </div>
-    );
-  }
-
-  if (!isQuizRuntimeReady(runtimeGate)) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-      </div>
-    );
-  }
+  };
+  const questions =
+    prepared?.version.scene.content.type === 'quiz' ? prepared.version.scene.content.questions : [];
+  const totalPoints = questions.reduce((sum, question) => sum + (question.points ?? 1), 0);
+  const allAnswered =
+    questions.length > 0 &&
+    questions.every((question) => {
+      const answer = answers[question.id];
+      return Array.isArray(answer)
+        ? answer.length > 0
+        : typeof answer === 'string' && answer.trim().length > 0;
+    });
+  const locked = Boolean(prepared?.submission) || uncertain || busy || historical;
+  const openHistory = async () => {
+    const token = generation.current;
+    setShowHistory(true);
+    setHistoryBusy(true);
+    try {
+      const read = await readQuizHistory(stageId);
+      if (token === generation.current) setHistory(read);
+    } catch {
+      if (token === generation.current) setNotice('quiz.traceHistoryUnknown');
+    } finally {
+      if (token === generation.current) setHistoryBusy(false);
+    }
+  };
+  const buttonClass =
+    'rounded-lg px-4 py-2 text-sm bg-violet-600 text-white disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
-    <div className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-hidden flex flex-col">
-      <AnimatePresence mode="wait">
-        {phase === 'not_started' && (
-          <motion.div
-            key="cover"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex-1"
+    <div
+      className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-y-auto flex flex-col"
+      data-testid="quiz-learning-trace"
+    >
+      <div className="flex flex-wrap items-center gap-2 px-6 py-3 border-b border-gray-100 dark:border-gray-700">
+        <span className="font-semibold mr-auto">
+          {t(prepared?.submission ? 'quiz.quizReport' : 'quiz.title')}
+        </span>
+        <button
+          type="button"
+          className="text-sm underline"
+          disabled={historyBusy}
+          onClick={() => void openHistory()}
+        >
+          {t('quiz.traceHistory')}
+        </button>
+        {prepared?.submission && !historical && (
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={busy}
+            onClick={() => void handleStart(true)}
           >
-            <QuizCover
-              questionCount={questions.length}
-              totalPoints={totalPoints}
-              onStart={() => setPhase('answering')}
-            />
-          </motion.div>
+            {t('quiz.traceNewAttempt')}
+          </button>
         )}
-
-        {phase === 'answering' && (
-          <motion.div
-            key="answering"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex-1 flex flex-col min-h-0"
-          >
-            {/* Header bar */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur shrink-0">
-              <div className="flex items-center gap-2">
-                <PieChart className="w-4 h-4 text-violet-500" />
-                <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                  {t('quiz.answering')}
-                </span>
-                <span className="text-xs text-gray-400 ml-1">
-                  {
-                    Object.keys(answers).filter((k) => {
-                      const a = answers[k];
-                      if (Array.isArray(a)) return a.length > 0;
-                      return typeof a === 'string' && a.trim().length > 0;
-                    }).length
-                  }{' '}
-                  / {questions.length}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={!allAnswered}
-                className={cn(
-                  'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
-                  allAnswered
-                    ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm hover:shadow-md hover:shadow-violet-200/50 dark:hover:shadow-violet-900/50 active:scale-[0.97]'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed',
-                )}
-              >
-                {t('quiz.submitAnswers')}
-              </button>
-            </div>
-
-            {/* Questions */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              {questions.map((q, i) => {
-                if (q.type === 'single') {
-                  return (
-                    <SingleChoiceQuestion
-                      key={q.id}
-                      question={q}
-                      index={i}
-                      value={answers[q.id] as string | undefined}
-                      onChange={(v) => handleSetAnswer(q.id, v)}
-                    />
-                  );
-                }
-                if (q.type === 'multiple') {
-                  return (
-                    <MultipleChoiceQuestion
-                      key={q.id}
-                      question={q}
-                      index={i}
-                      value={answers[q.id] as string[] | undefined}
-                      onChange={(v) => handleSetAnswer(q.id, v)}
-                    />
-                  );
-                }
-                return (
-                  <ShortAnswerQuestion
-                    key={q.id}
-                    question={q}
-                    index={i}
-                    value={answers[q.id] as string | undefined}
-                    onChange={(v) => handleSetAnswer(q.id, v)}
-                  />
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-
-        {(phase === 'submitting' || phase === 'grading') && (
-          <motion.div
-            key="grading"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col items-center justify-center gap-5"
-          >
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+      </div>
+      {notice && (
+        <p role="alert" className="px-6 py-3 text-sm text-amber-800 dark:text-amber-200">
+          {t(notice)}
+        </p>
+      )}
+      {status === 'loading' && (
+        <div role="status" className="p-6 flex gap-2">
+          <Loader2 className="animate-spin" />
+          {t('quiz.traceRestoring')}
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="p-6 flex flex-wrap gap-3">
+          {pendingPrepare.current && (
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={busy}
+              onClick={() => void handleStart(pendingPrepare.current?.mode === 'retry')}
             >
-              <Loader2 className="w-10 h-10 text-violet-500" />
-            </motion.div>
-            <div className="text-center">
-              <p className="text-base font-semibold text-gray-700 dark:text-gray-200">
-                {t('quiz.aiGrading')}
-              </p>
-              <p className="text-sm text-gray-400 mt-1">{t('quiz.aiGradingWait')}</p>
-            </div>
-            <div className="flex gap-1 mt-2">
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  className="w-2 h-2 rounded-full bg-violet-400"
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 1.2,
-                    delay: i * 0.2,
-                  }}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {phase === 'reviewing' && (
-          <motion.div
-            key="reviewing"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex-1 flex flex-col min-h-0"
-          >
-            {/* Header bar */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 backdrop-blur shrink-0">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                  {t('quiz.quizReport')}
-                </span>
-              </div>
+              {t('quiz.traceRetrySave')}
+            </button>
+          )}
+          <button type="button" className={buttonClass} onClick={() => void restore()}>
+            {t('quiz.traceRecover')}
+          </button>
+        </div>
+      )}
+      {status === 'ready' && (
+        <>
+          {legacyOnly && !prepared && (
+            <div className="p-6 space-y-3">
+              <p>{t('quiz.traceLegacyExplanation')}</p>
               <button
                 type="button"
-                onClick={() => void handleRetry()}
-                disabled={retrying}
-                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClass}
+                disabled={busy || uncertain}
+                onClick={() => void handleStart()}
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                {t('quiz.retry')}
+                {t('quiz.traceStartNewVersion')}
               </button>
             </div>
-
-            {/* Results */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              <ScoreBanner score={earnedScore} total={totalPoints} results={results} />
-
-              {questions.map((q, i) => {
-                const r = resultMap[q.id];
-                if (q.type === 'single') {
-                  return (
-                    <SingleChoiceQuestion
-                      key={q.id}
-                      question={q}
-                      index={i}
-                      value={answers[q.id] as string | undefined}
-                      onChange={() => {}}
-                      disabled
-                      result={r}
-                    />
-                  );
+          )}
+          {!started && !legacyOnly && !uncertain && (
+            <div className="min-h-80 flex-1 relative">
+              <QuizCover
+                questionCount={
+                  prepared
+                    ? questions.length
+                    : scene.content.type === 'quiz'
+                      ? scene.content.questions.length
+                      : 0
                 }
-                if (q.type === 'multiple') {
-                  return (
-                    <MultipleChoiceQuestion
-                      key={q.id}
-                      question={q}
-                      index={i}
-                      value={answers[q.id] as string[] | undefined}
-                      onChange={() => {}}
-                      disabled
-                      result={r}
-                    />
-                  );
+                totalPoints={
+                  prepared
+                    ? totalPoints
+                    : scene.content.type === 'quiz'
+                      ? scene.content.questions.reduce((sum, q) => sum + (q.points ?? 1), 0)
+                      : 0
                 }
-                return (
-                  <ShortAnswerQuestion
-                    key={q.id}
-                    question={q}
-                    index={i}
-                    value={answers[q.id] as string | undefined}
-                    onChange={() => {}}
-                    disabled
-                    result={r}
-                  />
-                );
-              })}
+                onStart={() => void handleStart()}
+              />
+              {busy && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-gray-900/90"
+                  role="status"
+                >
+                  <Loader2 className="animate-spin mr-2" />
+                  {t('quiz.tracePreparing')}
+                </div>
+              )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+          {uncertain && (
+            <div className="p-6 space-y-3" data-testid="quiz-submission-uncertain">
+              <p role="status">{t('quiz.traceSubmissionUncertain')}</p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={busy}
+                  onClick={() => void restore()}
+                >
+                  {t('quiz.traceRecover')}
+                </button>
+                {prepared && pendingSubmission.current && (
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={busy}
+                    onClick={() => void handleSubmit()}
+                  >
+                    {t('quiz.traceRetrySubmission')}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {started && prepared && (
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-xs break-all">
+                {t('quiz.traceVersion')}: {prepared.version.id}
+              </p>
+              {(prepared.submission || historical) && (
+                <p role="status" className="text-sm">
+                  {t('quiz.traceLocked')}
+                </p>
+              )}
+              {prepared.review && <TraceScore review={prepared.review} />}
+              {prepared.previousUsableReview && (
+                <div className="rounded-xl border border-amber-300 p-3 space-y-2">
+                  <p className="text-sm">{t('quiz.tracePreviousUsable')}</p>
+                  <TraceScore review={prepared.previousUsableReview} />
+                </div>
+              )}
+              {prepared.submission && !historical && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={grading || busy}
+                    onClick={() =>
+                      void requestGrade(prepared, evaluationRequested && !pendingReview.current)
+                    }
+                  >
+                    {t(
+                      pendingReview.current
+                        ? 'quiz.traceRecoverEvaluation'
+                        : evaluationRequested
+                          ? 'quiz.traceRegrade'
+                          : 'quiz.traceGrade',
+                    )}
+                  </button>
+                  {pendingReview.current && (
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      disabled={grading || busy}
+                      onClick={() => void requestGrade(prepared, true)}
+                    >
+                      {t('quiz.traceRegrade')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="text-sm underline"
+                    disabled={busy}
+                    onClick={() => void restore()}
+                  >
+                    {t('quiz.traceCheckEvaluation')}
+                  </button>
+                  {(grading || prepared.pendingReview) && (
+                    <p role="status" className="text-sm flex gap-2">
+                      <Loader2 className="animate-spin h-4 w-4" />
+                      {t('quiz.traceEvaluationPending')}
+                    </p>
+                  )}
+                </div>
+              )}
+              <QuizQuestions
+                questions={questions}
+                answers={answers}
+                review={prepared.review}
+                locked={locked}
+                onChange={handleAnswer}
+              />
+              {!prepared.submission && !historical && !uncertain && (
+                <button
+                  type="button"
+                  className={buttonClass}
+                  disabled={!allAnswered || busy}
+                  onClick={() => void handleSubmit()}
+                >
+                  {t(busy ? 'quiz.traceSaving' : 'quiz.submitAnswers')}
+                </button>
+              )}
+              {historical && (
+                <button type="button" className={buttonClass} onClick={() => void restore()}>
+                  {t('quiz.traceCurrentAttempt')}
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {showHistory && (
+        <div className="px-6 py-4">
+          {historyBusy && <p role="status">{t('quiz.traceRestoring')}</p>}
+          {history && (
+            <TraceHistory
+              history={history}
+              sceneId={sceneId}
+              onSelect={(attempt) => {
+                if (busyRef.current || uncertain) return;
+                const token = generation.current;
+                void (async () => {
+                  try {
+                    await writerRef.current?.flush();
+                  } catch {
+                    if (token === generation.current) setNotice('quiz.traceSaveFailed');
+                    return;
+                  }
+                  if (token !== generation.current) return;
+                  generation.current++;
+                  writerRef.current?.cancel();
+                  preparedRef.current = attempt;
+                  setPrepared(attempt);
+                  setAnswers(attempt.submission?.answers ?? attempt.answers);
+                  setHistorical(true);
+                  setStarted(true);
+                  setStatus('ready');
+                  setUncertain(false);
+                  gradingRef.current = false;
+                  setGrading(false);
+                })();
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

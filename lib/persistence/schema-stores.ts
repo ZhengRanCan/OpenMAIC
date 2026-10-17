@@ -1,3 +1,4 @@
+import { QUIZ_TRACE_MIGRATIONS } from './quiz-trace-schema';
 /**
  * Every schema store this application provisions, in its bootstrap order: the
  * storage package's PostgreSQL backends and this application's own tables.
@@ -41,4 +42,5 @@ export const APP_SCHEMA_STORES: readonly SchemaMigrationSet[] = [
   AGENT_SESSION_MATERIAL_PG_MIGRATIONS,
   USER_SKILL_PG_MIGRATIONS,
   GENERATION_RUN_MIGRATIONS,
+  QUIZ_TRACE_MIGRATIONS,
 ];

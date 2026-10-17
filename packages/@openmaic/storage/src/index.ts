@@ -275,3 +275,10 @@ export {
   type AgentSessionMaterialTableNames,
   type PgAgentSessionMaterialStoreOptions,
 } from './material/pg.js';
+
+export {
+  AssetRetainedError,
+  type AssetRetentionHolder,
+  type CloneRetainedAssetsInput,
+  type RetainedAsset,
+} from './asset/retention.js';

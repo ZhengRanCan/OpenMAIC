@@ -624,6 +624,17 @@ async function performStageDeletion(stageId: string): Promise<void> {
 
             await store.deleteDocument(stageId);
             documentDeleted = true;
+            try {
+              const prefixes = ['maic:quiz-pending:', 'maic:quiz-review-pending:'].map(
+                (p) => p + encodeURIComponent(stageId) + ':',
+              );
+              for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                const key = sessionStorage.key(i);
+                if (key && prefixes.some((p) => key.startsWith(p))) sessionStorage.removeItem(key);
+              }
+            } catch {
+              /* device recovery cache unavailable */
+            }
 
             // Local cache only, and intentionally after the authoritative
             // delete: liveness for the globally keyed audio rows is proved

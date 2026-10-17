@@ -103,6 +103,13 @@ const SHIPPED: readonly (readonly [
     'd440298e2262b7ce4688848c2a8e23ca7d26b29e2b75cfc7011c0e60308178c5',
   ],
   [
+    'asset',
+    2,
+    'asset-retention',
+    true,
+    'd417a7a5cb142522930bd488257d9434c19eb38e29116524821c16461e7618c4',
+  ],
+  [
     'legacy-classroom-imports',
     1,
     'baseline',
@@ -178,6 +185,13 @@ const SHIPPED: readonly (readonly [
     'outline_auto_confirm',
     true,
     '253db00a6eee8dfb35dc8aa435132be86e9e6039fde63eb07e66282a1d5f2866',
+  ],
+  [
+    'quiz-trace',
+    1,
+    'immutable_quiz_history',
+    true,
+    '0d293437aab2f63335d5b32ba52a4a07470dd62b884403d6aa1e7f0c09da1395',
   ],
 ];
 

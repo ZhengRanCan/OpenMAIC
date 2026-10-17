@@ -6,6 +6,7 @@ import { SlideEditor as SlideRenderer } from '../slide-renderer/Editor';
 import { QuizView } from '../scene-renderers/quiz-view';
 import { InteractiveRenderer } from '../scene-renderers/interactive-renderer';
 import { PBLRenderer } from '../scene-renderers/pbl-renderer';
+import { useStageStore } from '@/lib/store/stage';
 
 interface SceneRendererProps {
   readonly scene: Scene;
@@ -18,6 +19,7 @@ interface SceneRendererProps {
  * path, so it does not branch on `mode === 'edit'`.
  */
 export function SceneRenderer({ scene, mode }: SceneRendererProps) {
+  const outlines = useStageStore((state) => state.outlines);
   const renderer = useMemo(() => {
     switch (scene.type) {
       case 'slide':
@@ -25,14 +27,15 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
         return <SlideRenderer mode={mode} />;
       case 'quiz':
         if (scene.content.type !== 'quiz') return <div>Invalid quiz content</div>;
-        return (
-          <QuizView
-            key={scene.id}
-            questions={scene.content.questions}
-            sceneId={scene.id}
-            stageId={scene.stageId}
-          />
-        );
+        // An outline's mutable order is not an identity link after editing/reordering.
+        const matching = scene.outlineId
+          ? outlines.filter((outline) => outline.id === scene.outlineId)
+          : [];
+        const planning =
+          matching.length === 1
+            ? { outlineId: scene.outlineId, outline: matching[0], provenance: 'captured-planning' }
+            : undefined;
+        return <QuizView key={scene.id} scene={scene} planning={planning} />;
       case 'interactive':
         if (scene.content.type !== 'interactive') return <div>Invalid interactive content</div>;
         return <InteractiveRenderer content={scene.content} sceneId={scene.id} />;
@@ -42,7 +45,7 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
       default:
         return <div>Unknown scene type</div>;
     }
-  }, [scene, mode]);
+  }, [scene, mode, outlines]);
 
   return <div className="w-full h-full">{renderer}</div>;
 }

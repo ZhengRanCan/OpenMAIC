@@ -383,6 +383,7 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
       'workspace-model-config': 1,
       // The account kept its own "study-buddy".
       'custom-agents': 1,
+      'quiz-trace': 0,
     },
   });
   expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);

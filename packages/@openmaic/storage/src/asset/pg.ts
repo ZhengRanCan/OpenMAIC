@@ -24,6 +24,14 @@
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 import { contentHashOf, type ContentHash } from './blob.js';
 import type { AssetByteStore } from './byte-store.js';
+import {
+  ASSET_RETENTION_PG_SCHEMA,
+  releaseRetentionIn,
+  AssetRetainedError,
+  type AssetRetentionHolder,
+  type CloneRetainedAssetsInput,
+  type RetainedAsset,
+} from './retention.js';
 import { newAssetId, type AssetId } from './id.js';
 import {
   AssetNotFoundError,
@@ -51,6 +59,15 @@ export type {
   AssetStore,
 } from './types.js';
 export { AssetNotFoundError, AssetQuotaExceededError } from './types.js';
+export {
+  ASSET_RETENTION_PG_SCHEMA,
+  releaseRetentionIn,
+  releaseRetentionsIn,
+  AssetRetainedError,
+  type AssetRetentionHolder,
+  type CloneRetainedAssetsInput,
+  type RetainedAsset,
+} from './retention.js';
 
 export interface PgAssetStoreOptions {
   /** Pin each callback to a fresh PostgreSQL transaction and connection. */
@@ -197,6 +214,7 @@ export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'asset',
   migrations: [
     { version: 1, name: 'baseline', up: ASSET_PG_SCHEMA.join(';\n'), transaction: false },
+    { version: 2, name: 'asset-retention', up: ASSET_RETENTION_PG_SCHEMA.join(';\n') },
   ],
 };
 
@@ -484,6 +502,157 @@ export class PgAssetStore implements AssetStore {
     if (liveAfterBytes > this.quotaBytes) throw new RegistryAssetQuotaExceeded();
   }
 
+  private async assertNotRetained(queryable: Queryable, id: string): Promise<void> {
+    // Must be a fresh statement AFTER the entry FOR UPDATE lock: a holder
+    // insert that completed while waiting must be visible under READ COMMITTED.
+    const refs = await queryable.query(
+      'SELECT 1 FROM asset_retention_refs WHERE asset_id = $1 LIMIT 1',
+      [id],
+    );
+    if (refs.rows.length > 0) throw new AssetRetainedError();
+  }
+
+  private validateHolder(holder: AssetRetentionHolder): void {
+    if (
+      !holder ||
+      typeof holder.kind !== 'string' ||
+      !holder.kind ||
+      typeof holder.id !== 'string' ||
+      !holder.id ||
+      !isLosslessJsonString(holder.kind) ||
+      !isLosslessJsonString(holder.id)
+    ) {
+      throw new Error('@openmaic/storage: retention holder must have non-empty text kind and id');
+    }
+  }
+
+  private async lockHolder(queryable: Queryable, holder: AssetRetentionHolder): Promise<void> {
+    await queryable.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      JSON.stringify(['asset-retention', holder.kind, holder.id]),
+    ]);
+  }
+
+  /** PG-only server capability. Creates immutable entries, sharing physical bytes. */
+  async cloneRetained(
+    principal: AssetPrincipal,
+    input: CloneRetainedAssetsInput,
+  ): Promise<readonly RetainedAsset[]> {
+    this.validateHolder(input.holder);
+    if (
+      !principal.key ||
+      !isLosslessJsonString(principal.key) ||
+      !Array.isArray(input.sourceIds) ||
+      !Array.isArray(input.sourcePrincipals) ||
+      input.sourceIds.some((id) => typeof id !== 'string' || !isLosslessJsonString(id)) ||
+      input.sourcePrincipals.some(
+        (key) => typeof key !== 'string' || !key || !isLosslessJsonString(key),
+      )
+    ) {
+      throw new AssetNotFoundError();
+    }
+    const ids = [...new Set(input.sourceIds)];
+    if (ids.length === 0) return [];
+    if (
+      !hasTransactionalReader(this.byteStore) &&
+      this.byteStore.writesOutsideRegistryDatabase !== true
+    ) {
+      throw registryConfigurationFailure(
+        'retention reads require readWith() or bytes outside the registry database',
+      );
+    }
+    try {
+      return await this.writeTransaction(async (queryable) => {
+        // Same principal quota lock precedes all entry and blob locks. Taking
+        // it once here prevents two batches charging the same stale usage.
+        if (this.quotaBytes !== undefined) await this.lockPrincipal(queryable, principal);
+        await this.lockHolder(queryable, input.holder);
+        const entries = await queryable.query<EntryRow & { id: string }>(
+          `SELECT id, content_hash, mime, meta, revision
+             FROM asset_entries
+            WHERE id = ANY($1::text[]) AND principal = ANY($2::text[])
+            ORDER BY id ASC FOR UPDATE`,
+          [ids, [...new Set(input.sourcePrincipals)]],
+        );
+        if (entries.rows.length !== ids.length && !input.skipUnavailable)
+          throw new AssetNotFoundError();
+        const hashes = [...new Set(entries.rows.map((row) => row.content_hash))];
+        const blobs = await queryable.query<{
+          content_hash: ContentHash;
+          byte_size: number | string;
+        }>(
+          `SELECT content_hash, byte_size FROM asset_blobs
+            WHERE content_hash = ANY($1::text[]) ORDER BY content_hash ASC FOR UPDATE`,
+          [hashes],
+        );
+        const sizes = new Map(blobs.rows.map((row) => [row.content_hash, Number(row.byte_size)]));
+        // Validate bytes only after the batch entry/blob locks. Never pre-read
+        // a blob with FOR SHARE and then try to upgrade it while holding an entry.
+        const usableHashes = new Set<string>();
+        for (const hash of hashes) {
+          const size = sizes.get(hash);
+          if (size === undefined || !Number.isSafeInteger(size) || size < 0) {
+            if (input.skipUnavailable) continue;
+            throw new AssetNotFoundError();
+          }
+          const bytes = await this.readBytes(queryable, hash);
+          if (bytes === null || bytes.byteLength !== size) {
+            if (input.skipUnavailable) continue;
+            throw new AssetNotFoundError();
+          }
+          usableHashes.add(hash);
+        }
+        const usableEntries = entries.rows.filter((entry) => usableHashes.has(entry.content_hash));
+        const total = usableEntries.reduce((sum, entry) => sum + sizes.get(entry.content_hash)!, 0);
+        if (!Number.isSafeInteger(total)) throw new AssetQuotaExceededError();
+        await this.assertPutQuota(queryable, principal, total);
+        const retained: RetainedAsset[] = [];
+        for (const entry of usableEntries) {
+          const id = newAssetId();
+          await queryable.query(
+            `INSERT INTO asset_entries (id, principal, content_hash, mime, meta, revision, created_at, committed_at, expires_at, unreferenced_at)
+             VALUES ($1, $2, $3, $4, $5::jsonb, 1, $6, now(), NULL, NULL)`,
+            [
+              id,
+              principal.key,
+              entry.content_hash,
+              entry.mime,
+              encodeMeta(entry.meta as AssetMeta),
+              Date.now(),
+            ],
+          );
+          await queryable.query(
+            'INSERT INTO asset_retention_refs (holder_kind, holder_id, asset_id) VALUES ($1, $2, $3)',
+            [input.holder.kind, input.holder.id, id],
+          );
+          retained.push({
+            sourceId: entry.id,
+            assetId: id,
+            contentHash: entry.content_hash,
+            sourceRevision: Number(entry.revision),
+            mime: entry.mime,
+            byteSize: sizes.get(entry.content_hash)!,
+          });
+        }
+        await queryable.query(
+          'UPDATE asset_blobs SET unreferenced_at = NULL WHERE content_hash = ANY($1::text[])',
+          [hashes],
+        );
+        return retained;
+      });
+    } catch (error) {
+      if (error instanceof AssetNotFoundError || error instanceof AssetQuotaExceededError)
+        throw error;
+      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
+      throw registryFailure('cloneRetained');
+    }
+  }
+
+  /** Release one durable consumer; ordinary offline collection reclaims bytes later. */
+  async releaseRetention(holder: AssetRetentionHolder): Promise<void> {
+    this.validateHolder(holder);
+    await this.writeTransaction((queryable) => releaseRetentionIn(queryable, holder));
+  }
+
   async put(principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta): Promise<AssetId> {
     this.assertByteWriteIsCoordinatable();
     const storedMeta = meta ?? {};
@@ -678,6 +847,12 @@ export class PgAssetStore implements AssetStore {
     if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return;
     try {
       await this.writeTransaction(async (queryable) => {
+        const locked = await queryable.query<HashRow>(
+          'SELECT content_hash FROM asset_entries WHERE id = $1 AND principal = $2 FOR UPDATE',
+          [ref, principal.key],
+        );
+        if (!locked.rows[0]) return;
+        await this.assertNotRetained(queryable, ref);
         const deleted = await queryable.query<HashRow>(
           `DELETE FROM asset_entries
             WHERE id = $1 AND principal = $2
@@ -696,7 +871,8 @@ export class PgAssetStore implements AssetStore {
           [hash],
         );
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof AssetRetainedError) throw error;
       throw registryFailure('remove');
     }
   }
@@ -742,6 +918,7 @@ export class PgAssetStore implements AssetStore {
         );
         const hash = locked.rows[0]?.content_hash;
         if (!hash) return false;
+        await this.assertNotRetained(queryable, ref);
         const referenced = await queryable.query(
           'SELECT 1 FROM document_asset_refs WHERE asset_id = $1 LIMIT 1',
           [ref],
@@ -759,7 +936,8 @@ export class PgAssetStore implements AssetStore {
         );
         return true;
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof AssetRetainedError) throw error;
       throw registryFailure('releasePending');
     }
   }
@@ -791,6 +969,7 @@ export class PgAssetStore implements AssetStore {
         );
         const oldEntry = existing.rows[0];
         if (!oldEntry) throw new RegistryAssetNotFound();
+        await this.assertNotRetained(queryable, ref);
 
         await queryable.query(
           `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
@@ -842,6 +1021,7 @@ export class PgAssetStore implements AssetStore {
         return Number(updated.rows[0]!.revision);
       });
     } catch (error) {
+      if (error instanceof AssetRetainedError) throw error;
       if (error instanceof RegistryAssetNotFound) throw new AssetNotFoundError();
       if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
       throw registryFailure('replace');

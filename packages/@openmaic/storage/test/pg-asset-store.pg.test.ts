@@ -182,7 +182,9 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query(
+      'TRUNCATE asset_retention_refs, document_asset_refs, asset_entries, asset_blobs',
+    );
     bytes = new PgAssetByteStore(pool as Queryable);
     store = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
@@ -411,7 +413,9 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
 
   beforeEach(async () => {
     await truncateDocumentTables(pool as Queryable);
-    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query(
+      'TRUNCATE asset_retention_refs, document_asset_refs, asset_entries, asset_blobs',
+    );
     await pool.query('TRUNCATE asset_reference_tracking, document_asset_withdrawals');
     bytes = new PgAssetByteStore(pool as Queryable);
     assets = new PgAssetStore(pool as Queryable, {
