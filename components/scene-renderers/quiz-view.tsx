@@ -12,6 +12,7 @@ import {
   BookOpenText,
   Loader2,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -20,6 +21,16 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('QuizView');
 import type { QuizQuestion, Scene } from '@/lib/types/stage';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import type { QuestionResult } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
 import type { QuizAnswers } from '@/lib/quiz/persistence';
@@ -732,6 +743,90 @@ function TraceScore({ review }: { review: QuizReview }) {
   );
 }
 
+function TraceReviewRecord({
+  review,
+  questions,
+  current,
+}: {
+  review: QuizReview;
+  questions: QuizQuestion[];
+  current: boolean;
+}) {
+  const { t, locale } = useI18n();
+  const summary = review.summary;
+  return (
+    <details className="rounded-lg border p-3" data-testid="quiz-grading-record">
+      <summary className="cursor-pointer flex-wrap text-sm">
+        {t('quiz.traceGradingNumber', { number: review.ordinal })}
+        <time className="ml-2 text-muted-foreground" dateTime={review.savedAt}>
+          {new Date(review.savedAt).toLocaleString(locale)}
+        </time>
+        {current && <span className="ml-2 font-medium">{t('quiz.traceAdoptedGrading')}</span>}
+      </summary>
+      <div className="mt-3 space-y-3">
+        <p className="text-sm" role="status">
+          {t(
+            summary.status === 'complete'
+              ? 'quiz.traceComplete'
+              : summary.status === 'partial'
+                ? 'quiz.tracePartial'
+                : 'quiz.traceUnavailable',
+            {
+              earned: summary.usableEarned,
+              possible: summary.usablePossible,
+              total: summary.quizPossible,
+              count: summary.unusableQuestionCount,
+            },
+          )}
+        </p>
+        <ul className="space-y-3">
+          {review.results.map((result, index) => {
+            const questionIndex = questions.findIndex((q) => q.id === result.questionId);
+            const question = questions[questionIndex];
+            return (
+              <li key={result.questionId} className="rounded-lg bg-muted/40 p-3 text-sm">
+                <p className="font-medium">
+                  {t('quiz.traceQuestionNumber', {
+                    number: questionIndex >= 0 ? questionIndex + 1 : index + 1,
+                  })}
+                  {result.evaluation.state === 'normal' && question && (
+                    <span>
+                      {' '}
+                      · {result.earned} / {question.points ?? 1} {t('quiz.pointsSuffix')}
+                    </span>
+                  )}
+                  <span className="ml-2 font-normal text-muted-foreground">
+                    {t(
+                      result.evaluation.method === 'model'
+                        ? 'quiz.traceModelGrading'
+                        : 'quiz.traceKeyGrading',
+                    )}
+                  </span>
+                </p>
+                {result.evaluation.state !== 'normal' && (
+                  <p className="mt-1 text-amber-700 dark:text-amber-300" role="status">
+                    {t(
+                      result.evaluation.state === 'fallback'
+                        ? 'quiz.traceFallback'
+                        : 'quiz.traceFailed',
+                    )}
+                  </p>
+                )}
+                {result.aiComment && (
+                  <div className="mt-2">
+                    <p className="font-medium">{t('quiz.aiComment')}</p>
+                    <QuizMathText text={result.aiComment} />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </details>
+  );
+}
+
 function TraceHistory({
   history,
   sceneId,
@@ -741,10 +836,13 @@ function TraceHistory({
   sceneId: string;
   onSelect: (attempt: PreparedQuiz) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const submissions = history.attempts.filter(
+    (attempt) => attempt.sceneId === sceneId && attempt.submission,
+  );
   return (
-    <section className="space-y-3 rounded-xl border p-4" data-testid="quiz-trace-history">
-      <h4 className="font-semibold">{t('quiz.traceHistory')}</h4>
+    <section className="space-y-3" data-testid="quiz-trace-history">
+      <p className="font-medium">{t('quiz.traceHistoryCount', { count: submissions.length })}</p>
       <p role="status">
         {t(
           history.completeness === 'complete'
@@ -759,89 +857,109 @@ function TraceHistory({
           {failure.attemptId}: {failure.code}
         </p>
       ))}
-      {history.attempts
-        .filter((attempt) => attempt.sceneId === sceneId)
-        .map((attempt) => (
-          <details key={attempt.attemptId} className="border-t pt-2">
-            <summary className="cursor-pointer break-all">
-              {attempt.version.capturedAt} · {attempt.attemptId}
-            </summary>
-            <p className="text-xs break-all">
+      {submissions.length === 0 && history.completeness === 'complete' && (
+        <p className="text-muted-foreground">{t('quiz.traceHistoryEmpty')}</p>
+      )}
+      {submissions.map((attempt, index) => (
+        <details
+          key={attempt.attemptId}
+          className="border-t pt-3"
+          data-testid="quiz-submission-history-entry"
+        >
+          <summary className="cursor-pointer font-medium">
+            {t('quiz.traceSubmission', { number: index + 1 })}
+            {attempt.submission && (
+              <time
+                className="ml-2 font-normal text-muted-foreground"
+                dateTime={attempt.submission.savedAt}
+              >
+                {new Date(attempt.submission.savedAt).toLocaleString(locale)}
+              </time>
+            )}
+          </summary>
+          <details className="mt-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer">{t('quiz.traceDebug')}</summary>
+            <p className="break-all">
+              <code>{attempt.attemptId}</code>
+            </p>
+            <p className="break-all">
               {t('quiz.traceVersion')}: {attempt.version.id}
             </p>
-            {Boolean(attempt.version.resourceCoverage?.unavailableBackgroundRefs.length) && (
-              <p role="status" className="text-sm text-amber-800 dark:text-amber-200">
-                {t('quiz.traceResourceLimits', {
-                  count: attempt.version.resourceCoverage!.unavailableBackgroundRefs.length,
-                })}
-              </p>
-            )}
-            {attempt.version.planning && (
-              <details className="text-xs">
-                <summary className="cursor-pointer">{t('quiz.tracePlanning')}</summary>
-                <p>{t('quiz.tracePlanningLimits')}</p>
-                <pre className="overflow-x-auto whitespace-pre-wrap break-all">
-                  {JSON.stringify(attempt.version.planning, null, 2)}
-                </pre>
-              </details>
-            )}
-            <p className="text-sm">
-              {t(attempt.submission ? 'quiz.traceLocked' : 'quiz.traceDraft')}
-            </p>
-            {attempt.version.scene.content.type === 'quiz' && (
-              <div className="space-y-3 mt-3">
-                <QuizQuestions
-                  questions={attempt.version.scene.content.questions}
-                  answers={attempt.submission?.answers ?? attempt.answers}
-                  review={attempt.review}
-                  locked
-                  onChange={() => {}}
-                />
-                {attempt.review && <TraceScore review={attempt.review} />}
-                {attempt.reviews.map((review) => (
-                  <details key={review.id}>
-                    <summary>
-                      {t('quiz.traceEvaluation')} {review.ordinal} · {review.savedAt}
-                    </summary>
-                    <TraceScore review={review} />
-                    <ul>
-                      {review.results.map((result) => (
-                        <li key={result.questionId}>
-                          {result.questionId}:{' '}
-                          {result.evaluation.state === 'normal'
-                            ? result.earned
-                            : t(
-                                result.evaluation.state === 'fallback'
-                                  ? 'quiz.traceFallback'
-                                  : 'quiz.traceFailed',
-                              )}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                ))}
-                <button
-                  type="button"
-                  className="text-sm underline"
-                  onClick={() => onSelect(attempt)}
-                >
-                  {t('quiz.traceViewAttempt')}
-                </button>
-              </div>
-            )}
           </details>
-        ))}
-      {history.legacy.map((legacy) => (
-        <details key={legacy.attemptId} className="border-t pt-2">
-          <summary className="cursor-pointer break-all">
-            {legacy.attemptId} · {t('quiz.traceLegacy')}
-          </summary>
-          <p>{t('quiz.traceLegacyExplanation')}</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">
-            {JSON.stringify(legacy.records, null, 2)}
-          </pre>
+          {Boolean(attempt.version.resourceCoverage?.unavailableBackgroundRefs.length) && (
+            <p role="status" className="text-sm text-amber-800 dark:text-amber-200">
+              {t('quiz.traceResourceLimits', {
+                count: attempt.version.resourceCoverage!.unavailableBackgroundRefs.length,
+              })}
+            </p>
+          )}
+          {attempt.version.planning && (
+            <details className="text-xs">
+              <summary className="cursor-pointer">{t('quiz.tracePlanning')}</summary>
+              <p>{t('quiz.tracePlanningLimits')}</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all">
+                {JSON.stringify(attempt.version.planning, null, 2)}
+              </pre>
+            </details>
+          )}
+          <p className="text-sm">
+            {t(attempt.submission ? 'quiz.traceLocked' : 'quiz.traceDraft')}
+          </p>
+          {attempt.version.scene.content.type === 'quiz' && (
+            <div className="space-y-3 mt-3">
+              <QuizQuestions
+                questions={attempt.version.scene.content.questions}
+                answers={attempt.submission?.answers ?? attempt.answers}
+                review={attempt.review}
+                locked
+                onChange={() => {}}
+              />
+              {attempt.review && <TraceScore review={attempt.review} />}
+              <details className="rounded-lg border p-3" data-testid="quiz-grading-history">
+                <summary className="cursor-pointer font-medium">
+                  {t('quiz.traceGradingHistory', { count: attempt.reviews.length })}
+                </summary>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t('quiz.traceRegradingExplanation')}
+                </p>
+                <div className="mt-3 space-y-3">
+                  {attempt.reviews.map((review) => (
+                    <TraceReviewRecord
+                      key={review.id}
+                      review={review}
+                      questions={
+                        attempt.version.scene.content.type === 'quiz'
+                          ? attempt.version.scene.content.questions
+                          : []
+                      }
+                      current={attempt.review?.id === review.id}
+                    />
+                  ))}
+                </div>
+              </details>
+              <button type="button" className="text-sm underline" onClick={() => onSelect(attempt)}>
+                {t('quiz.traceViewAttempt')}
+              </button>
+            </div>
+          )}
         </details>
       ))}
+      {history.legacy.length > 0 && (
+        <details className="border-t pt-2 text-xs">
+          <summary className="cursor-pointer">{t('quiz.traceLegacy')}</summary>
+          {history.legacy.map((legacy) => (
+            <details key={legacy.attemptId} className="border-t pt-2">
+              <summary className="cursor-pointer break-all">
+                {legacy.attemptId} · {t('quiz.traceLegacy')}
+              </summary>
+              <p>{t('quiz.traceLegacyExplanation')}</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">
+                {JSON.stringify(legacy.records, null, 2)}
+              </pre>
+            </details>
+          ))}
+        </details>
+      )}
     </section>
   );
 }
@@ -1203,6 +1321,7 @@ export function QuizView({ scene, planning }: QuizViewProps) {
   const locked = Boolean(prepared?.submission) || uncertain || busy || historical;
   const openHistory = async () => {
     const token = generation.current;
+    setNotice((current) => (current === 'quiz.traceHistoryUnknown' ? null : current));
     setShowHistory(true);
     setHistoryBusy(true);
     try {
@@ -1218,253 +1337,284 @@ export function QuizView({ scene, planning }: QuizViewProps) {
     'rounded-lg px-4 py-2 text-sm bg-violet-600 text-white disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
-    <div
-      className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-y-auto flex flex-col"
-      data-testid="quiz-learning-trace"
-    >
-      <div className="flex flex-wrap items-center gap-2 px-6 py-3 border-b border-gray-100 dark:border-gray-700">
-        <span className="font-semibold mr-auto">
-          {t(prepared?.submission ? 'quiz.quizReport' : 'quiz.title')}
-        </span>
-        <button
-          type="button"
-          className="text-sm underline"
-          disabled={historyBusy}
-          onClick={() => void openHistory()}
-        >
-          {t('quiz.traceHistory')}
-        </button>
-        {prepared?.submission && !historical && (
-          <button
-            type="button"
-            className={buttonClass}
-            disabled={busy}
-            onClick={() => void handleStart(true)}
-          >
-            {t('quiz.traceNewAttempt')}
-          </button>
-        )}
-      </div>
-      {notice && (
-        <p role="alert" className="px-6 py-3 text-sm text-amber-800 dark:text-amber-200">
-          {t(notice)}
-        </p>
-      )}
-      {status === 'loading' && (
-        <div role="status" className="p-6 flex gap-2">
-          <Loader2 className="animate-spin" />
-          {t('quiz.traceRestoring')}
-        </div>
-      )}
-      {status === 'error' && (
-        <div className="p-6 flex flex-wrap gap-3">
-          {pendingPrepare.current && (
+    <Dialog open={showHistory} onOpenChange={setShowHistory}>
+      <div
+        className="w-full h-full bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900 overflow-y-auto flex flex-col"
+        data-testid="quiz-learning-trace"
+      >
+        <div className="flex flex-wrap items-center gap-2 px-6 py-3 border-b border-gray-100 dark:border-gray-700">
+          <span className="font-semibold mr-auto">
+            {t(prepared?.submission ? 'quiz.quizReport' : 'quiz.title')}
+          </span>
+          <DialogTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={historyBusy}
+              onClick={() => void openHistory()}
+            >
+              <BookOpenText aria-hidden="true" />
+              {t('quiz.traceHistory')}
+            </Button>
+          </DialogTrigger>
+          {prepared?.submission && !historical && (
             <button
               type="button"
               className={buttonClass}
               disabled={busy}
-              onClick={() => void handleStart(pendingPrepare.current?.mode === 'retry')}
+              onClick={() => void handleStart(true)}
             >
-              {t('quiz.traceRetrySave')}
+              {t('quiz.traceNewAttempt')}
             </button>
           )}
-          <button type="button" className={buttonClass} onClick={() => void restore()}>
-            {t('quiz.traceRecover')}
-          </button>
         </div>
-      )}
-      {status === 'ready' && (
-        <>
-          {legacyOnly && !prepared && (
-            <div className="p-6 space-y-3">
-              <p>{t('quiz.traceLegacyExplanation')}</p>
+        {notice && (
+          <p role="alert" className="px-6 py-3 text-sm text-amber-800 dark:text-amber-200">
+            {t(notice)}
+          </p>
+        )}
+        {status === 'loading' && (
+          <div role="status" className="p-6 flex gap-2">
+            <Loader2 className="animate-spin" />
+            {t('quiz.traceRestoring')}
+          </div>
+        )}
+        {status === 'error' && (
+          <div className="p-6 flex flex-wrap gap-3">
+            {pendingPrepare.current && (
               <button
                 type="button"
                 className={buttonClass}
-                disabled={busy || uncertain}
-                onClick={() => void handleStart()}
+                disabled={busy}
+                onClick={() => void handleStart(pendingPrepare.current?.mode === 'retry')}
               >
-                {t('quiz.traceStartNewVersion')}
+                {t('quiz.traceRetrySave')}
               </button>
-            </div>
-          )}
-          {!started && !legacyOnly && !uncertain && (
-            <div className="min-h-80 flex-1 relative">
-              <QuizCover
-                questionCount={
-                  prepared
-                    ? questions.length
-                    : scene.content.type === 'quiz'
-                      ? scene.content.questions.length
-                      : 0
-                }
-                totalPoints={
-                  prepared
-                    ? totalPoints
-                    : scene.content.type === 'quiz'
-                      ? scene.content.questions.reduce((sum, q) => sum + (q.points ?? 1), 0)
-                      : 0
-                }
-                onStart={() => void handleStart()}
-              />
-              {busy && (
-                <div
-                  className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-gray-900/90"
-                  role="status"
-                >
-                  <Loader2 className="animate-spin mr-2" />
-                  {t('quiz.tracePreparing')}
-                </div>
-              )}
-            </div>
-          )}
-          {uncertain && (
-            <div className="p-6 space-y-3" data-testid="quiz-submission-uncertain">
-              <p role="status">{t('quiz.traceSubmissionUncertain')}</p>
-              <div className="flex flex-wrap gap-3">
+            )}
+            <button type="button" className={buttonClass} onClick={() => void restore()}>
+              {t('quiz.traceRecover')}
+            </button>
+          </div>
+        )}
+        {status === 'ready' && (
+          <>
+            {legacyOnly && !prepared && (
+              <div className="p-6 space-y-3">
+                <p>{t('quiz.traceLegacyExplanation')}</p>
                 <button
                   type="button"
                   className={buttonClass}
-                  disabled={busy}
-                  onClick={() => void restore()}
+                  disabled={busy || uncertain}
+                  onClick={() => void handleStart()}
                 >
-                  {t('quiz.traceRecover')}
+                  {t('quiz.traceStartNewVersion')}
                 </button>
-                {prepared && pendingSubmission.current && (
+              </div>
+            )}
+            {!started && !legacyOnly && !uncertain && (
+              <div className="min-h-80 flex-1 relative">
+                <QuizCover
+                  questionCount={
+                    prepared
+                      ? questions.length
+                      : scene.content.type === 'quiz'
+                        ? scene.content.questions.length
+                        : 0
+                  }
+                  totalPoints={
+                    prepared
+                      ? totalPoints
+                      : scene.content.type === 'quiz'
+                        ? scene.content.questions.reduce((sum, q) => sum + (q.points ?? 1), 0)
+                        : 0
+                  }
+                  onStart={() => void handleStart()}
+                />
+                {busy && (
+                  <div
+                    className="absolute inset-0 flex items-center justify-center bg-white/90 dark:bg-gray-900/90"
+                    role="status"
+                  >
+                    <Loader2 className="animate-spin mr-2" />
+                    {t('quiz.tracePreparing')}
+                  </div>
+                )}
+              </div>
+            )}
+            {uncertain && (
+              <div className="p-6 space-y-3" data-testid="quiz-submission-uncertain">
+                <p role="status">{t('quiz.traceSubmissionUncertain')}</p>
+                <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
                     className={buttonClass}
                     disabled={busy}
-                    onClick={() => void handleSubmit()}
+                    onClick={() => void restore()}
                   >
-                    {t('quiz.traceRetrySubmission')}
+                    {t('quiz.traceRecover')}
                   </button>
-                )}
-              </div>
-            </div>
-          )}
-          {started && prepared && (
-            <div className="px-6 py-4 space-y-4">
-              <p className="text-xs break-all">
-                {t('quiz.traceVersion')}: {prepared.version.id}
-              </p>
-              {(prepared.submission || historical) && (
-                <p role="status" className="text-sm">
-                  {t('quiz.traceLocked')}
-                </p>
-              )}
-              {prepared.review && <TraceScore review={prepared.review} />}
-              {prepared.previousUsableReview && (
-                <div className="rounded-xl border border-amber-300 p-3 space-y-2">
-                  <p className="text-sm">{t('quiz.tracePreviousUsable')}</p>
-                  <TraceScore review={prepared.previousUsableReview} />
+                  {prepared && pendingSubmission.current && (
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      disabled={busy}
+                      onClick={() => void handleSubmit()}
+                    >
+                      {t('quiz.traceRetrySubmission')}
+                    </button>
+                  )}
                 </div>
-              )}
-              {prepared.submission && !historical && (
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    className={buttonClass}
-                    disabled={grading || busy}
-                    onClick={() =>
-                      void requestGrade(prepared, evaluationRequested && !pendingReview.current)
-                    }
-                  >
-                    {t(
-                      pendingReview.current
-                        ? 'quiz.traceRecoverEvaluation'
-                        : evaluationRequested
-                          ? 'quiz.traceRegrade'
-                          : 'quiz.traceGrade',
-                    )}
-                  </button>
-                  {pendingReview.current && (
+              </div>
+            )}
+            {started && prepared && (
+              <div className="px-6 py-4 space-y-4">
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">{t('quiz.traceDebug')}</summary>
+                  <p className="break-all">
+                    {t('quiz.traceVersion')}: {prepared.version.id}
+                  </p>
+                </details>
+                {(prepared.submission || historical) && (
+                  <p role="status" className="text-sm">
+                    {t('quiz.traceLocked')}
+                  </p>
+                )}
+                {prepared.review && <TraceScore review={prepared.review} />}
+                {prepared.previousUsableReview && (
+                  <div className="rounded-xl border border-amber-300 p-3 space-y-2">
+                    <p className="text-sm">{t('quiz.tracePreviousUsable')}</p>
+                    <TraceScore review={prepared.previousUsableReview} />
+                  </div>
+                )}
+                {prepared.submission && !historical && (
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       className={buttonClass}
                       disabled={grading || busy}
-                      onClick={() => void requestGrade(prepared, true)}
+                      onClick={() =>
+                        void requestGrade(prepared, evaluationRequested && !pendingReview.current)
+                      }
                     >
-                      {t('quiz.traceRegrade')}
+                      {t(
+                        pendingReview.current
+                          ? 'quiz.traceRecoverEvaluation'
+                          : evaluationRequested
+                            ? 'quiz.traceRegrade'
+                            : 'quiz.traceGrade',
+                      )}
                     </button>
-                  )}
+                    {pendingReview.current && (
+                      <button
+                        type="button"
+                        className={buttonClass}
+                        disabled={grading || busy}
+                        onClick={() => void requestGrade(prepared, true)}
+                      >
+                        {t('quiz.traceRegrade')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="text-sm underline"
+                      disabled={busy}
+                      onClick={() => void restore()}
+                    >
+                      {t('quiz.traceCheckEvaluation')}
+                    </button>
+                    {(grading || prepared.pendingReview) && (
+                      <p role="status" className="text-sm flex gap-2">
+                        <Loader2 className="animate-spin h-4 w-4" />
+                        {t('quiz.traceEvaluationPending')}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <QuizQuestions
+                  questions={questions}
+                  answers={answers}
+                  review={prepared.review}
+                  locked={locked}
+                  onChange={handleAnswer}
+                />
+                {!prepared.submission && !historical && !uncertain && (
                   <button
                     type="button"
-                    className="text-sm underline"
-                    disabled={busy}
-                    onClick={() => void restore()}
+                    className={buttonClass}
+                    disabled={!allAnswered || busy}
+                    onClick={() => void handleSubmit()}
                   >
-                    {t('quiz.traceCheckEvaluation')}
+                    {t(busy ? 'quiz.traceSaving' : 'quiz.submitAnswers')}
                   </button>
-                  {(grading || prepared.pendingReview) && (
-                    <p role="status" className="text-sm flex gap-2">
-                      <Loader2 className="animate-spin h-4 w-4" />
-                      {t('quiz.traceEvaluationPending')}
-                    </p>
-                  )}
-                </div>
+                )}
+                {historical && (
+                  <button type="button" className={buttonClass} onClick={() => void restore()}>
+                    {t('quiz.traceCurrentAttempt')}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        <DialogContent
+          className="w-[95vw] max-w-3xl max-h-[85dvh] flex flex-col gap-4"
+          showCloseButton={false}
+        >
+          <DialogHeader className="pr-10">
+            <DialogTitle>{t('quiz.traceHistory')}</DialogTitle>
+            <DialogDescription>{t('quiz.traceHistoryDescription')}</DialogDescription>
+          </DialogHeader>
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-4 right-4"
+              aria-label={t('common.close')}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </DialogClose>
+          <div className="min-h-0 overflow-y-auto space-y-3">
+            {historyBusy && <p role="status">{t('quiz.traceRestoring')}</p>}
+            {!historyBusy &&
+              (notice === 'quiz.traceHistoryUnknown' || notice === 'quiz.traceSaveFailed') && (
+                <p role="alert">{t(notice)}</p>
               )}
-              <QuizQuestions
-                questions={questions}
-                answers={answers}
-                review={prepared.review}
-                locked={locked}
-                onChange={handleAnswer}
+            {history && (
+              <TraceHistory
+                history={history}
+                sceneId={sceneId}
+                onSelect={(attempt) => {
+                  if (busyRef.current || uncertain) return;
+                  const token = generation.current;
+                  void (async () => {
+                    try {
+                      await writerRef.current?.flush();
+                    } catch {
+                      if (token === generation.current) setNotice('quiz.traceSaveFailed');
+                      return;
+                    }
+                    if (token !== generation.current) return;
+                    generation.current++;
+                    writerRef.current?.cancel();
+                    preparedRef.current = attempt;
+                    setPrepared(attempt);
+                    setAnswers(attempt.submission?.answers ?? attempt.answers);
+                    setHistorical(true);
+                    setShowHistory(false);
+                    setStarted(true);
+                    setStatus('ready');
+                    setUncertain(false);
+                    gradingRef.current = false;
+                    setGrading(false);
+                  })();
+                }}
               />
-              {!prepared.submission && !historical && !uncertain && (
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={!allAnswered || busy}
-                  onClick={() => void handleSubmit()}
-                >
-                  {t(busy ? 'quiz.traceSaving' : 'quiz.submitAnswers')}
-                </button>
-              )}
-              {historical && (
-                <button type="button" className={buttonClass} onClick={() => void restore()}>
-                  {t('quiz.traceCurrentAttempt')}
-                </button>
-              )}
-            </div>
-          )}
-        </>
-      )}
-      {showHistory && (
-        <div className="px-6 py-4">
-          {historyBusy && <p role="status">{t('quiz.traceRestoring')}</p>}
-          {history && (
-            <TraceHistory
-              history={history}
-              sceneId={sceneId}
-              onSelect={(attempt) => {
-                if (busyRef.current || uncertain) return;
-                const token = generation.current;
-                void (async () => {
-                  try {
-                    await writerRef.current?.flush();
-                  } catch {
-                    if (token === generation.current) setNotice('quiz.traceSaveFailed');
-                    return;
-                  }
-                  if (token !== generation.current) return;
-                  generation.current++;
-                  writerRef.current?.cancel();
-                  preparedRef.current = attempt;
-                  setPrepared(attempt);
-                  setAnswers(attempt.submission?.answers ?? attempt.answers);
-                  setHistorical(true);
-                  setStarted(true);
-                  setStatus('ready');
-                  setUncertain(false);
-                  gradingRef.current = false;
-                  setGrading(false);
-                })();
-              }}
-            />
-          )}
-        </div>
-      )}
-    </div>
+            )}
+          </div>
+        </DialogContent>
+      </div>
+    </Dialog>
   );
 }

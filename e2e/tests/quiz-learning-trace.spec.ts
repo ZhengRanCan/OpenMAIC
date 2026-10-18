@@ -363,7 +363,22 @@ test.describe('Quiz Learning Trace', () => {
     expect(retry.submission).toBeUndefined();
     await page.getByRole('button', { name: 'Quiz history', exact: true }).click();
     await expect(page.getByTestId('quiz-trace-history')).toContainText(first.attemptId);
-    await expect(page.getByTestId('quiz-trace-history')).toContainText(retry.attemptId);
+    await expect(page.getByRole('dialog', { name: 'Quiz history' })).toBeVisible();
+    await expect(page.getByTestId('quiz-trace-history')).not.toContainText(retry.attemptId);
+    await expect(page.getByTestId('quiz-submission-history-entry')).toHaveCount(1);
+    const entry = page.getByTestId('quiz-submission-history-entry');
+    await entry.locator(':scope > summary').click();
+    await expect(entry.getByTestId('quiz-trace-score')).toHaveCount(1);
+    await entry.getByText('Grading records (1)', { exact: true }).click();
+    const gradingRecord = entry.getByTestId('quiz-grading-record');
+    await expect(gradingRecord).toContainText('Currently used');
+    await expect(gradingRecord.locator('time')).not.toHaveText(/T.*Z$/);
+    await gradingRecord.locator('summary').click();
+    await expect(gradingRecord).toContainText('Question 1');
+    await expect(gradingRecord).toContainText('Answer-key grading');
+    await expect(gradingRecord.getByTestId('quiz-trace-score')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Quiz history' })).toHaveCount(0);
     const removed = await page.request.delete(
       '/api/persistence/documents/' + encodeURIComponent(stageId),
     );

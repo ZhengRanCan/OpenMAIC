@@ -752,7 +752,19 @@
     "tracePlanning": "Captured planning",
     "tracePlanningLimits": "Planning captured at preparation time; it does not prove which learning targets were actually assessed.",
     "traceRecoverEvaluation": "Recover the original evaluation request",
-    "traceResourceLimits": "{{count}} background resource reference(s) were unavailable when this version was saved. This text/math quiz remains readable; the full Scene background was not recovered."
+    "traceResourceLimits": "{{count}} background resource reference(s) were unavailable when this version was saved. This text/math quiz remains readable; the full Scene background was not recovered.",
+    "traceHistoryDescription": "Only formal submissions are shown here. You can continue an unsubmitted draft in the current quiz.",
+    "traceHistoryCount": "Submitted attempts read: {{count}}",
+    "traceHistoryEmpty": "No confirmed submissions in the records read.",
+    "traceDebug": "Developer details",
+    "traceSubmission": "Submission {{number}}",
+    "traceGradingHistory": "Grading records ({{count}})",
+    "traceGradingNumber": "Grading {{number}}",
+    "traceAdoptedGrading": "Currently used",
+    "traceRegradingExplanation": "Regrading evaluates the same submitted answers again; it is not another quiz attempt.",
+    "traceQuestionNumber": "Question {{number}}",
+    "traceModelGrading": "AI grading",
+    "traceKeyGrading": "Answer-key grading"
   },
   "roundtable": {
     "teacher": "教師",
