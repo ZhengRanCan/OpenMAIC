@@ -1,4 +1,5 @@
 import { ensureQuizTraceSchema } from './quiz-trace-schema';
+import { ensureQuizEvidenceSchema } from './quiz-evidence-schema';
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import {
   PgDocumentStore,
@@ -87,6 +88,7 @@ async function createServerPersistenceProvider(
       await ensureWorkspaceModelConfigSchema(locked);
       await ensureOwnerAgentSchema(locked);
       await ensureQuizTraceSchema(locked);
+      await ensureQuizEvidenceSchema(locked);
     });
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = configuredLazyAssetByteStore(queryable);

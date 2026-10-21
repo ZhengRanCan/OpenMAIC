@@ -1,4 +1,5 @@
 import { rekeyQuizTraceIn } from './quiz-trace-lifecycle';
+import { rekeyQuizEvidenceIn } from './quiz-evidence-lifecycle';
 /**
  * Claiming anonymous work on sign-in.
  *
@@ -136,6 +137,7 @@ export const CORE_CLAIM_PARTICIPANTS = [
   'workspace-model-config',
   'custom-agents',
   'quiz-trace',
+  'quiz-evidence',
 ] as const;
 
 /**
@@ -357,6 +359,7 @@ function participantsInOrder(provider: ServerPersistenceProvider): ClaimParticip
   return [
     ...coreParticipants(provider),
     { name: 'quiz-trace', order: 1000, rekey: rekeyQuizTraceIn },
+    { name: 'quiz-evidence', order: 1010, rekey: rekeyQuizEvidenceIn },
     ...state.participants,
   ].sort((a, b) => a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

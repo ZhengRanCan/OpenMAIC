@@ -193,6 +193,13 @@ const SHIPPED: readonly (readonly [
     true,
     '0d293437aab2f63335d5b32ba52a4a07470dd62b884403d6aa1e7f0c09da1395',
   ],
+  [
+    'quiz-evidence',
+    1,
+    'bounded_evidence_runs',
+    true,
+    'da16ec8f00676cdc76a1b9c158318b67659356db72b4fc8d069c93eeda73f449',
+  ],
 ];
 
 /**

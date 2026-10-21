@@ -1,4 +1,5 @@
 import { deleteQuizTraceIn } from './quiz-trace-lifecycle';
+import { deleteQuizEvidenceIn } from './quiz-evidence-lifecycle';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 import type { Scene, Stage } from '@openmaic/dsl';
@@ -389,6 +390,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         // By the time this body runs, `runTransaction` has already taken the
         // `stage_meta` row `FOR UPDATE` and refused a foreign owner, so the
         // delete is decided before anything below is written.
+        await deleteQuizEvidenceIn(queryable, this.ownerId, stageId);
         await deleteQuizTraceIn(queryable, this.ownerId, { stageId });
         await tombstoneStageMeta(queryable, stageId);
         // A course that is still generating ends with its deletion, in this
