@@ -93,6 +93,7 @@ export const STAGE_SLOTS = {
   'scene-actions': 'course.actions',
   'agent-profiles': 'course.agents',
   'quiz-grade': 'classroom',
+  'quiz-evidence': 'classroom',
   'pbl-v2-runtime': 'classroom',
   'pbl-v2-runtime:instructor': 'classroom',
   'pbl-v2-runtime:open-task': 'classroom',

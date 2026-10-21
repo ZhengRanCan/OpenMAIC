@@ -19,6 +19,7 @@ describe('model-routes', () => {
         'scene-actions',
         'agent-profiles',
         'quiz-grade',
+        'quiz-evidence',
         'chat-adapter',
         'web-search-query-rewrite',
         'maic-agent-driver',

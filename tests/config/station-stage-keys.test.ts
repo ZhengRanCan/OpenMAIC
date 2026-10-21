@@ -72,6 +72,7 @@ describe('classroom interaction override reaches every runtime stage (review P0)
   it.each([
     'chat-adapter',
     'quiz-grade',
+    'quiz-evidence',
     'pbl-v2-runtime',
     'pbl-v2-runtime:instructor',
     'pbl-v2-runtime:open-task',

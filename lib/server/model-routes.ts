@@ -134,6 +134,7 @@ export const LLM_STAGES = [
   'scene-actions',
   'agent-profiles',
   'quiz-grade',
+  'quiz-evidence',
   'pbl-v2-runtime',
   'pbl-v2-runtime:instructor',
   'pbl-v2-runtime:open-task',
