@@ -13,6 +13,7 @@ import { contentSize } from './prompt';
 const unique = (values: string[], code: string) =>
   invariant(new Set(values).size === values.length, code);
 export function validateTransition(run: PreparedMemoryRun, value: unknown) {
+  invariant(run.prompt.version === 'memory.v2', 'PROMPT_VERSION_UNSUPPORTED');
   const output = outputSchema.parse(value);
   invariant(output.status === 'ready', 'CAPACITY_EXCEEDED');
   const snapshot = structuredClone(run.snapshot);
@@ -54,10 +55,6 @@ export function validateTransition(run: PreparedMemoryRun, value: unknown) {
         'FALSE_CONFIRMATION',
       );
     const conditions = [...new Set(sources.flatMap((s) => s.conditions))];
-    invariant(
-      p.conditions.every((c) => conditions.includes(c)),
-      'INVENTED_CONDITION',
-    );
     if (oldIds.has(p.id))
       for (const section of SECTIONS)
         if (snapshot.sections[section].includes(p.id))

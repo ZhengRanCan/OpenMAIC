@@ -1,9 +1,15 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { verifyPreparedPacket } from '@/eval/learner-memory/runner';
+import { verifyArchivedPacket, verifyPreparedPacket } from '@/eval/learner-memory/runner';
 import { loadMemoryCases } from '@/eval/learner-memory/inputs';
-import { DEFAULT_BUDGETS, emptySnapshot, versionSource } from '@/lib/learner-memory/contracts';
+import {
+  DEFAULT_BUDGETS,
+  digest,
+  emptySnapshot,
+  versionSource,
+} from '@/lib/learner-memory/contracts';
 import { buildMemoryPrompt } from '@/lib/learner-memory/prompt';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -55,8 +61,20 @@ describe('Prepared request freeze', () => {
   it('rejects changed prompt even if the local packet hash was updated', () => {
     const f = fixture();
     f.packet.prompt.user += '额外指令';
+    f.packet.prompt.digest = digest([f.packet.prompt.system, f.packet.prompt.user]);
+    f.packet.prompt.inputBytes = Buffer.byteLength(
+      f.packet.prompt.system + f.packet.prompt.user,
+      'utf8',
+    );
     const text = JSON.stringify(f.packet);
     f.manifest.packetFiles.N04 = sha(text);
     expect(() => verifyPreparedPacket(f.manifest, 'N04', text)).toThrow('FIXED_PROMPT_MISMATCH');
+  });
+  it('keeps frozen v1 requests readable while rejecting their execution with v2', () => {
+    const dir = path.resolve('../docs/log/artifacts/F67/memory-v0.1-2026-10-25/trial-manual-001');
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    const raw = fs.readFileSync(path.join(dir, 'N04.packet.json'), 'utf8');
+    expect(verifyArchivedPacket(manifest, 'N04', raw).prompt.version).toBe('memory.v1');
+    expect(() => verifyPreparedPacket(manifest, 'N04', raw)).toThrow('PROMPT_VERSION_UNSUPPORTED');
   });
 });

@@ -125,7 +125,6 @@ export const outputSchema = z.discriminatedUnion('status', [
           text,
           formation: z.enum(['declaration', 'confirmed_experience', 'synthesis']),
           supports: z.array(id).min(1).max(64),
-          conditions: z.array(text).max(64),
         }),
       )
       .max(64),
@@ -145,7 +144,7 @@ export const outputSchema = z.discriminatedUnion('status', [
 ]);
 export type MemoryDecision = z.infer<typeof decisionSchema>;
 export interface MemoryPrompt {
-  version: 'memory.v1';
+  version: 'memory.v1' | 'memory.v2';
   system: string;
   user: string;
   digest: string;

@@ -43,7 +43,6 @@ export function response() {
         text: '在公式提示下计算正确，但换算错误。',
         formation: 'synthesis',
         supports: ['e1'],
-        conditions: [],
       },
     ],
     retired: [],

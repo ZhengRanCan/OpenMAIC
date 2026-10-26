@@ -1,0 +1,125 @@
+{
+  "version": "simulated-memory.v1",
+  "description": "人工组合的模拟学生数据，不代表真实学习者或真实连续学习史；各身份独立使用素材。",
+  "sources": {
+    "background": {
+      "kind": "declaration",
+      "text": "目前读初二。",
+      "refNames": ["background"],
+      "conditions": []
+    },
+    "goal": {
+      "kind": "declaration",
+      "text": "准备本学期数学期中考试。",
+      "refNames": ["goal"],
+      "conditions": []
+    },
+    "requirement": {
+      "kind": "declaration",
+      "text": "数学教学先给具体例子，再讲规则。",
+      "refNames": ["requirement"],
+      "conditions": []
+    },
+    "past-summary": {
+      "kind": "quiz_evidence",
+      "text": "在给定选项中正确识别含went、ate、saw的过去式句子；在改写题中把goes改为went，并用yesterday替换every Sunday。",
+      "refNames": ["english:q1", "english:q2", "english:q3"],
+      "conditions": ["选择与直接改写属于不同作答形式；未记录自主解释规则。"]
+    },
+    "density": {
+      "kind": "quiz_evidence",
+      "text": "在题目提供公式和换算提示时，用54÷20正确算出2.7g/cm³，但直接写成2.7kg/m³，未乘1000换为2700kg/m³。",
+      "refNames": ["density:q3"],
+      "conditions": ["题目已提供密度公式和单位换算关系提示。"]
+    },
+    "past-choice": {
+      "kind": "quiz_evidence",
+      "text": "在过去时选择题中，正确选中含went、ate、saw的句子。",
+      "refNames": ["english:q1", "english:q2"],
+      "conditions": ["表现为给定选项中的正确选择，未记录自主解释规则。"]
+    },
+    "past-rewrite": {
+      "kind": "quiz_evidence",
+      "text": "将Tom goes to the library every Sunday改写为Tom went to the library yesterday，正确调整goes为went，并把every Sunday替换为yesterday。",
+      "refNames": ["english:q3"],
+      "conditions": ["按照给定过去时和时间短语要求进行直接改写，未另写规则解释。"]
+    }
+  },
+  "profiles": {
+    "A": { "label": "模拟学生A：全新", "pieces": [] },
+    "B": {
+      "label": "模拟学生B：已有基本Memory",
+      "pieces": [
+        {
+          "id": "m-background",
+          "section": "background",
+          "text": "目前读初二。",
+          "formation": "declaration",
+          "sourceKeys": ["background"]
+        },
+        {
+          "id": "m-goal",
+          "section": "goals",
+          "text": "准备本学期数学期中考试。",
+          "formation": "declaration",
+          "sourceKeys": ["goal"]
+        },
+        {
+          "id": "m-requirement",
+          "section": "teaching_requirements",
+          "text": "数学教学先给具体例子，再讲规则。",
+          "formation": "declaration",
+          "sourceKeys": ["requirement"]
+        },
+        {
+          "id": "m-past",
+          "section": "learning_experiences",
+          "text": "过去时选择题中正确识别含went、ate、saw的句子；改写题正确将goes改为went，并用yesterday替换every Sunday。",
+          "formation": "synthesis",
+          "sourceKeys": ["past-summary"]
+        },
+        {
+          "id": "m-density",
+          "section": "learning_experiences",
+          "text": "密度题已给公式和换算提示时，54÷20算出2.7g/cm³正确，但直接写成2.7kg/m³，未按1000倍关系换算为2700kg/m³。",
+          "formation": "synthesis",
+          "sourceKeys": ["density"]
+        }
+      ]
+    },
+    "C": {
+      "label": "模拟学生C：持续更新",
+      "pieces": [
+        {
+          "id": "m-background",
+          "section": "background",
+          "text": "目前读初二。",
+          "formation": "declaration",
+          "sourceKeys": ["background"]
+        },
+        {
+          "id": "m-goal",
+          "section": "goals",
+          "text": "准备本学期数学期中考试。",
+          "formation": "declaration",
+          "sourceKeys": ["goal"]
+        },
+        {
+          "id": "m-requirement",
+          "section": "teaching_requirements",
+          "text": "数学教学先给具体例子，再讲规则。",
+          "formation": "declaration",
+          "sourceKeys": ["requirement"]
+        },
+        {
+          "id": "m-past",
+          "section": "learning_experiences",
+          "text": "在过去时选择题中正确选中含went、ate、saw的句子；这只是选项识别，未记录自主解释规则。",
+          "formation": "synthesis",
+          "sourceKeys": ["past-choice"]
+        }
+      ]
+    }
+  },
+  "demo": { "student": "C", "sourceKey": "past-rewrite", "operationId": "demo-past-rewrite-v1" }
+}

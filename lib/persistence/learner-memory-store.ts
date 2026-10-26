@@ -37,7 +37,7 @@ const key = (scope: MemoryScope) => [scope.namespace, scope.learnerKey];
 
 /** Explicit experiment adapter. No public identity/production wiring is implied. */
 export class LearnerMemoryStore {
-  constructor(readonly provider: { withTransaction: WithTransaction }) {}
+  constructor(readonly provider: { withTransaction: WithTransaction; systemPrompt?: string }) {}
   private async locked<T>(
     scope: MemoryScope,
     body: (tx: Queryable, state: State) => Promise<T>,
@@ -133,7 +133,13 @@ export class LearnerMemoryStore {
       let built: ReturnType<typeof buildMemoryPrompt>;
       for (;;) {
         try {
-          built = buildMemoryPrompt(state.snapshot, batch, budgets, old);
+          built = buildMemoryPrompt(
+            state.snapshot,
+            batch,
+            budgets,
+            old,
+            this.provider.systemPrompt,
+          );
           break;
         } catch (e) {
           if (

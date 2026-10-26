@@ -30,7 +30,6 @@ describe('Memory fixed-source mechanism verification (manual fixtures, not LLM o
               text: r.aliases[a].text,
               formation: 'synthesis',
               supports: [a],
-              conditions: [],
             })),
             retired: [],
             decisions: aliases.map((a, i) => ({
@@ -91,7 +90,6 @@ describe('Memory fixed-source mechanism verification (manual fixtures, not LLM o
           text: r.aliases[a].text,
           formation: 'declaration',
           supports: [a],
-          conditions: [],
         })),
         retired: [],
         decisions: aliases.map((a, i) => ({
@@ -125,9 +123,7 @@ describe('Memory fixed-source mechanism verification (manual fixtures, not LLM o
         text: JSON.stringify({
           status: 'ready',
           sections: [{ section: 'goals', pieceIds: [id] }],
-          pieces: [
-            { id, text: revised.text, formation: 'declaration', supports: ['e1'], conditions: [] },
-          ],
+          pieces: [{ id, text: revised.text, formation: 'declaration', supports: ['e1'] }],
           retired: [],
           decisions: [{ source: 'e1', action: 'adopt', pieceIds: [id], reason: '明确替换旧目标' }],
         }),

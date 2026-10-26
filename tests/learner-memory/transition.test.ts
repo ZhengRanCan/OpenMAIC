@@ -73,6 +73,37 @@ describe('Memory transition', () => {
     expect(out.snapshot.sections.goals).toEqual([]);
     expect(out.snapshot.pieces[0].supports[0]).toEqual(r.batch[0]);
   });
+  it('owns conditions in the program and refuses to reinterpret frozen v1 replies', () => {
+    const r = runFixture();
+    const oldOutput = response();
+    expect(() =>
+      validateTransition(r, {
+        ...oldOutput,
+        pieces: oldOutput.pieces.map((p) => ({ ...p, conditions: ['模型改写条件'] })),
+      }),
+    ).toThrow();
+    expect(() =>
+      validateTransition({ ...r, prompt: { ...r.prompt, version: 'memory.v1' } }, response()),
+    ).toThrow('PROMPT_VERSION_UNSUPPORTED');
+  });
+  it('accepts exactly the Unicode body budget and rejects an extra code point without truncating', () => {
+    const r = runFixture(),
+      out = response();
+    out.pieces[0].text = '提示下答对😀';
+    const limit = [...out.pieces[0].text].length;
+    const limited = {
+      ...r,
+      budgets: {
+        ...r.budgets,
+        total: limit,
+        sections: { ...r.budgets.sections, learning_experiences: limit },
+      },
+    };
+    expect(validateTransition(limited, out).snapshot.pieces[0].text).toBe(out.pieces[0].text);
+    out.pieces[0].text += '。';
+    expect(() => validateTransition(limited, out)).toThrow('SECTION_BUDGET_EXCEEDED');
+    expect(r.snapshot.pieces).toEqual([]);
+  });
   it('rejects orphan, foreign refs, capacity and omitted batch decisions', () => {
     const r = runFixture();
     const foreign = response();

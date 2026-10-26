@@ -53,7 +53,7 @@ const packetSchema = z.strictObject({
   operationId: z.string(),
   sources: z.array(sourceSchema),
   prompt: z.strictObject({
-    version: z.literal('memory.v1'),
+    version: z.enum(['memory.v1', 'memory.v2']),
     digest: z.string(),
     system: z.string(),
     user: z.string(),
@@ -63,6 +63,7 @@ const packetSchema = z.strictObject({
 const codePaths = [
   'lib/learner-memory/contracts.ts',
   'lib/learner-memory/prompt.ts',
+  'lib/learner-memory/output-protocol.ts',
   'lib/learner-memory/transition.ts',
   'lib/learner-memory/read.ts',
   'lib/persistence/learner-memory-schema.ts',
@@ -72,8 +73,8 @@ const codePaths = [
   'eval/learner-memory/runner.ts',
 ];
 
-export function verifyPreparedPacket(
-  manifest: Pick<z.infer<typeof manifestSchema>, 'namespace' | 'budgets' | 'packetFiles' | 'mode'>,
+export function verifyArchivedPacket(
+  manifest: Pick<z.infer<typeof manifestSchema>, 'namespace' | 'packetFiles'>,
   caseId: string,
   rawText: string,
 ) {
@@ -86,6 +87,22 @@ export function verifyPreparedPacket(
       packet.operationId === 'initial',
     'PACKET_SCOPE',
   );
+  invariant(
+    packet.prompt.digest === digest([packet.prompt.system, packet.prompt.user]) &&
+      packet.prompt.inputBytes ===
+        Buffer.byteLength(packet.prompt.system + packet.prompt.user, 'utf8'),
+    'PACKET_PROMPT_HASH',
+  );
+  return packet;
+}
+
+export function verifyPreparedPacket(
+  manifest: Pick<z.infer<typeof manifestSchema>, 'namespace' | 'budgets' | 'packetFiles' | 'mode'>,
+  caseId: string,
+  rawText: string,
+) {
+  const packet = verifyArchivedPacket(manifest, caseId, rawText);
+  invariant(packet.prompt.version === 'memory.v2', 'PROMPT_VERSION_UNSUPPORTED');
   const fixed = loadMemoryCases(workspace, manifest.mode).find((c) => c.caseId === caseId);
   invariant(fixed && isDeepStrictEqual(packet.sources, fixed.sources), 'FIXED_INPUT_MISMATCH');
   const rebuilt = buildMemoryPrompt(emptySnapshot(), fixed.sources, manifest.budgets, []);
@@ -256,6 +273,21 @@ export async function main(args: string[]) {
     console.log('Deleted selected experimental scope.');
     return;
   }
+  if (command === 'read') {
+    // Archived requests remain readable; do not rebuild them with a newer generation protocol.
+    const packet = verifyArchivedPacket(
+      manifest,
+      caseId,
+      fs.readFileSync(path.join(dir, caseId + '.packet.json'), 'utf8'),
+    );
+    const db = await database();
+    try {
+      console.log((await db.store.read(packet.scope)).markdown);
+    } finally {
+      await db.close();
+    }
+    return;
+  }
   const packet = verifyPreparedPacket(
     manifest,
     caseId,
@@ -290,10 +322,6 @@ export async function main(args: string[]) {
   }
   const db = await database();
   try {
-    if (command === 'read') {
-      console.log((await db.store.read(packet.scope)).markdown);
-      return;
-    }
     await db.store.ingest(packet.scope, packet.sources);
     const run = await db.store.prepare(packet.scope, packet.operationId, manifest.budgets);
     invariant(run.prompt.digest === packet.prompt.digest, 'PREPARED_MEMORY_CHANGED');
