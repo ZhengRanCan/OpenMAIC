@@ -9,6 +9,21 @@ describe('what a paused run says', () => {
   const at = (step: string, extra: Record<string, unknown> = {}) =>
     runFailureText({ step, message: 'raw message', ...extra });
 
+  it.each([
+    ['LEARNER_MEMORY_UNAVAILABLE', 'learnerMemoryUnavailable'],
+    ['LEARNER_MEMORY_RECHECK_REQUIRED', 'learnerMemoryRecheckRequired'],
+    ['LEARNER_MEMORY_SOURCE_INVALID', 'learnerMemorySourceInvalid'],
+    ['LEARNER_CONTEXT_INVALID', 'learnerContextInvalid'],
+    ['LEARNER_CONTEXT_SELECTION_INVALID', 'learnerContextInvalid'],
+    ['LEARNER_CONTEXT_INPUT_CAPACITY_EXCEEDED', 'learnerContextInvalid'],
+    ['LEARNER_CONTEXT_SELECTION_FAILED', 'learnerContextInvalid'],
+    ['LEARNER_CONTEXT_CALL_UNKNOWN', 'learnerContextCallUnknown'],
+  ])('explains %s with a recovery message at selection or outline recheck', (errorCode, key) => {
+    for (const step of ['learner-context', 'outline']) {
+      expect(at(step, { errorCode })).toEqual({ key: `generation.${key}` });
+    }
+  });
+
   it('says a scene failure the way the classic preview did', () => {
     expect(at('scene:0:content', { errorCode: 'UPSTREAM_ERROR', statusCode: 503 })).toEqual({
       key: 'generation.sceneGenerateProviderUnavailable',

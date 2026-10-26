@@ -20,24 +20,60 @@ vi.mock('@/lib/orchestration/registry/store', () => ({
 }));
 vi.mock('@/lib/audio/tts-selection', () => ({ ttsSelection: () => null }));
 
-import { startClassicRun } from '@/lib/generation-run-client/start';
+import { RunStartRefusedError, startClassicRun } from '@/lib/generation-run-client/start';
 import type { ModelCapabilities } from '@/lib/model-settings/capabilities';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useUserProfileStore } from '@/lib/store/user-profile';
 
-const start = () =>
+const start = (extra: Partial<Parameters<typeof startClassicRun>[0]> = {}) =>
   startClassicRun({
     requirement: 'Photosynthesis',
     materialIds: [],
     interactive: false,
     taskEngine: false,
     capabilities: {} as ModelCapabilities,
+    ...extra,
   });
 
 beforeEach(() => {
   started.inputs = [];
+  useUserProfileStore.setState({ nickname: '', bio: '' });
 });
 afterEach(() => {
   useSettingsStore.setState({ reviewOutlineEnabled: false });
+  useUserProfileStore.setState({ nickname: '', bio: '' });
+});
+
+describe('simulated Memory in a classic run', () => {
+  it('preserves the original account profile and request shape when no Memory is selected', async () => {
+    useUserProfileStore.setState({ nickname: 'Current learner', bio: 'Personal profile' });
+    await start();
+    expect(started.inputs[0]).toMatchObject({
+      learnerProfile: { nickname: 'Current learner', bio: 'Personal profile' },
+    });
+    expect(started.inputs[0]).not.toHaveProperty('simulatedLearner');
+  });
+
+  it.each(['A', 'B', 'C'] as const)(
+    'sends student %s without the account nickname or bio',
+    async (simulatedLearner) => {
+      useUserProfileStore.setState({ nickname: 'Current learner', bio: 'Personal profile' });
+      await start({ simulatedLearner });
+      expect(started.inputs[0]).toMatchObject({ simulatedLearner });
+      expect(started.inputs[0]).not.toHaveProperty('learnerProfile');
+    },
+  );
+
+  it.each([{ interactive: true }, { taskEngine: true }])(
+    'refuses unsupported modes before submission: %j',
+    async (mode) => {
+      await expect(start({ simulatedLearner: 'B', ...mode })).rejects.toMatchObject({
+        reason: 'generation.simulatedLearnerUnsupported',
+        name: RunStartRefusedError.name,
+      });
+      expect(started.inputs).toHaveLength(0);
+    },
+  );
 });
 
 describe('the outline review a classic run is started with', () => {

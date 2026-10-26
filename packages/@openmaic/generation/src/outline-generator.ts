@@ -29,6 +29,8 @@ export interface OutlinePromptContext {
   videoGenerationEnabled?: boolean;
   researchContext?: string;
   teacherContext?: string;
+  /** Selected simulated learning records, rendered with their original conditions. */
+  learnerContext?: string;
 }
 
 export interface OutlineGenerationOptions extends Omit<
@@ -84,10 +86,14 @@ export function buildOutlinePrompt(
   context: OutlinePromptContext = {},
 ): { system: string; user: string } {
   const { pdfText, pdfImages } = context;
+  const hasLearnerContext = Boolean(context.learnerContext?.trim());
+  if (hasLearnerContext && (requirements.interactiveMode || requirements.taskEngineMode)) {
+    throw new Error('Learner Context is only supported for classic outline generation');
+  }
   const { availableImagesText } = buildAvailableImages(pdfImages, context);
 
   const userProfileText =
-    requirements.userNickname || requirements.userBio
+    !hasLearnerContext && (requirements.userNickname || requirements.userBio)
       ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
       : '';
 
@@ -111,6 +117,13 @@ export function buildOutlinePrompt(
 
   if (!prompts) {
     throw new Error('Prompt template not found');
+  }
+
+  if (hasLearnerContext) {
+    return {
+      system: prompts.system,
+      user: `${prompts.user}\n\n## Learner Context\n\nThe following context comes from simulated learning records. Follow this session's explicit requirements first. Keep each record's original conditions; specific experiences do not establish long-term mastery.\n\n${context.learnerContext}`,
+    };
   }
 
   return prompts;

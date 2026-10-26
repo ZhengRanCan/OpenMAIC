@@ -60,6 +60,74 @@ describe('run input', () => {
     });
   });
 
+  it.each(['A', 'B', 'C'])(
+    'accepts simulated learner %s without mixing the browser profile into the run',
+    (simulatedLearner) => {
+      const learnerProfile = { nickname: 'Browser nickname', bio: 'Browser biography' };
+      expect(
+        parseRunInput({ requirement: 'Teach density', simulatedLearner, learnerProfile }),
+      ).toEqual({
+        ok: true,
+        value: {
+          requirement: 'Teach density',
+          simulatedLearner,
+          materialIds: [],
+          interactive: false,
+          taskEngine: false,
+          agents: { mode: 'auto' },
+          outlineReview: 'wait',
+        },
+      });
+      expect(learnerProfile).toEqual({
+        nickname: 'Browser nickname',
+        bio: 'Browser biography',
+      });
+    },
+  );
+
+  it.each(['D', 'a', ' A ', '', null, {}, ['A'], 1, true])(
+    'refuses a simulated identity outside the server whitelist: %j',
+    (simulatedLearner) => {
+      expect(parseRunInput({ requirement: 'Teach density', simulatedLearner })).toEqual({
+        ok: false,
+        message: 'simulatedLearner must be A, B or C',
+      });
+    },
+  );
+
+  it.each([{ interactive: true }, { taskEngine: true }, { interactive: true, taskEngine: true }])(
+    'refuses a simulated identity in an unsupported mode: %j',
+    (mode) => {
+      expect(
+        parseRunInput({ requirement: 'Teach density', simulatedLearner: 'B', ...mode }),
+      ).toEqual({
+        ok: false,
+        message: 'Simulated Memory is available for classic classroom generation only',
+      });
+      // Existing requests without Memory keep their original mode semantics.
+      expect(parseRunInput({ requirement: 'Teach density', ...mode })).toMatchObject({
+        ok: true,
+        value: mode,
+      });
+    },
+  );
+
+  it.each([
+    { learnerContext: 'forged selected record' },
+    { learnerContext: '' },
+    { memory: { pieces: [] } },
+    { memory: null },
+    { namespace: 'arbitrary-namespace' },
+    { learnerKey: 'arbitrary-learner' },
+  ])('refuses client-supplied Memory or scope, with or without an identity: %j', (forged) => {
+    for (const identity of [{}, { simulatedLearner: 'B' }]) {
+      expect(parseRunInput({ requirement: 'Teach density', ...identity, ...forged })).toEqual({
+        ok: false,
+        message: 'Memory and its scope are resolved by the server',
+      });
+    }
+  });
+
   it('keeps releaseMaterials only for a run with materials', () => {
     expect(
       parseRunInput({

@@ -13,6 +13,8 @@ export const STEP_DEADLINES_MS = {
   materialAnalysis: 300_000,
   /** Research (1.1.x declared no budget; the platform's default applied). */
   research: 300_000,
+  learnerContext: 60_000,
+  learnerContextRecheck: 15_000,
   /** The outline, its own stream retries included. */
   outline: 300_000,
   agentProfiles: 120_000,

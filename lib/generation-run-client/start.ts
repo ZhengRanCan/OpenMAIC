@@ -16,7 +16,9 @@ import type { RunSnapshot } from './types';
 /** A start refused before anything was submitted; `reason` is the translation key that says why. */
 export class RunStartRefusedError extends Error {
   constructor(
-    readonly reason: 'generation.customAgentsUnavailable',
+    readonly reason:
+      | 'generation.customAgentsUnavailable'
+      | 'generation.simulatedLearnerUnsupported',
     readonly values: Record<string, string | number> = {},
   ) {
     super(reason);
@@ -70,14 +72,18 @@ export async function startClassicRun(input: {
   materialIds: readonly string[];
   interactive: boolean;
   taskEngine: boolean;
+  simulatedLearner?: 'A' | 'B' | 'C';
   capabilities: ModelCapabilities;
 }): Promise<RunSnapshot> {
+  if (input.simulatedLearner && (input.interactive || input.taskEngine)) {
+    throw new RunStartRefusedError('generation.simulatedLearnerUnsupported');
+  }
   const agents = await selectedRunAgents();
   const materialIds = [...input.materialIds];
 
   const profile = useUserProfileStore.getState();
   const learnerProfile =
-    profile.nickname || profile.bio
+    !input.simulatedLearner && (profile.nickname || profile.bio)
       ? {
           ...(profile.nickname ? { nickname: profile.nickname } : {}),
           ...(profile.bio ? { bio: profile.bio } : {}),
@@ -91,6 +97,7 @@ export async function startClassicRun(input: {
     materialIds,
     interactive: input.interactive,
     taskEngine: input.taskEngine,
+    ...(input.simulatedLearner ? { simulatedLearner: input.simulatedLearner } : {}),
     agents,
     ...(learnerProfile ? { learnerProfile } : {}),
     ...(voice ? { voice } : {}),

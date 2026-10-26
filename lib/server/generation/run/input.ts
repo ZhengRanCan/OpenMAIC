@@ -126,6 +126,28 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
   const taskEngine = optionalBoolean(body.taskEngine, 'taskEngine');
   if (!taskEngine.ok) return taskEngine;
 
+  let simulatedLearner: GenerationRunInput['simulatedLearner'];
+  if (body.simulatedLearner !== undefined) {
+    if (
+      !['A', 'B', 'C'].includes(String(body.simulatedLearner)) ||
+      typeof body.simulatedLearner !== 'string'
+    )
+      return { ok: false, message: 'simulatedLearner must be A, B or C' };
+    if (interactive.value || taskEngine.value)
+      return {
+        ok: false,
+        message: 'Simulated Memory is available for classic classroom generation only',
+      };
+    simulatedLearner = body.simulatedLearner as GenerationRunInput['simulatedLearner'];
+  }
+  if (
+    body.learnerContext !== undefined ||
+    body.memory !== undefined ||
+    body.namespace !== undefined ||
+    body.learnerKey !== undefined
+  )
+    return { ok: false, message: 'Memory and its scope are resolved by the server' };
+
   let agents: GenerationRunInput['agents'] = { mode: 'auto' };
   if (body.agents !== undefined) {
     const value = record(body.agents);
@@ -205,11 +227,12 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
     ok: true,
     value: {
       requirement,
+      ...(simulatedLearner ? { simulatedLearner } : {}),
       materialIds,
       interactive: interactive.value,
       taskEngine: taskEngine.value,
       agents,
-      ...(learnerProfile ? { learnerProfile } : {}),
+      ...(!simulatedLearner && learnerProfile ? { learnerProfile } : {}),
       outlineReview,
       ...(voice ? { voice } : {}),
       ...(releaseMaterials.value && materialIds.length > 0 ? { releaseMaterials: true } : {}),

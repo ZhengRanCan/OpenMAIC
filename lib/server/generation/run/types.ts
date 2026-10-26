@@ -9,6 +9,7 @@
  * drives the steps.
  */
 import type { AgentInfo } from '@openmaic/generation';
+import type { FrozenLearnerContext, SimulatedLearnerId } from '@/lib/learner-context/contracts';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -78,6 +79,8 @@ export type GenerationRunAgents =
  */
 export interface GenerationRunInput {
   requirement: string;
+  /** Explicit synthetic identity; never a browser-supplied Memory body or scope. */
+  simulatedLearner?: SimulatedLearnerId;
   /** Owner-library uploads (`POST /api/materials`), in order. */
   materialIds: string[];
   interactive: boolean;
@@ -109,6 +112,8 @@ export interface GenerationRunInput {
 /** The outline a run generated, as last confirmed or edited. */
 export interface GenerationRunOutline {
   outlines: SceneOutline[];
+  /** The exact, server-resolved Context used by this outline, retained after compaction. */
+  learnerContext?: FrozenLearnerContext;
   languageDirective: string;
   courseTitle?: string;
   /** The server-effective task-engine mode the outline was generated in. */

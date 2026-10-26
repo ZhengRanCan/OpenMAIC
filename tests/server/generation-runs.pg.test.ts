@@ -6,6 +6,7 @@
  * and the run API routes.
  */
 import { NextRequest } from 'next/server';
+import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,6 +37,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { stopAgentEventNotifyBus } from '@/lib/server/agent-runtime/event-notify-bus';
 import { appendRunScene } from '@/lib/server/generation/run/document';
 import { executeGenerationRun } from '@/lib/server/generation/run/engine';
+import { STEP_DEADLINES_MS } from '@/lib/server/generation/run/deadline';
 import { runClaimedGenerationRun, startGenerationRunner } from '@/lib/server/generation/run/runner';
 import { defaultRunStepServices, type RunStepServices } from '@/lib/server/generation/run/services';
 import {
@@ -66,6 +68,12 @@ import { StepRefusal } from '@/lib/server/generation/steps/context';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
+import {
+  PreclassLearnerContextError,
+  type FrozenLearnerContext,
+} from '@/lib/learner-context/contracts';
+import { renderPreclassLearnerContext } from '@/lib/learner-context/render';
+import { versionSource } from '@/lib/learner-memory/contracts';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 const TEST_SCHEMA = 'openmaic_generation_runs_test';
@@ -578,6 +586,326 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const after = (await readGenerationRun(edited.id, OWNER))!;
     expect(after.outline).toMatchObject({ revision: 2, outlines: [OUTLINES[2]] });
     expect(after.progress).toEqual({ scenesTotal: 1, scenesCompleted: 1 });
+  });
+
+  describe('F65 frozen learner context', () => {
+    type ContextInput = Parameters<NonNullable<RunStepServices['learnerContext']>>[1];
+    function frozenContext(input: ContextInput, revision = 3): FrozenLearnerContext {
+      const digest = (value: unknown) =>
+        createHash('sha256').update(JSON.stringify(value)).digest('hex');
+      return {
+        schemaVersion: 'learner-context.v1',
+        promptVersion: 'learner-context-selection.v1',
+        student: input.student,
+        status: 'ready',
+        memoryRevision: revision,
+        taskDigest: digest(input.task),
+        contentDigest: digest({
+          pdfText: input.content.pdfText ?? '',
+          researchContext: input.content.researchContext ?? '',
+        }),
+        selected: [
+          {
+            pieceId: `piece:photosynthesis:${revision}`,
+            reason: '本次课堂涉及光合作用',
+            text: `在图示提示下说明光合作用，未记录独立解释。记录版本${revision}。`,
+            formation: 'synthesis',
+            conditions: ['仅限该次图示作答'],
+            supports: [
+              versionSource({
+                id: 'sim:B:photosynthesis',
+                kind: 'quiz_evidence',
+                text: '在给定图示下作答。',
+                refs: ['quiz:photosynthesis:attempt-1'],
+                conditions: ['图示提示始终可见'],
+                sourceNature: 'synthetic',
+                occurredAt: null,
+                provenance: {
+                  file: 'private-seed.json',
+                  sha256: 'a'.repeat(64),
+                  pointer: '/source/1',
+                },
+              }),
+            ],
+          },
+        ],
+      };
+    }
+
+    it('keeps the existing no-Memory path free of reads, selection, and validation', async () => {
+      const learnerContext = vi.fn<NonNullable<RunStepServices['learnerContext']>>();
+      const validateLearnerContext =
+        vi.fn<NonNullable<RunStepServices['validateLearnerContext']>>();
+      const { services, calls } = fakeServices({ learnerContext, validateLearnerContext });
+      const run = await start();
+      expect(await drive(run.id, services)).toBe('waiting');
+      expect(learnerContext).not.toHaveBeenCalled();
+      expect(validateLearnerContext).not.toHaveBeenCalled();
+      expect((await readGenerationRunSteps(run.id)).has('learner-context')).toBe(false);
+      expect(calls.outline[0]).not.toHaveProperty('learnerContext');
+      expect(calls.outline[0]).toMatchObject({
+        requirements: {
+          requirement: 'Teach photosynthesis',
+          userNickname: 'Sam',
+          userBio: 'Grade 8',
+        },
+      });
+      expect((await readGenerationRun(run.id, OWNER))!.outline).not.toHaveProperty(
+        'learnerContext',
+      );
+    });
+
+    it('freezes after research, preserves context through edited confirmation and compaction, and limits it to the Planner', async () => {
+      let frozen!: FrozenLearnerContext;
+      let activeRunId = '';
+      const learnerContext = vi.fn<NonNullable<RunStepServices['learnerContext']>>(
+        async (_owner, input, ctx) => {
+          expect((await readGenerationRunSteps(activeRunId)).has('research')).toBe(true);
+          await ctx.beforeSelect();
+          expect(
+            (await readGenerationRunSteps(activeRunId)).get('learner-context:calling'),
+          ).toEqual({ started: true });
+          frozen = frozenContext(input);
+          return frozen;
+        },
+      );
+      const validateLearnerContext = vi.fn<NonNullable<RunStepServices['validateLearnerContext']>>(
+        async (_owner, context) => {
+          expect(context).toEqual(frozen);
+        },
+      );
+      const { services, calls } = fakeServices({ learnerContext, validateLearnerContext });
+      const run = await start(runInput({ simulatedLearner: 'B', materialIds: ['mat-f65'] }));
+      activeRunId = run.id;
+      expect(await drive(run.id, services)).toBe('waiting');
+      expect(learnerContext).toHaveBeenCalledTimes(1);
+      expect(learnerContext.mock.calls[0]!.slice(0, 2)).toEqual([
+        OWNER,
+        {
+          student: 'B',
+          task: 'Teach photosynthesis',
+          content: { pdfText: 'material text', researchContext: 'research context' },
+        },
+      ]);
+      expect(validateLearnerContext).toHaveBeenCalledTimes(2);
+      expect(calls.outline[0]).toMatchObject({
+        learnerContext: renderPreclassLearnerContext(frozen),
+        requirements: { requirement: 'Teach photosynthesis' },
+      });
+      const requirements = (calls.outline[0] as { requirements: Record<string, unknown> })
+        .requirements;
+      expect(requirements).not.toHaveProperty('userNickname');
+      expect(requirements).not.toHaveProperty('userBio');
+      expect(requirements).not.toHaveProperty('learnerContext');
+      expect((await readGenerationRun(run.id, OWNER))!.outline!.learnerContext).toEqual(frozen);
+      await confirm(run.id, OWNER, {
+        commandId: 'f65-edited-confirm',
+        outlineRevision: 1,
+        outlines: [OUTLINES[2]!],
+      });
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(learnerContext).toHaveBeenCalledTimes(1);
+      for (const call of [...calls.sceneContent, ...calls.sceneActions])
+        expect(call).not.toHaveProperty('learnerContext');
+      expect(calls.sceneContent[0]!.requirements).not.toHaveProperty('learnerContext');
+      expect(calls.sceneActions[0]!.userProfile).toBeUndefined();
+      const after = (await readGenerationRun(run.id, OWNER))!;
+      expect(after.outline).toMatchObject({
+        revision: 2,
+        outlines: [OUTLINES[2]!],
+        learnerContext: frozen,
+      });
+      await compactFinishedGenerationRuns(0);
+      expect((await readGenerationRunSteps(run.id)).size).toBe(0);
+      expect((await readGenerationRun(run.id, OWNER))!.outline!.learnerContext).toEqual(frozen);
+    });
+
+    it('reuses the frozen selection when the outline fails and the owner retries', async () => {
+      const learnerContext = vi.fn<NonNullable<RunStepServices['learnerContext']>>(
+        async (_owner, input, ctx) => {
+          await ctx.beforeSelect();
+          return frozenContext(input);
+        },
+      );
+      const base = fakeServices();
+      let failOutline = true;
+      const outline = vi.fn<RunStepServices['outline']>(async (owner, input, ctx) => {
+        if (failOutline) throw new StepRefusal('OUTLINE_UNAVAILABLE', 'Outline unavailable');
+        return base.services.outline(owner, input, ctx);
+      });
+      const { services } = fakeServices({
+        learnerContext,
+        validateLearnerContext: async () => undefined,
+        outline,
+      });
+      const run = await start(runInput({ simulatedLearner: 'B' }));
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        state: 'paused',
+        step: 'outline',
+      });
+      const frozen = (await readGenerationRunSteps(run.id)).get('learner-context');
+      expect(frozen).toBeDefined();
+      failOutline = false;
+      await retryGenerationRun(run.id, OWNER, { commandId: 'f65-retry-outline' });
+      expect((await readGenerationRunSteps(run.id)).get('learner-context')).toEqual(frozen);
+      expect(await drive(run.id, services)).toBe('waiting');
+      expect(learnerContext).toHaveBeenCalledTimes(1);
+      expect(outline).toHaveBeenCalledTimes(2);
+      expect((await readGenerationRun(run.id, OWNER))!.outline!.learnerContext).toEqual(frozen);
+    });
+
+    it('pauses an unknown selection after lease takeover and only selects again after explicit retry', async () => {
+      const blocked = gate();
+      const calling = gate();
+      let selections = 0;
+      const learnerContext = vi.fn<NonNullable<RunStepServices['learnerContext']>>(
+        async (_owner, input, ctx) => {
+          await ctx.beforeSelect();
+          selections++;
+          if (selections === 1) {
+            calling.release();
+            await blocked.promise;
+          }
+          return frozenContext(input);
+        },
+      );
+      const { services, calls } = fakeServices({
+        learnerContext,
+        validateLearnerContext: async () => undefined,
+      });
+      const run = await start(runInput({ simulatedLearner: 'B' }));
+      const firstClaim = (await claim(run.id, 'f65-dying'))!;
+      const firstExecution = executeGenerationRun(firstClaim, {
+        services,
+        signal: new AbortController().signal,
+      });
+      await calling.promise;
+      await pool.query('UPDATE generation_runs SET lease_heartbeat_at=0 WHERE id=$1', [run.id]);
+      const takeover = (await claim(run.id, 'f65-takeover', 1))!;
+      expect(takeover.takeover).toBe(true);
+      expect(
+        await executeGenerationRun(takeover, { services, signal: new AbortController().signal }),
+      ).toBe('paused');
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        state: 'paused',
+        step: 'learner-context',
+        error: { errorCode: 'LEARNER_CONTEXT_CALL_UNKNOWN' },
+      });
+      expect(learnerContext).toHaveBeenCalledTimes(1);
+      expect(calls.outline).toHaveLength(0);
+      blocked.release();
+      expect(await firstExecution).toBe('interrupted');
+      await retryGenerationRun(run.id, OWNER, { commandId: 'f65-retry-unknown' });
+      expect((await readGenerationRunSteps(run.id)).has('learner-context:calling')).toBe(false);
+      expect(await drive(run.id, services)).toBe('waiting');
+      expect(learnerContext).toHaveBeenCalledTimes(2);
+      expect(calls.outline).toHaveLength(1);
+    });
+
+    it.each(['before', 'after'] as const)(
+      'bounds a never-resolving source recheck %s outline and reuses the frozen context on retry',
+      async (timing) => {
+        const deadline = Object.getOwnPropertyDescriptor(
+          STEP_DEADLINES_MS,
+          'learnerContextRecheck',
+        )!;
+        Object.defineProperty(STEP_DEADLINES_MS, 'learnerContextRecheck', {
+          ...deadline,
+          value: 20,
+        });
+        try {
+          let validations = 0;
+          let hang = true;
+          let hungSignal: AbortSignal | undefined;
+          const learnerContext = vi.fn<NonNullable<RunStepServices['learnerContext']>>(
+            async (_owner, input, ctx) => {
+              await ctx.beforeSelect();
+              return frozenContext(input);
+            },
+          );
+          const validateLearnerContext: NonNullable<
+            RunStepServices['validateLearnerContext']
+          > = async (_owner, _context, ctx) => {
+            validations++;
+            if (hang && validations === (timing === 'before' ? 1 : 2)) {
+              hungSignal = ctx.signal;
+              await new Promise<void>(() => undefined);
+            }
+          };
+          const { services, calls } = fakeServices({ learnerContext, validateLearnerContext });
+          const run = await start(runInput({ simulatedLearner: 'B' }));
+          expect(await drive(run.id, services)).toBe('paused');
+          expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+            state: 'paused',
+            step: 'outline',
+            outline: null,
+            error: { message: 'learner-context-recheck did not finish within 0.02 s' },
+          });
+          expect(hungSignal?.aborted).toBe(true);
+          expect(calls.outline).toHaveLength(timing === 'before' ? 0 : 1);
+          const steps = await readGenerationRunSteps(run.id);
+          const frozen = steps.get('learner-context');
+          expect(frozen).toBeDefined();
+          expect(steps.has('outline')).toBe(false);
+          expect(await eventTypes(run.id)).not.toContain('outline_ready');
+          hang = false;
+          await retryGenerationRun(run.id, OWNER, {
+            commandId: `f65-retry-recheck-timeout-${timing}`,
+          });
+          expect((await readGenerationRunSteps(run.id)).get('learner-context')).toEqual(frozen);
+          expect(await drive(run.id, services)).toBe('waiting');
+          expect(learnerContext).toHaveBeenCalledTimes(1);
+          expect((await readGenerationRun(run.id, OWNER))!.outline!.learnerContext).toEqual(frozen);
+        } finally {
+          Object.defineProperty(STEP_DEADLINES_MS, 'learnerContextRecheck', deadline);
+        }
+      },
+    );
+
+    it.each(['before', 'after'] as const)(
+      'pauses when a selected source is invalid %s outline and explicitly reselects on retry',
+      async (timing) => {
+        let selections = 0;
+        let validations = 0;
+        let invalid = true;
+        const learnerContext = vi.fn<NonNullable<RunStepServices['learnerContext']>>(
+          async (_owner, input, ctx) => {
+            await ctx.beforeSelect();
+            return frozenContext(input, ++selections);
+          },
+        );
+        const validateLearnerContext: NonNullable<
+          RunStepServices['validateLearnerContext']
+        > = async () => {
+          validations++;
+          if (invalid && validations === (timing === 'before' ? 1 : 2))
+            throw new PreclassLearnerContextError('LEARNER_MEMORY_RECHECK_REQUIRED');
+        };
+        const { services, calls } = fakeServices({ learnerContext, validateLearnerContext });
+        const run = await start(runInput({ simulatedLearner: 'B' }));
+        expect(await drive(run.id, services)).toBe('paused');
+        expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+          state: 'paused',
+          step: 'outline',
+          error: { errorCode: 'LEARNER_MEMORY_RECHECK_REQUIRED' },
+          outline: null,
+        });
+        expect(calls.outline).toHaveLength(timing === 'before' ? 0 : 1);
+        expect((await readGenerationRunSteps(run.id)).has('learner-context')).toBe(true);
+        invalid = false;
+        await retryGenerationRun(run.id, OWNER, { commandId: `f65-retry-invalid-${timing}` });
+        const resetSteps = await readGenerationRunSteps(run.id);
+        expect(resetSteps.has('learner-context')).toBe(false);
+        expect(resetSteps.has('learner-context:calling')).toBe(false);
+        expect(resetSteps.has('research')).toBe(true);
+        expect(await drive(run.id, services)).toBe('waiting');
+        expect(learnerContext).toHaveBeenCalledTimes(2);
+        expect(
+          (await readGenerationRun(run.id, OWNER))!.outline!.learnerContext!.memoryRevision,
+        ).toBe(2);
+      },
+    );
   });
 
   describe('a countdown outline', () => {

@@ -107,6 +107,10 @@ import {
 } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
+import {
+  SimulatedLearnerSelect,
+  type SimulatedLearnerChoice,
+} from '@/components/generation/simulated-learner-select';
 import { ProBadge } from '@/components/workbench/ProBadge';
 import { arrivedByProSwap, startProSwap } from '@/lib/workbench/pro-swap';
 import {
@@ -131,12 +135,14 @@ interface FormState {
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
+  simulatedLearner: SimulatedLearnerChoice;
 }
 
 const initialFormState: FormState = {
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
+  simulatedLearner: '',
 };
 
 function HomePage() {
@@ -530,7 +536,13 @@ function HomePage() {
   const showPendingRuns = !isSearching && currentFolderId === undefined;
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+      ...((field === 'interactiveMode' || field === 'vocationalTestMode') && value
+        ? { simulatedLearner: '' as const }
+        : {}),
+    }));
     try {
       if (field === 'interactiveMode')
         localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
@@ -589,6 +601,7 @@ function HomePage() {
         materialIds,
         interactive: form.vocationalTestMode ? true : form.interactiveMode,
         taskEngine: form.vocationalTestMode,
+        ...(form.simulatedLearner ? { simulatedLearner: form.simulatedLearner } : {}),
         capabilities,
       });
       router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
@@ -816,6 +829,13 @@ function HomePage() {
               onChange={(e) => updateForm('requirement', e.target.value)}
               onKeyDown={handleKeyDown}
               rows={4}
+            />
+
+            <SimulatedLearnerSelect
+              value={form.simulatedLearner}
+              onChange={(value) => updateForm('simulatedLearner', value)}
+              unsupported={form.interactiveMode || form.vocationalTestMode}
+              disabled={preparingGenerate}
             />
 
             {/* Toolbar row */}

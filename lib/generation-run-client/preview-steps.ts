@@ -13,6 +13,7 @@ import type { RunView } from './types';
 
 export type PreviewStepId =
   | 'web-search'
+  | 'learner-context'
   | 'outline'
   | 'agent-generation'
   | 'slide-content'
@@ -22,9 +23,11 @@ export type PreviewStepId =
 export function previewStepIds(input: {
   webSearch: boolean;
   autoAgents: boolean;
+  learnerContext?: boolean;
 }): PreviewStepId[] {
   return [
     ...(input.webSearch ? (['web-search'] as const) : []),
+    ...(input.learnerContext ? (['learner-context'] as const) : []),
     'outline',
     ...(input.autoAgents ? (['agent-generation'] as const) : []),
     'slide-content',
@@ -37,6 +40,7 @@ function stepOfRun(view: Pick<RunView, 'state' | 'step'>): PreviewStepId {
   if (view.state === 'awaiting_outline_confirmation') return 'outline';
   // The material analysis (running, or paused at a failure) shows as the step after it.
   if (step === 'material-analysis' || step === 'research') return 'web-search';
+  if (step === 'learner-context') return 'learner-context';
   if (step === 'outline') return 'outline';
   if (step === 'agents') return 'agent-generation';
   const scene = step ? /^scene:\d+:(content|actions|narration)$/.exec(step) : null;
@@ -54,6 +58,7 @@ export function previewStepIndex(
 ): number {
   const order: PreviewStepId[] = [
     'web-search',
+    'learner-context',
     'outline',
     'agent-generation',
     'slide-content',

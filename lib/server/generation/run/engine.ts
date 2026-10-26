@@ -41,7 +41,13 @@
  * owner-bound document store); a worker executing it loses its lease.
  */
 import { isAbortError } from '@openmaic/generation';
+import { createHash } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
+import {
+  PreclassLearnerContextError,
+  type FrozenLearnerContext,
+} from '@/lib/learner-context/contracts';
+import { renderPreclassLearnerContext } from '@/lib/learner-context/render';
 
 import { pickNarratorAgent, resolveServerAgentVoiceOptions } from '@/lib/audio/agent-voice-options';
 import { voiceBindingKey } from '@/lib/audio/unavailable-voice-bindings';
@@ -206,16 +212,18 @@ function topicFromRequirement(requirement: string): string {
 
 /** The learner profile line the actions step reads. */
 export function learnerProfileText(input: GenerationRunInput): string | undefined {
+  if (input.simulatedLearner) return undefined;
   const { nickname, bio } = input.learnerProfile ?? {};
   return nickname || bio ? `Student: ${nickname || 'Unknown'}${bio ? ` — ${bio}` : ''}` : undefined;
 }
 
 /** The requirements the outline and the first scene are generated with. */
 export function runRequirements(input: GenerationRunInput, webSearch: boolean): UserRequirements {
+  const profile = input.simulatedLearner ? undefined : input.learnerProfile;
   return {
     requirement: input.requirement,
-    ...(input.learnerProfile?.nickname ? { userNickname: input.learnerProfile.nickname } : {}),
-    ...(input.learnerProfile?.bio ? { userBio: input.learnerProfile.bio } : {}),
+    ...(profile?.nickname ? { userNickname: profile.nickname } : {}),
+    ...(profile?.bio ? { userBio: profile.bio } : {}),
     ...(webSearch ? { webSearch: true } : {}),
     ...(input.interactive ? { interactiveMode: true } : {}),
     ...(input.taskEngine ? { taskEngineMode: true } : {}),
@@ -599,6 +607,39 @@ export async function executeGenerationRun(
         );
       }
 
+      case 'learner-context': {
+        if (!input.simulatedLearner || !services.learnerContext)
+          throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+        if (output('learner-context:calling'))
+          throw new PreclassLearnerContextError('LEARNER_CONTEXT_CALL_UNKNOWN');
+        const context = await withDeadline(
+          stepId,
+          STEP_DEADLINES_MS.learnerContext,
+          signal,
+          (callSignal) =>
+            services.learnerContext!(
+              owner,
+              {
+                student: input.simulatedLearner!,
+                task: input.requirement,
+                content: {
+                  pdfText: output<MaterialOutput>('material-analysis')?.pdfText,
+                  researchContext: output<ResearchOutput>('research')?.context,
+                },
+              },
+              {
+                log,
+                signal: callSignal,
+                beforeSelect: () =>
+                  commit({
+                    step: { id: 'learner-context:calling', output: { started: true } },
+                  }),
+              },
+            ),
+        );
+        return done(context);
+      }
+
       case 'outline':
         return runOutlineStep(stepId);
 
@@ -711,6 +752,31 @@ export async function executeGenerationRun(
   const runOutlineStep = async (stepId: string): Promise<StepCommit> => {
     const research = output<ResearchOutput>('research');
     const pdfText = output<MaterialOutput>('material-analysis')?.pdfText;
+    const context = input.simulatedLearner
+      ? output<FrozenLearnerContext>('learner-context')
+      : undefined;
+    if (input.simulatedLearner) {
+      const digest = (value: unknown) =>
+        createHash('sha256').update(JSON.stringify(value)).digest('hex');
+      if (
+        !context ||
+        !services.validateLearnerContext ||
+        context.schemaVersion !== 'learner-context.v1' ||
+        context.student !== input.simulatedLearner ||
+        context.taskDigest !== digest(input.requirement) ||
+        context.contentDigest !==
+          digest({ pdfText: pdfText ?? '', researchContext: research?.context ?? '' })
+      )
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+      await withDeadline(
+        'learner-context-recheck',
+        STEP_DEADLINES_MS.learnerContextRecheck,
+        signal,
+        (callSignal) =>
+          services.validateLearnerContext!(owner, context, { log, signal: callSignal }),
+      );
+    }
+    const contextText = context ? renderPreclassLearnerContext(context) : '';
     // Outline items reach subscribers while the model writes: each is
     // appended (fenced) in order, and the final commit waits for them.
     let appending: Promise<unknown> = Promise.resolve();
@@ -759,6 +825,7 @@ export async function executeGenerationRun(
             ...(pdfText ? { pdfText } : {}),
             ...materialImages(),
             ...(research?.context ? { researchContext: research.context } : {}),
+            ...(contextText ? { learnerContext: contextText } : {}),
           },
           { log, signal: callSignal, emit },
         ),
@@ -767,6 +834,14 @@ export async function executeGenerationRun(
       await appending;
     }
     if (appendFailure) throw appendFailure;
+    if (context)
+      await withDeadline(
+        'learner-context-recheck',
+        STEP_DEADLINES_MS.learnerContextRecheck,
+        signal,
+        (callSignal) =>
+          services.validateLearnerContext!(owner, context, { log, signal: callSignal }),
+      );
     // The outline in the normal form a confirmation takes, so the outline
     // as generated is always confirmable unchanged.
     const normalized = normalizeSceneOutlines(result.outlines);
@@ -777,6 +852,7 @@ export async function executeGenerationRun(
       languageDirective: result.languageDirective,
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
       taskEngineMode: result.taskEngineMode,
+      ...(context ? { learnerContext: context } : {}),
     };
     // The run waits for confirmation holding no worker, unless its caller
     // asked for the outline to be confirmed with it. A `countdown` run (as the

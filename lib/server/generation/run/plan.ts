@@ -22,6 +22,7 @@ export type SceneStepKind = 'content' | 'actions' | 'narration';
 export type RunStep =
   | { id: 'material-analysis'; kind: 'material-analysis' }
   | { id: 'research'; kind: 'research' }
+  | { id: 'learner-context'; kind: 'learner-context' }
   | { id: 'outline'; kind: 'outline' }
   | { id: 'agents'; kind: 'agents' }
   | { id: string; kind: SceneStepKind; sceneIndex: number };
@@ -34,7 +35,13 @@ export function sceneStepId(sceneIndex: number, kind: SceneStepKind): string {
 
 /** The step a step id names, or null for an id no plan produces. */
 export function parseStepId(id: string): RunStep | null {
-  if (id === 'material-analysis' || id === 'research' || id === 'outline' || id === 'agents') {
+  if (
+    id === 'material-analysis' ||
+    id === 'research' ||
+    id === 'learner-context' ||
+    id === 'outline' ||
+    id === 'agents'
+  ) {
     return { id, kind: id } as RunStep;
   }
   const match = /^scene:(\d+):(content|actions|narration)$/.exec(id);
@@ -43,12 +50,17 @@ export function parseStepId(id: string): RunStep | null {
 }
 
 /** The steps before the outline is confirmed. */
-export function preparationSteps(input: Pick<GenerationRunInput, 'materialIds'>): RunStep[] {
+export function preparationSteps(
+  input: Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'>,
+): RunStep[] {
   return [
     ...(input.materialIds.length > 0
       ? [{ id: 'material-analysis', kind: 'material-analysis' } as const]
       : []),
     { id: 'research', kind: 'research' },
+    ...(input.simulatedLearner
+      ? [{ id: 'learner-context', kind: 'learner-context' } as const]
+      : []),
     { id: 'outline', kind: 'outline' },
   ];
 }
@@ -66,7 +78,12 @@ export function generationSteps(sceneCount: number): RunStep[] {
 
 /** The state a run is in while `step` runs. */
 export function phaseOfStep(step: RunStep): ExecutableRunState {
-  if (step.kind === 'material-analysis' || step.kind === 'research') return 'preparing';
+  if (
+    step.kind === 'material-analysis' ||
+    step.kind === 'research' ||
+    step.kind === 'learner-context'
+  )
+    return 'preparing';
   if (step.kind === 'outline') return 'outlining';
   return 'generating';
 }
@@ -85,7 +102,7 @@ export type RunAdvance =
  */
 export function advanceRun(input: {
   state: GenerationRunState;
-  runInput: Pick<GenerationRunInput, 'materialIds'>;
+  runInput: Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'>;
   completed: ReadonlySet<string>;
   sceneCount: number;
 }): RunAdvance {

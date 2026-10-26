@@ -7,6 +7,16 @@
  * its own step outputs and checks the inputs each step received.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { callLLM } from '@/lib/ai/llm';
+import {
+  PreclassLearnerContextError,
+  type FrozenLearnerContext,
+  type SimulatedLearnerId,
+} from '@/lib/learner-context/contracts';
+import {
+  assertPreclassContextCurrent,
+  buildPreclassLearnerContext,
+} from '@/lib/server/preclass-learner-context';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
@@ -185,6 +195,20 @@ export interface RunStepServices {
     input: { query: string; pdfText?: string },
     ctx: StepContext,
   ): Promise<ResearchResult | null>;
+  learnerContext?(
+    ownerId: string,
+    input: {
+      student: SimulatedLearnerId;
+      task: string;
+      content: { pdfText?: string; researchContext?: string };
+    },
+    ctx: StepContext & { beforeSelect: () => Promise<void> },
+  ): Promise<FrozenLearnerContext>;
+  validateLearnerContext?(
+    ownerId: string,
+    context: FrozenLearnerContext,
+    ctx: StepContext,
+  ): Promise<void>;
   outline(
     ownerId: string,
     input: Omit<OutlineInput, 'model'>,
@@ -450,6 +474,66 @@ export const defaultRunStepServices: RunStepServices = {
         resolveVisionImages: ownerVisionImages(ownerId, ctx.log),
       },
     );
+  },
+
+  async learnerContext(ownerId, input, ctx) {
+    try {
+      return await buildPreclassLearnerContext(input, {
+        select: async (prompt) => {
+          let model: ResolvedModel;
+          try {
+            model = await stageModel(ownerId, 'scene-outlines-stream');
+          } catch {
+            throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_FAILED');
+          }
+          const outputBudget = 2000;
+          // UTF-8 bytes conservatively bound tokens; never truncate source material silently.
+          if (
+            (model.modelInfo?.contextWindow !== undefined &&
+              prompt.inputBytes + outputBudget + 1024 > model.modelInfo.contextWindow) ||
+            (model.modelInfo?.outputWindow !== undefined &&
+              model.modelInfo.outputWindow < outputBudget)
+          ) {
+            throw new PreclassLearnerContextError('LEARNER_CONTEXT_INPUT_CAPACITY_EXCEEDED');
+          }
+          await ctx.beforeSelect();
+          try {
+            const result = await callLLM(
+              {
+                model: model.model,
+                system: prompt.system,
+                prompt: prompt.user,
+                maxOutputTokens: outputBudget,
+                maxRetries: 0,
+                abortSignal: ctx.signal,
+              },
+              'f65-learner-context',
+              { retries: 0 },
+              model.thinkingConfig,
+              { enabled: false, serverManaged: model.serverManaged },
+            );
+            if (result.finishReason !== 'stop')
+              throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_INVALID');
+            return result.text;
+          } catch (error) {
+            if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+            throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_FAILED');
+          }
+        },
+      });
+    } catch (error) {
+      if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+      throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+    }
+  },
+
+  async validateLearnerContext(_ownerId, context, ctx) {
+    try {
+      await assertPreclassContextCurrent(context);
+    } catch (error) {
+      if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+      throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+    }
   },
 
   async agentProfiles(ownerId, input, ctx) {

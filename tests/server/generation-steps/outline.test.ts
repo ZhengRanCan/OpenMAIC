@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildOutlinePrompt } from '@openmaic/generation';
 
 import { StepAbortedError } from '@/lib/server/generation/steps/context';
 import {
@@ -68,6 +69,8 @@ function stepContext(events: OutlineEvent[], signal?: AbortSignal) {
 }
 
 describe('outline step', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   beforeEach(() => {
     vi.resetModules();
     mocks.streamLLM.mockReset();
@@ -101,6 +104,57 @@ describe('outline step', () => {
       ],
     });
     expect(mocks.capabilities).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps requests without Learner Context identical to the package prompt', async () => {
+    streams(OUTLINE_TEXT);
+    await generateOutlines({ ...body, model }, stepContext([]));
+    const original = buildOutlinePrompt(body.requirements);
+    expect(mocks.streamLLM.mock.calls[0]![0]).toMatchObject({
+      system: original.system,
+      prompt: original.user,
+    });
+    expect(original.user).not.toContain('## Learner Context');
+  });
+
+  it('sends the original selected record and conditions in the classic model request', async () => {
+    streams(OUTLINE_TEXT);
+    const learnerContext = '经历：有公式提示时完成密度题。\n条件：提供了单位换算表。';
+    const requirements = {
+      ...body.requirements,
+      userNickname: 'Browser nickname',
+      userBio: 'Browser bio',
+    };
+    await generateOutlines({ ...body, requirements, learnerContext, model }, stepContext([]));
+    const request = mocks.streamLLM.mock.calls[0]![0] as { system: string; prompt: string };
+    expect(request.prompt).toBe(buildOutlinePrompt(requirements, { learnerContext }).user);
+    expect(request.prompt).toContain('## Learner Context');
+    expect(request.prompt.endsWith(learnerContext)).toBe(true);
+    expect(request.prompt).not.toContain('## Student Profile');
+    expect(request.prompt).not.toContain('Browser nickname');
+    expect(request.prompt).not.toContain('Browser bio');
+    expect(requirements.userBio).toBe('Browser bio');
+  });
+
+  it.each([
+    { mode: { interactiveMode: true }, vocational: 'false' },
+    { mode: { taskEngineMode: true }, vocational: 'true' },
+    { mode: { taskEngineMode: true }, vocational: 'false' },
+  ])('rejects Context before calling the model for %j', async ({ mode, vocational }) => {
+    vi.stubEnv('OPENMAIC_ENABLE_VOCATIONAL', vocational);
+    await expect(
+      generateOutlines(
+        {
+          ...body,
+          requirements: { ...body.requirements, ...mode },
+          learnerContext: 'A simulated record',
+          model,
+        },
+        stepContext([]),
+      ),
+    ).rejects.toThrow('Learner Context is only supported for classic outline generation');
+    expect(mocks.streamLLM).not.toHaveBeenCalled();
+    expect(mocks.capabilities).not.toHaveBeenCalled();
   });
 
   it('retries an empty answer, reporting each retry, and then fails with the last error', async () => {

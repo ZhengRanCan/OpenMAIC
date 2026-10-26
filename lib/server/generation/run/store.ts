@@ -1518,6 +1518,28 @@ export async function retryGenerationRun(
       if (run.step === 'material-analysis') {
         await restartFailedRunMaterialExtractionsIn(tx, run.owner_id, run.input.materialIds);
       }
+      // Only an explicit retry authorizes another selection attempt after a
+      // provider invocation was started but no durable selection was committed.
+      if (run.step === 'learner-context') {
+        await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=$2', [
+          runId,
+          'learner-context:calling',
+        ]);
+      }
+      // A known-invalid dependency needs a fresh selection, rather than endlessly
+      // retrying the same frozen input. Ordinary outline retries keep it.
+      if (
+        run.step === 'outline' &&
+        run.input.simulatedLearner &&
+        ['LEARNER_MEMORY_SOURCE_INVALID', 'LEARNER_MEMORY_RECHECK_REQUIRED'].includes(
+          run.error?.errorCode ?? '',
+        )
+      ) {
+        await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=ANY($2)', [
+          runId,
+          ['learner-context', 'learner-context:calling'],
+        ]);
+      }
       // A run paused before it chose a step resumes where it was executing.
       const state = run.step
         ? stateForRetry(run.step)

@@ -109,6 +109,32 @@ describe('preview steps of a run', () => {
     expect(at('generating', 'scene:0:narration')).toBe('actions');
     expect(at('paused', 'scene:0:content')).toBe('slide-content');
   });
+
+  it('shows the selected student’s Memory preparation between research and outline', () => {
+    const withMemory = previewStepIds({ webSearch: true, autoAgents: false, learnerContext: true });
+    expect(withMemory).toEqual([
+      'web-search',
+      'learner-context',
+      'outline',
+      'slide-content',
+      'actions',
+    ]);
+    expect(
+      withMemory[previewStepIndex({ state: 'preparing', step: 'learner-context' }, withMemory)],
+    ).toBe('learner-context');
+    expect(
+      withMemory[previewStepIndex({ state: 'paused', step: 'learner-context' }, withMemory)],
+    ).toBe('learner-context');
+    const withoutSearch = previewStepIds({
+      webSearch: false,
+      autoAgents: false,
+      learnerContext: true,
+    });
+    expect(
+      withoutSearch[previewStepIndex({ state: 'preparing', step: 'research' }, withoutSearch)],
+    ).toBe('learner-context');
+    expect(steps).not.toContain('learner-context');
+  });
 });
 
 describe('the classroom of a run course', () => {

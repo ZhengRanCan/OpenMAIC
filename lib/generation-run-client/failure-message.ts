@@ -33,6 +33,26 @@ export function runFailureText(
   failure: Pick<GenerationRunFailure, 'step' | 'message' | 'errorCode' | 'statusCode'>,
 ): FailureText {
   const step = failure.step ?? '';
+  const learnerFailureKeys: Record<string, string> = {
+    LEARNER_MEMORY_UNAVAILABLE: 'generation.learnerMemoryUnavailable',
+    LEARNER_MEMORY_RECHECK_REQUIRED: 'generation.learnerMemoryRecheckRequired',
+    LEARNER_MEMORY_SOURCE_INVALID: 'generation.learnerMemorySourceInvalid',
+    LEARNER_CONTEXT_INVALID: 'generation.learnerContextInvalid',
+    LEARNER_CONTEXT_SELECTION_INVALID: 'generation.learnerContextInvalid',
+    LEARNER_CONTEXT_INPUT_CAPACITY_EXCEEDED: 'generation.learnerContextInvalid',
+    LEARNER_CONTEXT_SELECTION_FAILED: 'generation.learnerContextInvalid',
+    LEARNER_CONTEXT_CALL_UNKNOWN: 'generation.learnerContextCallUnknown',
+  };
+  const learnerKey =
+    failure.errorCode && Object.hasOwn(learnerFailureKeys, failure.errorCode)
+      ? learnerFailureKeys[failure.errorCode]
+      : undefined;
+  if (learnerKey) return { key: learnerKey };
+  if (step === 'learner-context') {
+    return failure.message
+      ? { text: failure.message }
+      : { key: 'generation.learnerContextInvalid' };
+  }
   if (step === 'material-analysis') return { key: 'generation.courseMaterialParseFailed' };
   if (step === 'research') {
     return failure.message ? { text: failure.message } : { key: 'generation.webSearchFailed' };

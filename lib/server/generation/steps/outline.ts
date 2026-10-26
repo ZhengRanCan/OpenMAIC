@@ -301,6 +301,8 @@ export interface OutlineInput {
   pdfImages?: PdfImage[];
   imageMapping?: ImageMapping;
   researchContext?: string;
+  /** Selected simulated learning records; separate from requirements and browser profile. */
+  learnerContext?: string;
   agents?: AgentInfo[];
   /** The scene-outlines-stream stage's model. */
   model: StepLanguageModel;
@@ -358,6 +360,12 @@ async function prepareOutline(
 ): Promise<PreparedOutline> {
   const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, model } = input;
   const { modelInfo, modelString } = model;
+  if (
+    input.learnerContext?.trim() &&
+    (requirements.interactiveMode || requirements.taskEngineMode)
+  ) {
+    throw new Error('Learner Context is only supported for classic outline generation');
+  }
 
   // Build user profile string for language inference context
   const userProfileText =
@@ -479,6 +487,7 @@ async function prepareOutline(
     videoGenerationEnabled,
     researchContext,
     teacherContext,
+    learnerContext: input.learnerContext,
   });
 
   if (taskEngineMode || interactiveMode) {

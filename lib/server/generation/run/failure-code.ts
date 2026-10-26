@@ -16,6 +16,9 @@ export interface RunFailureCode {
 }
 
 export function runFailureCode(error: unknown): RunFailureCode {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  if (typeof code === 'string' && /^LEARNER_(?:MEMORY|CONTEXT)_[A-Z_]+$/.test(code))
+    return { errorCode: code };
   if (error instanceof ModelConfigurationError || error instanceof WebSearchConfigError) {
     return { errorCode: error.code };
   }

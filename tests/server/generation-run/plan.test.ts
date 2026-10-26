@@ -27,6 +27,38 @@ describe('generation run plan', () => {
     ]);
   });
 
+  it.each(['A', 'B', 'C'] as const)(
+    'prepares simulated learner %s Context after research and before outline',
+    (simulatedLearner) => {
+      expect(preparationSteps({ ...noMaterials, simulatedLearner }).map((step) => step.id)).toEqual(
+        ['research', 'learner-context', 'outline'],
+      );
+      expect(
+        preparationSteps({ ...withMaterials, simulatedLearner }).map((step) => step.id),
+      ).toEqual(['material-analysis', 'research', 'learner-context', 'outline']);
+    },
+  );
+
+  it('keeps Context in preparing and resumes outline only after its Context checkpoint', () => {
+    const runInput = { ...noMaterials, simulatedLearner: 'B' as const };
+    const completed = new Set(['research']);
+    expect(advanceRun({ state: 'preparing', runInput, completed, sceneCount: 0 })).toEqual({
+      kind: 'step',
+      step: { id: 'learner-context', kind: 'learner-context' },
+      state: 'preparing',
+    });
+    completed.add('learner-context');
+    expect(advanceRun({ state: 'preparing', runInput, completed, sceneCount: 0 })).toEqual({
+      kind: 'step',
+      step: { id: 'outline', kind: 'outline' },
+      state: 'outlining',
+    });
+    completed.add('outline');
+    expect(advanceRun({ state: 'outlining', runInput, completed, sceneCount: 0 })).toEqual({
+      kind: 'await-outline-confirmation',
+    });
+  });
+
   it('generates agents, then content → actions → narration (with the append) scene by scene', () => {
     expect(generationSteps(2).map((step) => step.id)).toEqual([
       'agents',
@@ -108,6 +140,7 @@ describe('generation run plan', () => {
   it('retries a paused step in its own phase', () => {
     expect(stateForRetry('material-analysis')).toBe('preparing');
     expect(stateForRetry('research')).toBe('preparing');
+    expect(stateForRetry('learner-context')).toBe('preparing');
     expect(stateForRetry('outline')).toBe('outlining');
     expect(stateForRetry('agents')).toBe('generating');
     expect(stateForRetry(sceneStepId(3, 'narration'))).toBe('generating');
@@ -115,12 +148,20 @@ describe('generation run plan', () => {
   });
 
   it('parses the step ids it produces, and nothing else', () => {
-    for (const step of [...preparationSteps(withMaterials), ...generationSteps(2)]) {
+    for (const step of [
+      ...preparationSteps({ ...withMaterials, simulatedLearner: 'B' }),
+      ...generationSteps(2),
+    ]) {
       expect(parseStepId(step.id)).toEqual(step);
       expect(phaseOfStep(step)).toBe(stateForRetry(step.id));
     }
     expect(parseStepId('scene:1:render')).toBeNull();
     expect(parseStepId('scene:1:append')).toBeNull();
     expect(parseStepId('stage')).toBeNull();
+    expect(parseStepId('learner-context:B')).toBeNull();
+    expect(parseStepId('learner-context')).toEqual({
+      id: 'learner-context',
+      kind: 'learner-context',
+    });
   });
 });

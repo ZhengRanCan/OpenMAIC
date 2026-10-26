@@ -97,8 +97,19 @@ function GenerationPreviewContent() {
     const ids = previewStepIds({
       webSearch: !!capabilities.webSearch,
       autoAgents: view.input.agents.mode === 'auto',
+      learnerContext: !!view.input.simulatedLearner,
     });
-    return ids.map((id) => ALL_STEPS.find((step) => step.id === id)!);
+    return ids.map((id) =>
+      id === 'learner-context'
+        ? {
+            id,
+            title: 'generation.preparingLearnerContext',
+            description: 'generation.preparingLearnerContextDesc',
+            icon: Bot,
+            type: 'analysis' as const,
+          }
+        : ALL_STEPS.find((step) => step.id === id)!,
+    );
   }, [view, capabilities.webSearch]);
   const currentStepIndex = view
     ? previewStepIndex(
@@ -112,6 +123,44 @@ function GenerationPreviewContent() {
     !!view && (view.state === 'preparing' || view.state === 'outlining') && !view.outline;
   // The run confirms its own outline at its deadline unless the learner holds it.
   const outlineCountdown = view?.input.outlineReview === 'countdown';
+  const learnerContext = view?.outline?.learnerContext;
+  const learnerContextSummary = learnerContext ? (
+    <div className="rounded-md border border-muted bg-muted/30 px-4 py-3 text-left text-sm">
+      <p>
+        {t('generation.learnerContextSummary', {
+          learner: learnerContext.student,
+          count: learnerContext.selected.length,
+        })}
+      </p>
+      {learnerContext.status === 'empty' && (
+        <p className="mt-1 text-muted-foreground">{t('generation.learnerContextEmpty')}</p>
+      )}
+      {learnerContext.status === 'no_relevant' && (
+        <p className="mt-1 text-muted-foreground">{t('generation.learnerContextNoRelevant')}</p>
+      )}
+      {learnerContext.selected.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {t('generation.learnerContextViewSelection')}
+          </summary>
+          <ul className="mt-2 list-disc space-y-2 pl-5 text-muted-foreground">
+            {learnerContext.selected.map((piece) => (
+              <li key={piece.pieceId}>
+                <p>{piece.text}</p>
+                {piece.conditions.length > 0 && (
+                  <p className="mt-1 text-xs">
+                    {t('generation.learnerContextConditions', {
+                      conditions: piece.conditions.join('; '),
+                    })}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  ) : null;
 
   const sendConfirm = async (edits: SceneOutline[] | null) => {
     if (!view?.outline) return;
@@ -399,6 +448,8 @@ function GenerationPreviewContent() {
               </div>
             )}
 
+            {learnerContextSummary}
+
             <OutlinesEditor
               outlines={editorOutlines}
               onChange={handleOutlinesChange}
@@ -443,6 +494,7 @@ function GenerationPreviewContent() {
       </motion.div>
 
       <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
+        {learnerContextSummary}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
