@@ -101,7 +101,7 @@ vi.mock('@/lib/server/usage-storage', () => ({
 
 const BASELINE_RUN = 'run-VJ9hDi6uen8-maAA';
 const FIXED_ROOT = path.resolve(
-  '../docs/log/artifacts/F66/quiz-generation-mvp-2026-10-27/batch-002',
+  '../docs/log/artifacts/F66/quiz-generation-mvp-2026-10-27/history-repeat-001',
 );
 const mode = process.env.F66_QUIZ_GENERATION_MODE;
 const LANGUAGE_DIRECTIVE = '使用简体中文。';
@@ -110,12 +110,17 @@ const task: QuizMemoryTask = {
     '为初二学生生成密度与单位换算的2道练习题，允许单选题和简答题，难度中等。题目应给出必要数据；简答题可要求说明理由或计算步骤。保留答案或参考要点、解析及简答评分要求。',
   courseTitle: '密度与单位换算',
   outline: {
-    id: 'f66-density-units-quiz',
+    id: 'f66-historical-example-collision',
     type: 'quiz',
     order: 1,
     title: '密度与单位换算练习',
     description: '考查密度、质量和体积的关系，以及计算时单位的一致性。',
-    keyPoints: ['密度、质量与体积的关系', '质量和体积单位换算', '用单位核对计算结果'],
+    // Derived from the saved UI outline's copied examples. Keep this collision
+    // while excluding unrelated rubric/type inconsistencies from the probe.
+    keyPoints: [
+      '第1题（单选）：给出物体质量与体积（如m=54g，V=20cm³），考查密度计算以及g/cm³与kg/m³的换算。',
+      '第2题（简答）：给出必要数据（如某金属块质量0.54kg、体积200cm³），要求写出关键计算步骤或换算理由。',
+    ],
     teachingObjective: '在给定情境中正确使用密度关系并说明单位换算依据。',
     quizConfig: { questionCount: 2, difficulty: 'medium', questionTypes: ['single', 'text'] },
   },
@@ -286,7 +291,7 @@ async function nativePrompt(context?: QuizGenerationContext) {
   return captured;
 }
 
-describe.skipIf(!mode)('F66 explicit fixed-Quiz A/B generation', () => {
+describe.skipIf(!mode)('F66 explicit historical-example collision A/B generation', () => {
   it('prepares or executes the three-call one-attempt batch', { timeout: 300_000 }, async () => {
     const muted = ['log', 'info', 'warn', 'error', 'debug'].map((key) =>
       vi.spyOn(console, key as 'log').mockImplementation(() => undefined),
@@ -414,7 +419,7 @@ describe.skipIf(!mode)('F66 explicit fixed-Quiz A/B generation', () => {
       const emptyPrompt = await nativePrompt();
       const codeFiles = productionFingerprints();
       const common = {
-        version: 'f66-quiz-generation.v2',
+        version: 'f66-quiz-generation.history-repeat.v1',
         referenceRunId: BASELINE_RUN,
         ownerDigest: sha(owner),
         workspaceDigest: sha(workspace),
