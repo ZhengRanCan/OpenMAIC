@@ -1,5 +1,5 @@
 /**
- * Opt-in, two-phase F65 A/C outline observation. Default test runs perform no IO.
+ * Opt-in, two-phase F65 outline observations. Default test bodies perform no IO.
  * Parent supplies TEST_LOAD_LOCAL_ENV=1, DATABASE_URL, MEMORY_DATABASE_URL and:
  * F65_OUTLINE_COMPARISON_MODE=prepare|live, F65_OUTLINE_COMPARISON_DIR=<fixed artifact root>.
  * Each live identity is attempted once. Removing attempt markers is not a retry mechanism.
@@ -146,8 +146,15 @@ vi.mock('@/lib/server/usage-storage', () => ({
 }));
 
 const BASELINE_RUN = 'run-VJ9hDi6uen8-maAA';
+const scenario = process.env.F65_OUTLINE_COMPARISON_SCENARIO ?? 'density-ac';
+const preferenceConflict = scenario === 'math-preference-conflict';
+const students: ReadonlyArray<'A' | 'C'> = preferenceConflict ? ['C'] : ['A', 'C'];
+const conflictTask =
+  '为初二学生生成一节简短数学课，主题是一元一次方程。教学顺序明确为先讲规则，再举例。只需1页讲解和1个包含1道题的Quiz场景，不要生成图片、视频或音频。';
 const FIXED_ROOT = path.resolve(
-  '../docs/log/artifacts/F65/outline-comparison-2026-10-27/batch-003',
+  preferenceConflict
+    ? '../docs/log/artifacts/F65/preference-conflict-2026-10-27/batch-001'
+    : '../docs/log/artifacts/F65/outline-comparison-2026-10-27/batch-003',
 );
 const BASELINE_MANIFEST = path.resolve(
   '../docs/log/artifacts/F65/simulated-context-mvp-2026-10-26/live-one-001/manifest.json',
@@ -176,6 +183,7 @@ function numericUsage(value: unknown): unknown {
 
 interface Manifest {
   version: 'f65-outline-comparison.v1';
+  scenario: string;
   referenceRunId: string;
   ownerDigest: string;
   workspaceDigest: string;
@@ -322,6 +330,7 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
     }
     try {
       requireCondition(mode === 'prepare' || mode === 'live', 'F65_MODE_INVALID');
+      requireCondition(scenario === 'density-ac' || preferenceConflict, 'F65_SCENARIO_INVALID');
       requireCondition(process.env.TEST_LOAD_LOCAL_ENV === '1', 'F65_LOCAL_ENV_OPT_IN_REQUIRED');
       root = path.resolve(process.env.F65_OUTLINE_COMPARISON_DIR ?? '');
       requireCondition(root === FIXED_ROOT, 'F65_ARTIFACT_ROOT_MISMATCH');
@@ -390,11 +399,13 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
         outputWindow: resolved.modelInfo?.outputWindow ?? null,
         endpointDigest: sha(resolved.baseUrl ?? ''),
       };
+      const task = preferenceConflict ? conflictTask : baseline.requirement;
       const inputs = Object.fromEntries(
         (['A', 'C'] as const).map((student) => [
           student,
           {
             ...structuredClone(baseline),
+            requirement: task,
             simulatedLearner: student,
             outlineReview: 'wait' as const,
           },
@@ -408,10 +419,11 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
       });
       const common = {
         version: 'f65-outline-comparison.v1' as const,
+        scenario,
         referenceRunId: BASELINE_RUN,
         ownerDigest: sha(owner),
         workspaceDigest: sha(workspace),
-        taskDigest: sha(baseline.requirement),
+        taskDigest: sha(task),
         inputDigest: digest(baseline),
         memoryDigest: digest(beforeMemory),
         codeDigest: digest(codeFiles),
@@ -429,7 +441,7 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
         let selectionPrompt: PreclassSelectionPrompt | undefined;
         let calls = 0;
         const emptyContext = await buildPreclassLearnerContext(
-          { student: 'A', task: baseline.requirement, content: {} },
+          { student: 'A', task, content: {} },
           {
             select: async () => {
               throw new Error('F65_A_MUST_SKIP_SELECTION');
@@ -441,7 +453,7 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
           'F65_A_NOT_EMPTY',
         );
         await buildPreclassLearnerContext(
-          { student: 'C', task: baseline.requirement, content: {} },
+          { student: 'C', task, content: {} },
           {
             select: async (prompt) => {
               selectionPrompt = prompt;
@@ -471,7 +483,12 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
           },
           observationBudget: {
             modelCallsDuringPrepare: 0,
-            identities: { A: { selection: 0, outline: 1 }, C: { selection: 1, outline: 1 } },
+            identities: Object.fromEntries(
+              students.map((student) => [
+                student,
+                { selection: student === 'A' ? 0 : 1, outline: 1 },
+              ]),
+            ),
             selectionMaxOutputTokens: 2000,
             outlineMaxOutputTokens: 4096,
             sdkMaxRetries: 0,
@@ -481,8 +498,9 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
             originalOutlineMaxOutputTokens: resolved.modelInfo?.outputWindow ?? null,
             originalOutlineSdkMaxRetries: 2,
             strictCausalComparisonWithB: false,
-            comparisonLimit:
-              'A/C use the unchanged production prompts with a harness-only 4096-token outline ceiling and zero transport retries; B used the native outputWindow ceiling. This is an observation, not a strictly paired causal experiment.',
+            comparisonLimit: preferenceConflict
+              ? 'One actual C mathematics task; current instruction conflicts with existing mathematics preference. Evaluate final outline order regardless of whether the selector includes the preference. No full class or causal benefit claim.'
+              : 'A/C use the unchanged production prompts with a harness-only 4096-token outline ceiling and zero transport retries; B used the native outputWindow ceiling. This is an observation, not a strictly paired causal experiment.',
             productionPromptChanged: false,
           },
         };
@@ -494,6 +512,7 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
       );
       for (const key of [
         'version',
+        'scenario',
         'referenceRunId',
         'ownerDigest',
         'workspaceDigest',
@@ -535,7 +554,7 @@ describe.skipIf(!mode)('F65 explicit A/C outline comparison', () => {
       const batchAbort = new AbortController();
       const batchTimer = setTimeout(() => batchAbort.abort(), 240000);
       try {
-        for (const student of ['A', 'C'] as const) {
+        for (const student of students) {
           requireCondition(
             digest(await memorySnapshot(memoryUrl)) === manifest.memoryDigest,
             'F65_MEMORY_CHANGED_BEFORE_CASE',
