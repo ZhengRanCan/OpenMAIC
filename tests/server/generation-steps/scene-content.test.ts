@@ -108,4 +108,19 @@ describe('scene content step', () => {
       message: 'Failed to generate content: Leaves',
     });
   });
+
+  it('passes learner context only for quiz content', async () => {
+    const quizLearnerContext = { task: 'current quiz', learner: 'historical conditions' };
+    const ctx = { log: testLogger(), resolveVisionImages: mocks.resolveVisionImagesStub };
+    await generateSceneContent({ ...input(), quizLearnerContext }, ctx);
+    expect(mocks.generateSceneContent.mock.calls[0][2]).not.toHaveProperty('quizLearnerContext');
+    mocks.generateSceneContent.mockClear();
+    await generateSceneContent(
+      { ...input(), outline: { ...outline, type: 'quiz' }, quizLearnerContext },
+      ctx,
+    );
+    expect(mocks.generateSceneContent.mock.calls[0][2].quizLearnerContext).toEqual(
+      quizLearnerContext,
+    );
+  });
 });

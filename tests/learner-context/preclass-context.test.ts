@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { emptySnapshot, versionSource, type MemoryPiece } from '@/lib/learner-memory/contracts';
 import { projectMemory } from '@/lib/learner-memory/read';
 import {
@@ -69,6 +70,41 @@ const selectedReply = JSON.stringify({
 });
 
 describe('preclass learner context binding', () => {
+  it('preserves the accepted F65 prompt bytes and frozen object structure', async () => {
+    const select = vi.fn().mockResolvedValue(selectedReply);
+    const context = await buildPreclassLearnerContext(input, {
+      read: async () => fixture(),
+      select,
+    });
+    const prompt = select.mock.calls[0][0];
+    expect(createHash('sha256').update(prompt.system).digest('hex')).toBe(
+      'ecabdb7660de17884c8924912dc80f1656d975d5c2ba26d3b059bc4f70388683',
+    );
+    expect(prompt.user).toBe(
+      '{"task":"本次用密度题练习单位换算","content":{"pdfText":"密度与质量","researchContext":"课程提供的材料摘录"},"memory":[{"pieceId":"piece:density","text":"在公式与换算提示下完成密度计算。\\n尚无独立解题记录。","formation":"synthesis","conditions":["仅限本次具体题目"],"sources":[{"kind":"quiz_evidence","refs":["quiz:density:attempt-1"],"sourceNature":"synthetic","conditions":["题目提供公式与单位换算提示"]}]}]}',
+    );
+    expect(prompt.inputBytes).toBe(Buffer.byteLength(prompt.system + prompt.user, 'utf8'));
+    expect(Object.keys(context)).toEqual([
+      'schemaVersion',
+      'promptVersion',
+      'student',
+      'memoryRevision',
+      'taskDigest',
+      'contentDigest',
+      'status',
+      'selected',
+    ]);
+    expect(context).toMatchObject({
+      schemaVersion: 'learner-context.v1',
+      promptVersion: 'learner-context-selection.v1',
+      student: 'B',
+      memoryRevision: 3,
+      status: 'ready',
+      taskDigest: 'c7a68e07dacfb664fad59d91ba053041c317fe5e1336dc4cdf3a062d08aa9539',
+      contentDigest: '2eb6cba5854301876b46cb8324068df0f53674e8d3c67edc28aa662ba0ddd0a3',
+    });
+  });
+
   it('uses formal sections, freezes original text and full sources, and minimizes model projections', async () => {
     const view = fixture();
     // Audit-only text must not become a candidate even if it exists in snapshot/usable.pieces.

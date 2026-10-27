@@ -7,7 +7,6 @@
  * its own step outputs and checks the inputs each step received.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
-import { callLLM } from '@/lib/ai/llm';
 import {
   PreclassLearnerContextError,
   type FrozenLearnerContext,
@@ -17,6 +16,12 @@ import {
   assertPreclassContextCurrent,
   buildPreclassLearnerContext,
 } from '@/lib/server/preclass-learner-context';
+import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
+import {
+  assertQuizContextCurrent,
+  buildQuizLearnerContext,
+} from '@/lib/server/quiz-learner-context';
+import { invokeMemorySelectionModel } from '@/lib/server/learner-memory-selection-model';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
@@ -207,6 +212,16 @@ export interface RunStepServices {
   validateLearnerContext?(
     ownerId: string,
     context: FrozenLearnerContext,
+    ctx: StepContext,
+  ): Promise<void>;
+  quizLearnerContext?(
+    ownerId: string,
+    input: Parameters<typeof buildQuizLearnerContext>[0],
+    ctx: StepContext & { beforeSelect: () => Promise<void> },
+  ): Promise<FrozenQuizLearnerContext>;
+  validateQuizLearnerContext?(
+    ownerId: string,
+    context: FrozenQuizLearnerContext,
     ctx: StepContext,
   ): Promise<void>;
   outline(
@@ -486,39 +501,13 @@ export const defaultRunStepServices: RunStepServices = {
           } catch {
             throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_FAILED');
           }
-          const outputBudget = 2000;
-          // UTF-8 bytes conservatively bound tokens; never truncate source material silently.
-          if (
-            (model.modelInfo?.contextWindow !== undefined &&
-              prompt.inputBytes + outputBudget + 1024 > model.modelInfo.contextWindow) ||
-            (model.modelInfo?.outputWindow !== undefined &&
-              model.modelInfo.outputWindow < outputBudget)
-          ) {
-            throw new PreclassLearnerContextError('LEARNER_CONTEXT_INPUT_CAPACITY_EXCEEDED');
-          }
-          await ctx.beforeSelect();
-          try {
-            const result = await callLLM(
-              {
-                model: model.model,
-                system: prompt.system,
-                prompt: prompt.user,
-                maxOutputTokens: outputBudget,
-                maxRetries: 0,
-                abortSignal: ctx.signal,
-              },
-              'f65-learner-context',
-              { retries: 0 },
-              model.thinkingConfig,
-              { enabled: false, serverManaged: model.serverManaged },
-            );
-            if (result.finishReason !== 'stop')
-              throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_INVALID');
-            return result.text;
-          } catch (error) {
-            if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
-            throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_FAILED');
-          }
+          return invokeMemorySelectionModel({
+            resolvedModel: model,
+            usageLabel: 'f65-learner-context',
+            prompt,
+            beforeSelect: ctx.beforeSelect,
+            signal: ctx.signal,
+          });
         },
       });
     } catch (error) {
@@ -530,6 +519,40 @@ export const defaultRunStepServices: RunStepServices = {
   async validateLearnerContext(_ownerId, context, ctx) {
     try {
       await assertPreclassContextCurrent(context);
+    } catch (error) {
+      if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+      throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+    }
+  },
+
+  async quizLearnerContext(ownerId, input, ctx) {
+    try {
+      return await buildQuizLearnerContext(input, {
+        select: async (prompt) => {
+          let model: ResolvedModel;
+          try {
+            model = await stageModel(ownerId, 'scene-content:quiz');
+          } catch {
+            throw new PreclassLearnerContextError('LEARNER_CONTEXT_SELECTION_FAILED');
+          }
+          return invokeMemorySelectionModel({
+            resolvedModel: model,
+            usageLabel: 'f66-quiz-learner-context',
+            prompt,
+            beforeSelect: ctx.beforeSelect,
+            signal: ctx.signal,
+          });
+        },
+      });
+    } catch (error) {
+      if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+      throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+    }
+  },
+
+  async validateQuizLearnerContext(_ownerId, context, ctx) {
+    try {
+      await assertQuizContextCurrent(context);
     } catch (error) {
       if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
       throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptySnapshot } from '@/lib/learner-memory/contracts';
+import { readSimulatedLearnerMemory } from '@/lib/server/simulated-learner-memory';
+import type { SimulatedLearnerId } from '@/lib/learner-context/contracts';
 import {
   assertPreclassContextCurrent,
   buildPreclassLearnerContext,
@@ -30,7 +32,7 @@ vi.mock('@openmaic/storage/server/reference', () => ({
   },
 }));
 
-describe('preclass default formal Memory reader', () => {
+describe('shared simulated formal Memory reader and F65 compatibility', () => {
   const previousUrl = process.env.MEMORY_DATABASE_URL;
   const previousAppUrl = process.env.DATABASE_URL;
 
@@ -98,6 +100,27 @@ describe('preclass default formal Memory reader', () => {
     ).rejects.toMatchObject({ code: 'LEARNER_MEMORY_UNAVAILABLE' });
     expect(database.pool).not.toHaveBeenCalled();
     expect(database.query).not.toHaveBeenCalled();
+  });
+
+  it('exposes the same formal view directly without invoking a task or selector', async () => {
+    const view = await readSimulatedLearnerMemory('B');
+    expect(view.scope).toEqual({ namespace: 'f67-test:simulated-memory-v1', learnerKey: 'sim-b' });
+    expect(view.sections).toEqual({
+      background: [],
+      goals: [],
+      teaching_requirements: [],
+      learning_experiences: [],
+    });
+    expect(view.maintenancePending).toBe(false);
+    expect(database.end).toHaveBeenCalledTimes(1);
+    expect(database.query.mock.calls[0][1]).toEqual(['f67-test:simulated-memory-v1', 'sim-b']);
+  });
+
+  it('rejects an arbitrary simulated identity before connecting', async () => {
+    await expect(readSimulatedLearnerMemory('other' as SimulatedLearnerId)).rejects.toMatchObject({
+      code: 'UNKNOWN_SIMULATED_STUDENT',
+    });
+    expect(database.pool).not.toHaveBeenCalled();
   });
 
   it('closes a pool on a read failure without reading seeds or initializing a schema', async () => {

@@ -16,6 +16,7 @@ type Assert<T extends true> = T;
 type _SceneContentKeys = Assert<
   Equal<
     keyof SceneContentOptions,
+    | 'quizLearnerContext'
     | 'assignedImages'
     | 'imageMapping'
     | 'visionEnabled'

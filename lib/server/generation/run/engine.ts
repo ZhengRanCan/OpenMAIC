@@ -48,6 +48,12 @@ import {
   type FrozenLearnerContext,
 } from '@/lib/learner-context/contracts';
 import { renderPreclassLearnerContext } from '@/lib/learner-context/render';
+import type {
+  FrozenQuizLearnerContext,
+  QuizMemoryTask,
+} from '@/lib/learner-context/quiz-contracts';
+import { renderQuizLearnerContext } from '@/lib/learner-context/quiz-render';
+import { quizTaskDigest } from '@/lib/server/quiz-learner-context';
 
 import { pickNarratorAgent, resolveServerAgentVoiceOptions } from '@/lib/audio/agent-voice-options';
 import { voiceBindingKey } from '@/lib/audio/unavailable-voice-bindings';
@@ -449,6 +455,99 @@ export async function executeGenerationRun(
   };
 
   // ── Scene content, possibly generated ahead ──
+  const prepareQuizContext = async (
+    sceneIndex: number,
+    contentSignal: AbortSignal,
+  ): Promise<{ task: QuizMemoryTask; context: FrozenQuizLearnerContext } | undefined> => {
+    const confirmed = outline();
+    const item = confirmed.outlines[sceneIndex]!;
+    if (!input.simulatedLearner || item.type !== 'quiz') return undefined;
+    if (!services.validateQuizLearnerContext)
+      throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+    const key = `scene:${sceneIndex}`;
+    const checkpointId = `${key}:quiz-context`;
+    const task: QuizMemoryTask = {
+      requirement: input.requirement,
+      ...(confirmed.courseTitle ? { courseTitle: confirmed.courseTitle } : {}),
+      outline: item,
+    };
+    let context =
+      output<FrozenQuizLearnerContext>(checkpointId) ?? confirmed.quizLearnerContexts?.[key];
+    const assertBinding = (value: FrozenQuizLearnerContext) => {
+      if (
+        value.schemaVersion !== 'quiz-learner-context.v1' ||
+        value.promptVersion !== 'quiz-memory-selection.v1' ||
+        value.student !== input.simulatedLearner ||
+        value.sceneIndex !== sceneIndex ||
+        value.outlineId !== item.id ||
+        value.taskDigest !== quizTaskDigest(task)
+      )
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+    };
+    if (!context) {
+      if (output(`${checkpointId}:calling`))
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_CALL_UNKNOWN');
+      if (!services.quizLearnerContext)
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+      context = await withDeadline(
+        checkpointId,
+        STEP_DEADLINES_MS.quizLearnerContext,
+        contentSignal,
+        (callSignal) =>
+          services.quizLearnerContext!(
+            owner,
+            { student: input.simulatedLearner!, sceneIndex, task },
+            {
+              log,
+              signal: callSignal,
+              beforeSelect: async () => {
+                callSignal.throwIfAborted();
+                await commit({
+                  step: {
+                    id: `${checkpointId}:calling`,
+                    output: { started: true, taskDigest: quizTaskDigest(task) },
+                  },
+                });
+                callSignal.throwIfAborted();
+              },
+            },
+          ),
+      );
+      contentSignal.throwIfAborted();
+      assertBinding(context);
+      await commit({
+        step: { id: checkpointId, output: context },
+        quizLearnerContext: { sceneIndex, context },
+      });
+    }
+    assertBinding(context);
+    return { task, context };
+  };
+
+  const recheckQuizContext = async (
+    context: FrozenQuizLearnerContext,
+    contentSignal: AbortSignal,
+  ) => {
+    try {
+      await withDeadline(
+        `scene:${context.sceneIndex}:quiz-context-recheck`,
+        STEP_DEADLINES_MS.quizLearnerContextRecheck,
+        contentSignal,
+        (callSignal) =>
+          services.validateQuizLearnerContext!(owner, context, { log, signal: callSignal }),
+      );
+    } catch (error) {
+      if (contentSignal.aborted) throw error;
+      // A dependency failure is not a content provider failure. Preserve its
+      // recovery code, but refuse the native route's automatic content retries.
+      const failure =
+        error instanceof PreclassLearnerContextError
+          ? error
+          : new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+      throw Object.assign(failure, { httpStatus: 400 });
+    }
+  };
+
   const generateContent = async (
     sceneIndex: number,
     contentSignal: AbortSignal,
@@ -456,28 +555,41 @@ export async function executeGenerationRun(
     const { outlines, languageDirective, taskEngineMode } = outline();
     const stepId = sceneStepId(sceneIndex, 'content');
     const research = output<ResearchOutput>('research');
+    // Outside the native content retry loop: one successful choice is frozen
+    // for this Quiz, including when this call is a parallel prewarm.
+    const quiz = await prepareQuizContext(sceneIndex, contentSignal);
+    const quizLearnerContext = quiz && renderQuizLearnerContext(quiz.task, quiz.context);
     return withRouteRetry(
-      () =>
-        withDeadline(stepId, STEP_DEADLINES_MS.sceneContent, contentSignal, (callSignal) =>
-          services.sceneContent(
-            owner,
-            {
-              outline: outlines[sceneIndex]!,
-              ...materialImages(),
-              agents: agents().agents.agents,
-              languageDirective,
-              // The first scene is generated with the session's requirements;
-              // the classroom generates the rest with the task-engine flag only.
-              requirements:
-                sceneIndex === 0
-                  ? runRequirements(input, research?.webSearch === true)
-                  : taskEngineMode
-                    ? ({ taskEngineMode: true } as UserRequirements)
-                    : undefined,
-            },
-            { log, signal: callSignal },
-          ),
-        ),
+      async () => {
+        if (quiz) await recheckQuizContext(quiz.context, contentSignal);
+        const generated = await withDeadline(
+          stepId,
+          STEP_DEADLINES_MS.sceneContent,
+          contentSignal,
+          (callSignal) =>
+            services.sceneContent(
+              owner,
+              {
+                outline: outlines[sceneIndex]!,
+                ...materialImages(),
+                agents: agents().agents.agents,
+                languageDirective,
+                ...(quizLearnerContext ? { quizLearnerContext } : {}),
+                // The first scene is generated with the session's requirements;
+                // the classroom generates the rest with the task-engine flag only.
+                requirements:
+                  sceneIndex === 0
+                    ? runRequirements(input, research?.webSearch === true)
+                    : taskEngineMode
+                      ? ({ taskEngineMode: true } as UserRequirements)
+                      : undefined,
+              },
+              { log, signal: callSignal },
+            ),
+        );
+        if (quiz) await recheckQuizContext(quiz.context, contentSignal);
+        return generated;
+      },
       retryOptions(stepId, sceneIndex, 500, contentSignal),
     );
   };

@@ -27,6 +27,10 @@ import { startOwnerMaterialExtractions } from '@/lib/persistence/owner-materials
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { notifyDurableAgentEvent } from '@/lib/server/agent-runtime/event-notify-bus';
+import { PreclassLearnerContextError } from '@/lib/learner-context/contracts';
+import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
+import { canonicalJson } from '@/lib/learner-memory/contracts';
+import { quizTaskDigest } from '@/lib/server/quiz-learner-context';
 import type { SceneOutline } from '@/lib/types/generation';
 
 import { generationRunConfig } from './config';
@@ -241,6 +245,8 @@ export interface StepCommit {
   step?: { id: string; output: unknown };
   /** More checkpoints recorded with it (media the same write placed). */
   steps?: Array<{ id: string; output: unknown }>;
+  /** Merge one Quiz input into the currently locked outline, never a worker's stale copy. */
+  quizLearnerContext?: { sceneIndex: number; context: FrozenQuizLearnerContext };
   patch?: RunPatch;
   events?: NewGenerationRunEvent[];
 }
@@ -985,10 +991,50 @@ export async function commitGenerationRunIn(
 ): Promise<StoredRun> {
   const before = await lockLeased(tx, lease);
   const checkpoints = [...(commit.step ? [commit.step] : []), ...(commit.steps ?? [])];
+  let patch = commit.patch ?? {};
+  if (commit.quizLearnerContext) {
+    const { sceneIndex, context } = commit.quizLearnerContext;
+    const outline = before.outline;
+    const quiz = outline?.outlines[sceneIndex];
+    const key = `scene:${sceneIndex}`;
+    const checkpoint = checkpoints.find((item) => item.id === `${key}:quiz-context`);
+    const previous = outline?.quizLearnerContexts?.[key];
+    if (
+      patch.outline ||
+      !Number.isInteger(sceneIndex) ||
+      sceneIndex < 0 ||
+      !outline ||
+      quiz?.type !== 'quiz' ||
+      !before.input.simulatedLearner ||
+      context.schemaVersion !== 'quiz-learner-context.v1' ||
+      context.promptVersion !== 'quiz-memory-selection.v1' ||
+      context.student !== before.input.simulatedLearner ||
+      context.sceneIndex !== sceneIndex ||
+      context.outlineId !== quiz.id ||
+      context.taskDigest !==
+        quizTaskDigest({
+          requirement: before.input.requirement,
+          ...(outline.courseTitle ? { courseTitle: outline.courseTitle } : {}),
+          outline: quiz,
+        }) ||
+      !checkpoint ||
+      canonicalJson(checkpoint.output) !== canonicalJson(context) ||
+      (previous && canonicalJson(previous) !== canonicalJson(context))
+    ) {
+      throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+    }
+    patch = {
+      ...patch,
+      outline: {
+        ...outline,
+        quizLearnerContexts: { ...outline.quizLearnerContexts, [key]: context },
+      },
+    };
+  }
   for (const checkpoint of checkpoints) {
     await upsertStep(tx, lease.runId, checkpoint);
   }
-  let row = await applyPatch(tx, lease.runId, commit.patch ?? {}, {
+  let row = await applyPatch(tx, lease.runId, patch, {
     resetTakeovers: checkpoints.length > 0,
   });
   const events = [...(commit.events ?? [])];
@@ -1541,6 +1587,33 @@ export async function retryGenerationRun(
         ]);
       }
       // A run paused before it chose a step resumes where it was executing.
+      const quizContentStep = /^scene:(\d+):content$/.exec(run.step ?? '');
+      let retriedOutline: GenerationRunOutline | undefined;
+      if (quizContentStep && run.input.simulatedLearner) {
+        const key = `scene:${Number(quizContentStep[1])}`;
+        // An explicit command may authorize a new call after an unknown or
+        // failed selection. Ordinary content retries keep the frozen input.
+        await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=$2', [
+          runId,
+          `${key}:quiz-context:calling`,
+        ]);
+        if (
+          run.outline &&
+          [
+            'LEARNER_MEMORY_SOURCE_INVALID',
+            'LEARNER_MEMORY_RECHECK_REQUIRED',
+            'LEARNER_CONTEXT_INVALID',
+          ].includes(run.error?.errorCode ?? '')
+        ) {
+          await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=$2', [
+            runId,
+            `${key}:quiz-context`,
+          ]);
+          const contexts = { ...run.outline.quizLearnerContexts };
+          delete contexts[key];
+          retriedOutline = { ...run.outline, quizLearnerContexts: contexts };
+        }
+      }
       const state = run.step
         ? stateForRetry(run.step)
         : (run.error?.resumeState ?? (run.outline ? 'generating' : 'preparing'));
@@ -1550,7 +1623,7 @@ export async function retryGenerationRun(
         // No lease is taken from a worker that holds the run (one generating a
         // paused run's media): it sees the state when it finishes and goes on
         // with the run itself. A run nobody holds is claimable as it is.
-        { state, error: null },
+        { state, error: null, ...(retriedOutline ? { outline: retriedOutline } : {}) },
         { resetTakeovers: true },
       );
       const seq = await insertEvents(tx, runId, [

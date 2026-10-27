@@ -15,6 +15,8 @@ export const STEP_DEADLINES_MS = {
   research: 300_000,
   learnerContext: 60_000,
   learnerContextRecheck: 15_000,
+  quizLearnerContext: 60_000,
+  quizLearnerContextRecheck: 15_000,
   /** The outline, its own stream retries included. */
   outline: 300_000,
   agentProfiles: 120_000,

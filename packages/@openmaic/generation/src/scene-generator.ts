@@ -79,7 +79,14 @@ export interface SceneContentFailure {
   code: SceneContentFailureCode;
 }
 
+export interface QuizGenerationContext {
+  task: string;
+  learner: string;
+}
+
 export interface SceneContentOptions {
+  /** Trusted task-scoped learner background; consumed only by quiz content. */
+  quizLearnerContext?: QuizGenerationContext;
   assignedImages?: PdfImage[];
   imageMapping?: ImageMapping;
   visionEnabled?: boolean;
@@ -298,7 +305,14 @@ export async function generateSceneContent(
         options.onFailure,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
+      return generateQuizContent(
+        outline,
+        aiCall,
+        languageDirective,
+        log,
+        options.onFailure,
+        options.quizLearnerContext,
+      );
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -858,6 +872,7 @@ async function generateQuizContent(
   languageDirective?: string,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
+  learnerContext?: QuizGenerationContext,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -873,6 +888,9 @@ async function generateQuizContent(
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
     languageDirective: languageDirective || '',
+    hasQuizLearnerContext: !!learnerContext,
+    quizTask: learnerContext?.task ?? '',
+    quizLearner: learnerContext?.learner ?? '',
   });
 
   if (!prompts) {

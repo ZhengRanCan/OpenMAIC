@@ -16,6 +16,7 @@ export {
   resolveImageIds,
 } from './scene-generator.js';
 export type {
+  QuizGenerationContext,
   SceneActionsOptions,
   SceneContentFailure,
   SceneContentFailureCode,

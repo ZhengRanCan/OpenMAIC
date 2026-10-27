@@ -12,7 +12,7 @@ import {
   buildVisionUserContent,
   partitionImagesForVision,
 } from '@openmaic/generation';
-import type { AgentInfo } from '@openmaic/generation';
+import type { AgentInfo, QuizGenerationContext } from '@openmaic/generation';
 import type {
   SceneOutline,
   PdfImage,
@@ -51,6 +51,7 @@ const MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES = 3;
 
 export interface SceneContentInput {
   outline: SceneOutline;
+  quizLearnerContext?: QuizGenerationContext;
   pdfImages?: PdfImage[];
   imageMapping?: ImageMapping;
   agents?: AgentInfo[];
@@ -302,6 +303,9 @@ export async function generateSceneContent(
     targetLanguage: input.targetLanguage || undefined,
     userRequirements: requirements,
     allowProceduralSkill: vocationalActive,
+    ...(effectiveOutline.type === 'quiz' && input.quizLearnerContext
+      ? { quizLearnerContext: input.quizLearnerContext }
+      : {}),
     ...(effectiveOutline.type === 'pbl'
       ? {
           pblLoopFallback: (plannerInput) =>

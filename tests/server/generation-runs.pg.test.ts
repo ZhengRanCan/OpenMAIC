@@ -74,6 +74,8 @@ import {
 } from '@/lib/learner-context/contracts';
 import { renderPreclassLearnerContext } from '@/lib/learner-context/render';
 import { versionSource } from '@/lib/learner-memory/contracts';
+import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
+import { quizTaskDigest } from '@/lib/server/quiz-learner-context';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 const TEST_SCHEMA = 'openmaic_generation_runs_test';
@@ -908,6 +910,483 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     );
   });
 
+  describe('F66 Quiz learner context', () => {
+    type QuizInput = Parameters<NonNullable<RunStepServices['quizLearnerContext']>>[1];
+    const quizOutlines: SceneOutline[] = [0, 1].map((index) => ({
+      id: `f66-quiz-${index}`,
+      type: 'quiz',
+      title: `Density ${index + 1}`,
+      description: `Check density task ${index + 1}`,
+      keyPoints: [`density-${index}`],
+      order: index + 1,
+    }));
+
+    function frozenQuiz(input: QuizInput, revision = 3): FrozenQuizLearnerContext {
+      return {
+        schemaVersion: 'quiz-learner-context.v1',
+        promptVersion: 'quiz-memory-selection.v1',
+        student: input.student,
+        sceneIndex: input.sceneIndex,
+        outlineId: input.task.outline.id,
+        taskDigest: quizTaskDigest(input.task),
+        memoryRevision: revision,
+        status: 'ready',
+        selected: [
+          {
+            pieceId: `density-${input.sceneIndex}`,
+            reason: 'The current Quiz checks density.',
+            text: 'Explained density with a provided diagram.',
+            formation: 'synthesis',
+            conditions: ['Only this diagram-assisted response'],
+            supports: [
+              versionSource({
+                id: `sim:B:density:${input.sceneIndex}`,
+                kind: 'quiz_evidence',
+                text: 'Answered using the displayed diagram.',
+                refs: [`quiz:density:${input.sceneIndex}:attempt-1`],
+                conditions: ['Diagram remained visible'],
+                sourceNature: 'synthetic',
+                occurredAt: null,
+                provenance: {
+                  file: 'synthetic-fixture.json',
+                  sha256: 'b'.repeat(64),
+                  pointer: '/source/0',
+                },
+              }),
+            ],
+          },
+        ],
+      };
+    }
+
+    /** Mechanism fakes: Scene actions deliberately remain slide fixtures, not Quiz content acceptance. */
+    function quizServices(overrides: Partial<RunStepServices> = {}) {
+      return fakeServices({
+        research: async () => null,
+        learnerContext: async (_owner, input) => ({
+          schemaVersion: 'learner-context.v1',
+          promptVersion: 'learner-context-selection.v1',
+          student: input.student,
+          taskDigest: createHash('sha256').update(JSON.stringify(input.task)).digest('hex'),
+          contentDigest: createHash('sha256')
+            .update(
+              JSON.stringify({
+                pdfText: input.content.pdfText ?? '',
+                researchContext: input.content.researchContext ?? '',
+              }),
+            )
+            .digest('hex'),
+          memoryRevision: 0,
+          status: 'empty',
+          selected: [],
+        }),
+        validateLearnerContext: async () => undefined,
+        outline: async () => ({
+          outlines: quizOutlines,
+          languageDirective: 'Use English.',
+          courseTitle: 'Density',
+          taskEngineMode: false,
+        }),
+        quizLearnerContext: async (_owner, input, ctx) => {
+          await ctx.beforeSelect();
+          return frozenQuiz(input);
+        },
+        validateQuizLearnerContext: async () => undefined,
+        ...overrides,
+      });
+    }
+
+    async function confirmedQuizRun(
+      services: RunStepServices,
+      input = runInput({ simulatedLearner: 'B' }),
+    ) {
+      const run = await start(input);
+      expect(await drive(run.id, services)).toBe('waiting');
+      await confirm(run.id, OWNER, { commandId: 'f66-confirm', outlineRevision: 1 });
+      return run;
+    }
+
+    it(
+      'atomically merges two concurrent prewarm selections and retains both after compaction',
+      async () => {
+        // The first scene always runs serially. Two later Quiz scenes are
+        // needed to exercise actual prewarm concurrency rather than deadlock
+        // a barrier waiting for a second call that cannot start yet.
+        const prewarmedOutlines = [
+          OUTLINES[0]!,
+          ...quizOutlines.map((quiz, index) => ({ ...quiz, order: index + 2 })),
+        ];
+        const bothSelecting = gate();
+        let arrivals = 0;
+        const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>(
+          async (_owner, input, ctx) => {
+            await ctx.beforeSelect();
+            if (++arrivals === 2) bothSelecting.release();
+            await bothSelecting.promise;
+            return frozenQuiz(input);
+          },
+        );
+        const { services, calls } = quizServices({
+          quizLearnerContext: selector,
+          parallelSceneConcurrency: () => 2,
+          outline: async () => ({
+            outlines: prewarmedOutlines,
+            languageDirective: 'Use English.',
+            courseTitle: 'Density',
+            taskEngineMode: false,
+          }),
+        });
+        const run = await confirmedQuizRun(services);
+        expect(await drive(run.id, services)).toBe('completed');
+        expect(selector).toHaveBeenCalledTimes(2);
+        const contexts = (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts!;
+        expect(Object.keys(contexts).sort()).toEqual(['scene:1', 'scene:2']);
+        for (const index of [1, 2]) {
+          expect(contexts[`scene:${index}`]).toMatchObject({
+            sceneIndex: index,
+            outlineId: prewarmedOutlines[index]!.id,
+          });
+          expect(contexts[`scene:${index}`]!.taskDigest).toBe(
+            quizTaskDigest({
+              requirement: 'Teach photosynthesis',
+              courseTitle: 'Density',
+              outline: prewarmedOutlines[index]!,
+            }),
+          );
+          expect(
+            calls.sceneContent.find((call) => call.outline.id === prewarmedOutlines[index]!.id)!
+              .quizLearnerContext,
+          ).toBeDefined();
+          expect((await readGenerationRunSteps(run.id)).get(`scene:${index}:quiz-context`)).toEqual(
+            contexts[`scene:${index}`],
+          );
+        }
+        await compactFinishedGenerationRuns(0);
+        expect((await readGenerationRunSteps(run.id)).size).toBe(0);
+        expect((await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts).toEqual(
+          contexts,
+        );
+      },
+      SLOW_TEST_MS,
+    );
+
+    it.each(['no-memory', 'non-quiz'] as const)(
+      'does not select or validate for %s generation',
+      async (kind) => {
+        const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>();
+        const validate = vi.fn<NonNullable<RunStepServices['validateQuizLearnerContext']>>();
+        const { services, calls } = quizServices({
+          quizLearnerContext: selector,
+          validateQuizLearnerContext: validate,
+          ...(kind === 'non-quiz'
+            ? {
+                outline: async () => ({
+                  outlines: OUTLINES,
+                  languageDirective: 'Use English.',
+                  courseTitle: 'Plants',
+                  taskEngineMode: false,
+                }),
+              }
+            : {}),
+        });
+        const run = await confirmedQuizRun(
+          services,
+          runInput(kind === 'non-quiz' ? { simulatedLearner: 'B' } : {}),
+        );
+        expect(await drive(run.id, services)).toBe('completed');
+        expect(selector).not.toHaveBeenCalled();
+        expect(validate).not.toHaveBeenCalled();
+        expect(
+          (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts,
+        ).toBeUndefined();
+        for (const call of calls.sceneContent) expect(call.quizLearnerContext).toBeUndefined();
+      },
+    );
+
+    it('reuses a frozen selection for automatic and explicit content retries despite a later Memory revision', async () => {
+      const base = quizServices();
+      let attempts = 0;
+      let permit = false;
+      let revision = 3;
+      const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>(
+        async (_owner, input, ctx) => {
+          await ctx.beforeSelect();
+          return frozenQuiz(input, revision);
+        },
+      );
+      const content = vi.fn<RunStepServices['sceneContent']>(async (owner, input, ctx) => {
+        if (input.outline.id === quizOutlines[0]!.id) {
+          attempts++;
+          if (attempts === 1)
+            throw Object.assign(new Error('temporary content failure'), { statusCode: 503 });
+          if (!permit) throw Object.assign(new Error('content unavailable'), { statusCode: 400 });
+        }
+        return base.services.sceneContent(owner, input, ctx);
+      });
+      const { services } = quizServices({ quizLearnerContext: selector, sceneContent: content });
+      const run = await confirmedQuizRun(services);
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(attempts).toBe(2);
+      expect(selector).toHaveBeenCalledTimes(1);
+      const frozen = (await readGenerationRunSteps(run.id)).get('scene:0:quiz-context');
+      revision = 4; // A new revision alone is not a reason to rerun selection.
+      permit = true;
+      await retryGenerationRun(run.id, OWNER, { commandId: 'f66-content-retry' });
+      expect((await readGenerationRunSteps(run.id)).get('scene:0:quiz-context')).toEqual(frozen);
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(selector.mock.calls.filter(([, input]) => input.sceneIndex === 0)).toHaveLength(1);
+      expect(
+        (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts!['scene:0']!
+          .memoryRevision,
+      ).toBe(3);
+    });
+
+    it('resumes an existing content checkpoint without reselecting or regenerating it', async () => {
+      const base = quizServices();
+      let failActions = true;
+      const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>(
+        base.services.quizLearnerContext!,
+      );
+      const content = vi.fn<RunStepServices['sceneContent']>(base.services.sceneContent);
+      const { services } = quizServices({
+        quizLearnerContext: selector,
+        sceneContent: content,
+        sceneActions: async (owner, input, ctx) => {
+          if (failActions)
+            throw Object.assign(new Error('actions unavailable'), { statusCode: 400 });
+          return base.services.sceneActions(owner, input, ctx);
+        },
+      });
+      const run = await confirmedQuizRun(services);
+      expect(await drive(run.id, services)).toBe('paused');
+      expect((await readGenerationRunSteps(run.id)).has('scene:0:content')).toBe(true);
+      failActions = false;
+      await retryGenerationRun(run.id, OWNER, { commandId: 'f66-actions-retry' });
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(selector.mock.calls.filter(([, input]) => input.sceneIndex === 0)).toHaveLength(1);
+      expect(
+        content.mock.calls.filter(([, input]) => input.outline.id === quizOutlines[0]!.id),
+      ).toHaveLength(1);
+    });
+
+    it('pauses an unknown takeover and explicit retry clears only that Quiz calling marker', async () => {
+      const blocked = gate();
+      const calling = gate();
+      let secondSelections = 0;
+      const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>(
+        async (_owner, input, ctx) => {
+          await ctx.beforeSelect();
+          if (input.sceneIndex === 1 && ++secondSelections === 1) {
+            calling.release();
+            await blocked.promise;
+          }
+          return frozenQuiz(input);
+        },
+      );
+      const { services } = quizServices({ quizLearnerContext: selector });
+      const run = await confirmedQuizRun(services);
+      const first = (await claim(run.id, 'f66-dying'))!;
+      const execution = executeGenerationRun(first, {
+        services,
+        signal: new AbortController().signal,
+      });
+      await calling.promise;
+      const firstContext = (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts![
+        'scene:0'
+      ];
+      await pool.query('UPDATE generation_runs SET lease_heartbeat_at=0 WHERE id=$1', [run.id]);
+      const takeover = (await claim(run.id, 'f66-takeover', 1))!;
+      expect(takeover.takeover).toBe(true);
+      expect(
+        await executeGenerationRun(takeover, { services, signal: new AbortController().signal }),
+      ).toBe('paused');
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        step: 'scene:1:content',
+        error: { errorCode: 'LEARNER_CONTEXT_CALL_UNKNOWN' },
+      });
+      expect(selector).toHaveBeenCalledTimes(2);
+      blocked.release();
+      expect(await execution).toBe('interrupted');
+      await retryGenerationRun(run.id, OWNER, { commandId: 'f66-retry-unknown' });
+      const steps = await readGenerationRunSteps(run.id);
+      expect(steps.has('scene:1:quiz-context:calling')).toBe(false);
+      expect(steps.get('scene:0:quiz-context')).toEqual(firstContext);
+      expect(
+        (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts!['scene:0'],
+      ).toEqual(firstContext);
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(selector).toHaveBeenCalledTimes(3);
+    });
+
+    it.each(['before', 'after'] as const)(
+      'rejects sources invalidated %s content and reselects only the failed Quiz on explicit retry',
+      async (timing) => {
+        const base = quizServices();
+        let invalid = false;
+        let contentCalls = 0;
+        const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>(
+          base.services.quizLearnerContext!,
+        );
+        const { services } = quizServices({
+          quizLearnerContext: selector,
+          validateQuizLearnerContext: async (_owner, context) => {
+            if (invalid && context.sceneIndex === 1)
+              throw new PreclassLearnerContextError('LEARNER_MEMORY_RECHECK_REQUIRED');
+          },
+          sceneContent: async (owner, input, ctx) => {
+            if (input.outline.id === quizOutlines[0]!.id && timing === 'before') invalid = true;
+            if (input.outline.id === quizOutlines[1]!.id) {
+              contentCalls++;
+              if (timing === 'after') invalid = true;
+            }
+            return base.services.sceneContent(owner, input, ctx);
+          },
+        });
+        const run = await confirmedQuizRun(services);
+        expect(await drive(run.id, services)).toBe('paused');
+        expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+          error: { errorCode: 'LEARNER_MEMORY_RECHECK_REQUIRED' },
+        });
+        expect(contentCalls).toBe(timing === 'before' ? 0 : 1);
+        const oldSteps = await readGenerationRunSteps(run.id);
+        expect(oldSteps.has('scene:1:content')).toBe(false);
+        const firstContext = oldSteps.get('scene:0:quiz-context');
+        const stored = (await readGenerationRun(run.id, OWNER))!;
+        expect((await documentStore(OWNER).loadDocument(stored.stageId!))!.scenes).toHaveLength(1);
+        invalid = false;
+        // Retry must leave earlier selections intact but remove the invalid second input.
+        await retryGenerationRun(run.id, OWNER, { commandId: `f66-invalid-${timing}` });
+        const reset = await readGenerationRunSteps(run.id);
+        expect(reset.get('scene:0:quiz-context')).toEqual(firstContext);
+        expect(reset.has('scene:1:quiz-context')).toBe(false);
+        expect(reset.has('scene:1:quiz-context:calling')).toBe(false);
+        expect(
+          (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts!['scene:1'],
+        ).toBeUndefined();
+        // The synthetic invalidation happens once, rather than changing source state on every retry.
+        services.sceneContent = base.services.sceneContent;
+        expect(await drive(run.id, services)).toBe('completed');
+        expect(selector.mock.calls.filter(([, input]) => input.sceneIndex === 0)).toHaveLength(1);
+        expect(selector.mock.calls.filter(([, input]) => input.sceneIndex === 1)).toHaveLength(2);
+      },
+    );
+
+    it.each(['before', 'after'] as const)(
+      'bounds a hung source recheck %s content without persisting content or reselecting',
+      async (timing) => {
+        const deadline = Object.getOwnPropertyDescriptor(
+          STEP_DEADLINES_MS,
+          'quizLearnerContextRecheck',
+        )!;
+        Object.defineProperty(STEP_DEADLINES_MS, 'quizLearnerContextRecheck', {
+          ...deadline,
+          value: 20,
+        });
+        try {
+          const base = quizServices();
+          let checks = 0;
+          let hang = true;
+          let hungSignal: AbortSignal | undefined;
+          const selector = vi.fn<NonNullable<RunStepServices['quizLearnerContext']>>(
+            base.services.quizLearnerContext!,
+          );
+          const { services, calls } = quizServices({
+            quizLearnerContext: selector,
+            validateQuizLearnerContext: async (_owner, context, ctx) => {
+              if (context.sceneIndex !== 0) return;
+              checks++;
+              if (hang && checks === (timing === 'before' ? 1 : 2)) {
+                hungSignal = ctx.signal;
+                await new Promise<void>(() => undefined);
+              }
+            },
+          });
+          const run = await confirmedQuizRun(services);
+          expect(await drive(run.id, services)).toBe('paused');
+          expect(hungSignal?.aborted).toBe(true);
+          expect(calls.sceneContent).toHaveLength(timing === 'before' ? 0 : 1);
+          expect((await readGenerationRunSteps(run.id)).has('scene:0:content')).toBe(false);
+          expect(selector).toHaveBeenCalledTimes(1);
+          const context = (await readGenerationRunSteps(run.id)).get('scene:0:quiz-context');
+          hang = false;
+          await retryGenerationRun(run.id, OWNER, { commandId: `f66-timeout-${timing}` });
+          expect((await readGenerationRunSteps(run.id)).get('scene:0:quiz-context')).toEqual(
+            context,
+          );
+          expect(await drive(run.id, services)).toBe('completed');
+          expect(selector.mock.calls.filter(([, input]) => input.sceneIndex === 0)).toHaveLength(1);
+        } finally {
+          Object.defineProperty(STEP_DEADLINES_MS, 'quizLearnerContextRecheck', deadline);
+        }
+      },
+    );
+
+    it('rejects mismatched task Context and checkpoint commits and fences a stale lease', async () => {
+      const { services } = quizServices();
+      const run = await confirmedQuizRun(services);
+      const first = (await claim(run.id, 'f66-store-first'))!;
+      const context = frozenQuiz({
+        student: 'B',
+        sceneIndex: 0,
+        task: {
+          requirement: 'Teach photosynthesis',
+          courseTitle: 'Density',
+          outline: quizOutlines[0]!,
+        },
+      });
+      for (const invalid of [
+        { ...context, student: 'C' as const },
+        { ...context, sceneIndex: 1 },
+        { ...context, outlineId: quizOutlines[1]!.id },
+        { ...context, taskDigest: 'wrong-task' },
+      ]) {
+        await expect(
+          commitGenerationRun(first.lease, {
+            quizLearnerContext: { sceneIndex: 0, context: invalid },
+            step: { id: 'scene:0:quiz-context', output: invalid },
+          }),
+        ).rejects.toMatchObject({ code: 'LEARNER_CONTEXT_INVALID' });
+      }
+      await expect(
+        commitGenerationRun(first.lease, { quizLearnerContext: { sceneIndex: 0, context } }),
+      ).rejects.toMatchObject({ code: 'LEARNER_CONTEXT_INVALID' });
+      await expect(
+        commitGenerationRun(first.lease, {
+          quizLearnerContext: { sceneIndex: 0, context },
+          step: { id: 'scene:0:quiz-context', output: { ...context, memoryRevision: 99 } },
+        }),
+      ).rejects.toMatchObject({ code: 'LEARNER_CONTEXT_INVALID' });
+      expect((await readGenerationRunSteps(run.id)).has('scene:0:quiz-context')).toBe(false);
+      expect(
+        (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts,
+      ).toBeUndefined();
+      await pool.query('UPDATE generation_runs SET lease_heartbeat_at=0 WHERE id=$1', [run.id]);
+      const takeover = (await claim(run.id, 'f66-store-takeover', 1))!;
+      expect(takeover.takeover).toBe(true);
+      await expect(
+        commitGenerationRun(first.lease, {
+          quizLearnerContext: { sceneIndex: 0, context },
+          step: { id: 'scene:0:quiz-context', output: context },
+        }),
+      ).rejects.toBeInstanceOf(GenerationRunLeaseLostError);
+      await commitGenerationRun(takeover.lease, {
+        quizLearnerContext: { sceneIndex: 0, context },
+        step: { id: 'scene:0:quiz-context', output: context },
+      });
+      expect(
+        (await readGenerationRun(run.id, OWNER))!.outline!.quizLearnerContexts!['scene:0'],
+      ).toEqual(context);
+      const changed = { ...context, memoryRevision: 99 };
+      await expect(
+        commitGenerationRun(takeover.lease, {
+          quizLearnerContext: { sceneIndex: 0, context: changed },
+          step: { id: 'scene:0:quiz-context', output: changed },
+        }),
+      ).rejects.toMatchObject({ code: 'LEARNER_CONTEXT_INVALID' });
+      await discardGenerationRun(run.id, OWNER);
+    });
+  });
+
   describe('a countdown outline', () => {
     async function due(runId: string) {
       await pool.query(
@@ -937,8 +1416,9 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
 
       // Not before its deadline.
       expect(await confirmDueGenerationRunOutlines()).toBe(0);
-      await new Promise((resolve) => setTimeout(resolve, Math.max(0, deadline - Date.now()) + 50));
-      expect(await confirmDueGenerationRunOutlines()).toBe(1);
+      // PostgreSQL owns the deadline. Its clock can differ from the host
+      // running Vitest (for example Docker Desktop on Windows).
+      await expect.poll(() => confirmDueGenerationRunOutlines(), UNTIL).toBe(1);
       const confirmed = (await readGenerationRun(run.id, OWNER))!;
       expect(confirmed.state).toBe('generating');
       expect(confirmed.outlineAutoConfirmAt).toBeUndefined();
