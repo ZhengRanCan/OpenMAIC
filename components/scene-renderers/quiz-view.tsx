@@ -34,6 +34,7 @@ import {
 import type { QuestionResult } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
 import type { QuizAnswers } from '@/lib/quiz/persistence';
+import { QuizLearningStatus } from './quiz-learning-status';
 import type {
   PreparedQuiz,
   PrepareQuizInput,
@@ -1481,6 +1482,9 @@ export function QuizView({ scene, planning }: QuizViewProps) {
                   </p>
                 )}
                 {prepared.review && <TraceScore review={prepared.review} />}
+                {prepared.review && !historical && (
+                  <QuizLearningStatus attemptId={prepared.attemptId} />
+                )}
                 {prepared.previousUsableReview && (
                   <div className="rounded-xl border border-amber-300 p-3 space-y-2">
                     <p className="text-sm">{t('quiz.tracePreviousUsable')}</p>

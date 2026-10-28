@@ -88,6 +88,13 @@ export async function register(): Promise<void> {
   let materialExtractor:
     | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
     | undefined;
+  let quizLearningLoop: { stop: () => Promise<void> } | undefined;
+  try {
+    const { startQuizLearningLoop } = await import('@/lib/server/quiz-learning-loop/runner');
+    quizLearningLoop = startQuizLearningLoop();
+  } catch {
+    console.error('[instrumentation] Quiz learning loop configuration is invalid');
+  }
   try {
     // Course generation runs on the server in every deployment (classic
     // generation is the default product), so its worker does not depend on
@@ -135,6 +142,11 @@ export async function register(): Promise<void> {
     shutdownPromise ??= (async () => {
       // Park sessions before any pool they use is closed. This preserves the
       // last durable entry-tree checkpoint for immediate takeover.
+      try {
+        await quizLearningLoop?.stop();
+      } catch {
+        console.error('[instrumentation] Quiz learning loop drain failed');
+      }
       try {
         await extractionRunner?.stop();
       } catch (error) {

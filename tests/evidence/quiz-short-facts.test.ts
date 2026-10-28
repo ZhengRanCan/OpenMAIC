@@ -19,6 +19,26 @@ import {
   QuizShortFactsService,
 } from '@/lib/server/quiz-short-facts';
 import { SHORT_FACTS_SYSTEM } from '@/lib/evidence/short-facts-system';
+import {
+  claimLearningLoop,
+  checkpointLearningLoopEvidence,
+  enqueueLearningLoop,
+  ensureLearningLoopSchema,
+  finishLearningLoop,
+  markStaleLearningLoopsUnknown,
+} from '@/lib/server/quiz-learning-loop/store';
+import { processLearningLoop } from '@/lib/server/quiz-learning-loop/process';
+import { createLearningLoopAdapter } from '@/lib/server/quiz-learning-loop/adapter';
+import { requestFromStoredAttribution } from '@/lib/server/quiz-learning-loop/attribution';
+import { enqueueReviewedQuiz } from '@/lib/server/quiz-learning-loop/enqueue-reviewed';
+import {
+  activateLearningLoop,
+  discoverReviewedQuizzes,
+} from '@/lib/server/quiz-learning-loop/discovery';
+import { simulatedScope } from '@/lib/learner-memory/simulated-seeds';
+import { retryEvidence } from '@/lib/server/quiz-learning-loop/retry-evidence';
+import { retryMemory } from '@/lib/server/quiz-learning-loop/retry-memory';
+import { buildPreclassLearnerContext } from '@/lib/server/preclass-learner-context';
 
 let f: Awaited<ReturnType<typeof evidenceFixture>>;
 let service: QuizShortFactsService;
@@ -37,6 +57,7 @@ beforeEach(async () => {
     `INSERT INTO generation_runs VALUES('run','learner','stage','{"simulatedLearner":"B"}'::jsonb)`,
   );
   await ensureShortFactsSchema(f.db);
+  await ensureLearningLoopSchema(f.db);
   await ensureMemorySchema(f.db);
   service = new QuizShortFactsService(f.provider.withTransaction);
   memory = new SimulatedMemoryEnvironment(f.provider);
@@ -58,6 +79,494 @@ const request = () => ({
 });
 
 describe('short facts durable handoff', () => {
+  it('requires explicit confirmation to recover an unknown Memory call', async () => {
+    const source = { ...request(), promptVersion: 'selection-v2' as const };
+    const ref = Object.keys((await service.preview(source)).refs)[0];
+    await enqueueLearningLoop(f.db, {
+      owner: source.owner,
+      submission: source.submissionId,
+      attempt: source.attemptId,
+      generationRun: source.generationRunId,
+      attribution: {
+        student: source.student,
+        sourceNature: source.sourceNature,
+        conditions: source.conditions,
+        memoryEnvironmentId: source.memoryEnvironmentId,
+      },
+    });
+    const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'first'));
+    let started!: () => void,
+      release!: () => void,
+      calls = 0;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const adapter = createLearningLoopAdapter({
+      service,
+      memory,
+      resolveRequest: requestFromStoredAttribution,
+      extract: async () => ({
+        text: JSON.stringify({
+          facts: [{ type: 'correct_performance', evidence: '选中正确选项A', refs: [ref] }],
+        }),
+        finishReason: 'stop',
+        model: 'fixture',
+        usage: null,
+      }),
+      updateMemory: async () => {
+        calls++;
+        if (calls === 1) {
+          started();
+          await wait;
+        }
+        return {
+          text: JSON.stringify({
+            status: 'ready',
+            sections: [],
+            pieces: [],
+            retired: [],
+            decisions: [{ source: 'e1', action: 'not_adopt', pieceIds: [], reason: '无需保存' }],
+          }),
+          finishReason: 'stop',
+          model: 'fixture',
+          origin: 'model' as const,
+          usage: null,
+        };
+      },
+    });
+    const running = processLearningLoop(f.db, job!, adapter);
+    await ready;
+    await markStaleLearningLoopsUnknown(f.db, new Date(Date.now() + 60_000));
+    expect(
+      await retryMemory(f.db, service, memory, source.owner, source.attemptId, false),
+    ).toBeNull();
+    expect(await retryMemory(f.db, service, memory, source.owner, source.attemptId, true)).toBe(
+      'queued',
+    );
+    release();
+    await running;
+    const retry = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'second'));
+    await processLearningLoop(f.db, retry!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'completed',
+    );
+    expect(calls).toBe(2);
+  });
+  it('recovers Memory failure without extracting Evidence again', async () => {
+    const source = { ...request(), promptVersion: 'selection-v2' as const };
+    const ref = Object.keys((await service.preview(source)).refs)[0];
+    await enqueueLearningLoop(f.db, {
+      owner: source.owner,
+      submission: source.submissionId,
+      attempt: source.attemptId,
+      generationRun: source.generationRunId,
+      attribution: {
+        student: source.student,
+        sourceNature: source.sourceNature,
+        conditions: source.conditions,
+        memoryEnvironmentId: source.memoryEnvironmentId,
+      },
+    });
+    const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'first'));
+    let factCalls = 0,
+      memoryCalls = 0;
+    const adapter = createLearningLoopAdapter({
+      service,
+      memory,
+      resolveRequest: requestFromStoredAttribution,
+      extract: async () => {
+        factCalls++;
+        return {
+          text: JSON.stringify({
+            facts: [{ type: 'correct_performance', evidence: '选中正确选项A', refs: [ref] }],
+          }),
+          finishReason: 'stop',
+          model: 'fixture',
+          usage: null,
+        };
+      },
+      updateMemory: async () => {
+        memoryCalls++;
+        return {
+          text:
+            memoryCalls === 1
+              ? 'invalid'
+              : JSON.stringify({
+                  status: 'ready',
+                  sections: [],
+                  pieces: [],
+                  retired: [],
+                  decisions: [
+                    { source: 'e1', action: 'not_adopt', pieceIds: [], reason: '无需保存' },
+                  ],
+                }),
+          finishReason: 'stop',
+          model: 'fixture',
+          origin: 'model' as const,
+          usage: null,
+        };
+      },
+    });
+    await processLearningLoop(f.db, job!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'failed',
+    );
+    expect(await retryMemory(f.db, service, memory, 'other', source.attemptId, false)).toBeNull();
+    expect(await retryMemory(f.db, service, memory, source.owner, source.attemptId, false)).toBe(
+      'queued',
+    );
+    const retry = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'second'));
+    await processLearningLoop(f.db, retry!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'completed',
+    );
+    expect(factCalls).toBe(1);
+    expect(memoryCalls).toBe(2);
+  });
+  it('requires an explicit decision before retrying an unknown Evidence call', async () => {
+    const source = { ...request(), promptVersion: 'selection-v2' as const };
+    await enqueueLearningLoop(f.db, {
+      owner: source.owner,
+      submission: source.submissionId,
+      attempt: source.attemptId,
+      generationRun: source.generationRunId,
+      attribution: {
+        student: source.student,
+        sourceNature: source.sourceNature,
+        conditions: source.conditions,
+        memoryEnvironmentId: source.memoryEnvironmentId,
+      },
+    });
+    const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'first'));
+    let calls = 0;
+    const adapter = createLearningLoopAdapter({
+      service,
+      memory,
+      resolveRequest: requestFromStoredAttribution,
+      extract: async () => {
+        calls++;
+        if (calls === 1) throw new Error('connection lost');
+        return { text: '{"facts":[]}', finishReason: 'stop', model: 'fixture', usage: null };
+      },
+      updateMemory: async () => {
+        throw new Error('empty evidence must not invoke Memory');
+      },
+    });
+    await processLearningLoop(f.db, job!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'unknown',
+    );
+    expect(await retryEvidence(f.db, service, source.owner, source.attemptId, false)).toBe(false);
+    expect(calls).toBe(1);
+    expect(await retryEvidence(f.db, service, source.owner, source.attemptId, true)).toBe(true);
+    const retry = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'second'));
+    await processLearningLoop(f.db, retry!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'completed',
+    );
+    expect(calls).toBe(2);
+  });
+  it('recovers a failed Evidence run without changing its source or repeating a completed call', async () => {
+    const source = { ...request(), promptVersion: 'selection-v2' as const };
+    await enqueueLearningLoop(f.db, {
+      owner: source.owner,
+      submission: source.submissionId,
+      attempt: source.attemptId,
+      generationRun: source.generationRunId,
+      attribution: {
+        student: source.student,
+        sourceNature: source.sourceNature,
+        conditions: source.conditions,
+        memoryEnvironmentId: source.memoryEnvironmentId,
+      },
+    });
+    const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'first'));
+    let calls = 0;
+    const adapter = createLearningLoopAdapter({
+      service,
+      memory,
+      resolveRequest: requestFromStoredAttribution,
+      extract: async () => {
+        calls++;
+        return {
+          text: calls === 1 ? 'invalid' : '{"facts":[]}',
+          finishReason: 'stop',
+          model: 'fixture',
+          usage: null,
+        };
+      },
+      updateMemory: async () => {
+        throw new Error('empty evidence must not invoke Memory');
+      },
+    });
+    await processLearningLoop(f.db, job!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'failed',
+    );
+    expect(await retryEvidence(f.db, service, 'other', source.attemptId, false)).toBe(false);
+    expect(await retryEvidence(f.db, service, source.owner, source.attemptId, false)).toBe(true);
+    const retry = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'second'));
+    await processLearningLoop(f.db, retry!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'completed',
+    );
+    expect(calls).toBe(2);
+    expect(await retryEvidence(f.db, service, source.owner, source.attemptId, false)).toBe(false);
+  });
+  it('excludes old reviews at activation and rejects changing source configuration', async () => {
+    const config = {
+      sourceNature: 'proxy' as const,
+      conditions: ['代理已查看参考答案'],
+      memoryEnvironmentId: environmentId,
+    };
+    const review = await f.service.beginReview('learner', f.source.attemptId, {
+      operationId: 'review',
+      submissionId: 'submission',
+      language: 'en-US',
+    });
+    await f.service.finishReview('learner', review, {
+      results: [
+        {
+          questionId: 'q',
+          correct: true,
+          status: 'correct',
+          earned: 2,
+          evaluation: { state: 'normal', method: 'exact-key' },
+        },
+      ],
+      summary: {
+        status: 'complete',
+        usableEarned: 2,
+        usablePossible: 2,
+        quizPossible: 2,
+        unusableQuestionCount: 0,
+      },
+    });
+    await activateLearningLoop(f.provider.withTransaction, config);
+    expect(await discoverReviewedQuizzes(f.provider.withTransaction, config)).toBe(0);
+    await expect(
+      activateLearningLoop(f.provider.withTransaction, { ...config, sourceNature: 'synthetic' }),
+    ).rejects.toThrow('LEARNING_LOOP_CONFIGURATION_CHANGED');
+  });
+  it('only enqueues an authorized simulated run after its review and trace are saved', async () => {
+    const config = {
+      sourceNature: 'proxy' as const,
+      conditions: ['代理已查看参考答案'],
+      memoryEnvironmentId: environmentId,
+    };
+    await activateLearningLoop(f.provider.withTransaction, config);
+    expect(await discoverReviewedQuizzes(f.provider.withTransaction, config)).toBe(0);
+    expect(
+      await enqueueReviewedQuiz(f.provider.withTransaction, 'learner', f.source.attemptId, config),
+    ).toBe('ineligible');
+    expect(
+      await enqueueReviewedQuiz(f.provider.withTransaction, 'other', f.source.attemptId, config),
+    ).toBe('ineligible');
+    const review = await f.service.beginReview('learner', f.source.attemptId, {
+      operationId: 'review',
+      submissionId: 'submission',
+      language: 'en-US',
+    });
+    await f.service.finishReview('learner', review, {
+      results: [
+        {
+          questionId: 'q',
+          correct: true,
+          status: 'correct',
+          earned: 2,
+          evaluation: { state: 'normal', method: 'exact-key' },
+        },
+      ],
+      summary: {
+        status: 'complete',
+        usableEarned: 2,
+        usablePossible: 2,
+        quizPossible: 2,
+        unusableQuestionCount: 0,
+      },
+    });
+    expect(await discoverReviewedQuizzes(f.provider.withTransaction, config)).toBe(1);
+    expect(
+      await enqueueReviewedQuiz(f.provider.withTransaction, 'learner', f.source.attemptId, config),
+    ).toBe('queued');
+    const rows = (await f.db.query('SELECT attribution FROM quiz_learning_loop_jobs')).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].attribution).toEqual({ ...config, student: 'B' });
+  });
+  it('uses the existing Evidence and Memory services in the claimed pipeline', async () => {
+    const source = { ...request(), promptVersion: 'selection-v2' as const };
+    const preview = await service.preview(source);
+    const ref = Object.keys(preview.refs)[0];
+    const config = {
+      sourceNature: source.sourceNature,
+      conditions: source.conditions,
+      memoryEnvironmentId: source.memoryEnvironmentId,
+    };
+    await activateLearningLoop(f.provider.withTransaction, config);
+    const review = await f.service.beginReview('learner', source.attemptId, {
+      operationId: 'review',
+      submissionId: 'submission',
+      language: 'en-US',
+    });
+    await f.service.finishReview('learner', review, {
+      results: [
+        {
+          questionId: 'q',
+          correct: true,
+          status: 'correct',
+          earned: 2,
+          evaluation: { state: 'normal', method: 'exact-key' },
+        },
+      ],
+      summary: {
+        status: 'complete',
+        usableEarned: 2,
+        usablePossible: 2,
+        quizPossible: 2,
+        unusableQuestionCount: 0,
+      },
+    });
+    expect(await discoverReviewedQuizzes(f.provider.withTransaction, config)).toBe(1);
+    await expect(
+      enqueueLearningLoop(f.db, {
+        owner: source.owner,
+        submission: source.submissionId,
+        attempt: source.attemptId,
+        generationRun: source.generationRunId,
+        attribution: {
+          student: source.student,
+          sourceNature: 'synthetic',
+          conditions: source.conditions,
+          memoryEnvironmentId: source.memoryEnvironmentId,
+        },
+      }),
+    ).rejects.toThrow('LEARNING_LOOP_BINDING_CONFLICT');
+    const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'claim'));
+    const adapter = createLearningLoopAdapter({
+      service,
+      memory,
+      resolveRequest: requestFromStoredAttribution,
+      extract: async (system) => {
+        expect(system).toContain('除非作答明确写出计算过程');
+        return {
+          text: JSON.stringify({
+            facts: [{ type: 'correct_performance', evidence: '选中正确选项A', refs: [ref] }],
+          }),
+          finishReason: 'stop',
+          model: 'fixture',
+          usage: null,
+        };
+      },
+      updateMemory: async () => ({
+        text: JSON.stringify({
+          status: 'ready',
+          sections: [],
+          pieces: [],
+          retired: [],
+          decisions: [{ source: 'e1', action: 'not_adopt', pieceIds: [], reason: '无需保存' }],
+        }),
+        finishReason: 'stop',
+        model: 'fixture',
+        origin: 'model',
+        usage: null,
+      }),
+    });
+    await processLearningLoop(f.db, job!, adapter);
+    const row = (await f.db.query('SELECT state,evidence_run_id FROM quiz_learning_loop_jobs'))
+      .rows[0];
+    expect(row.state).toBe('completed');
+    expect((await service.read(source.owner, String(row.evidence_run_id))).state).toBe('completed');
+    const stored = await memory.store.getRun(simulatedScope('B'), `f68:${row.evidence_run_id}`);
+    expect(stored.decisions?.[0].action).toBe('not_adopt');
+    const updated = await memory.read('B');
+    const next = await buildPreclassLearnerContext(
+      { student: 'B', task: '密度单位换算', content: {} },
+      {
+        read: async () => memory.read('B'),
+        select: async () =>
+          JSON.stringify({ selected: [{ pieceId: 'm-density', reason: '本次任务涉及密度换算' }] }),
+      },
+    );
+    expect(next.memoryRevision).toBe(updated.usable.revision);
+    expect(next.selected[0].pieceId).toBe('m-density');
+  });
+  it.each([
+    ['completed', 'completed', [], 'completed', null],
+    ['completed', 'completed', [{ action: 'not_adopt' }], 'completed', null],
+    ['completed', 'completed', [{ action: 'defer' }], 'failed', 'MEMORY_DEFERRED'],
+    ['completed', 'calling', [], 'unknown', 'MEMORY_CALL_UNKNOWN'],
+    ['calling', 'completed', [], 'unknown', 'EVIDENCE_CALL_UNKNOWN'],
+  ])(
+    'records evidence and memory outcomes independently (%s, %s)',
+    async (evidenceState, memoryState, decisions, expectedState, errorCode) => {
+      await enqueueLearningLoop(f.db, {
+        owner: 'learner',
+        submission: 'submission',
+        attempt: f.source.attemptId,
+        generationRun: 'run',
+      });
+      const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'claim'));
+      expect(job).not.toBeNull();
+      let memoryCalls = 0;
+      await processLearningLoop(f.db, job!, {
+        prepare: async () => ({ id: 'evidence-id', state: 'prepared' }),
+        extract: async () => ({ id: 'evidence-id', state: evidenceState }),
+        handoff: async () => {
+          memoryCalls++;
+          return { state: memoryState, decisions };
+        },
+      });
+      const stored = (
+        await f.db.query('SELECT state,error_code,evidence_run_id FROM quiz_learning_loop_jobs')
+      ).rows[0];
+      expect(stored).toEqual({
+        state: expectedState,
+        error_code: errorCode,
+        evidence_run_id: 'evidence-id',
+      });
+      expect(memoryCalls).toBe(evidenceState === 'completed' ? 1 : 0);
+    },
+  );
+  it('deduplicates saved submissions and never automatically reclaims an unknown call', async () => {
+    const item = {
+      owner: 'learner',
+      submission: 'submission',
+      attempt: f.source.attemptId,
+      generationRun: 'run',
+    };
+    await enqueueLearningLoop(f.db, item);
+    await enqueueLearningLoop(f.db, item);
+    await expect(enqueueLearningLoop(f.db, { ...item, generationRun: 'other' })).rejects.toThrow(
+      'LEARNING_LOOP_BINDING_CONFLICT',
+    );
+    const [first, second] = await Promise.all([
+      f.provider.withTransaction((tx) => claimLearningLoop(tx, 'worker-a')),
+      f.provider.withTransaction((tx) => claimLearningLoop(tx, 'worker-b')),
+    ]);
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    const claim = first ?? second!;
+    expect(await checkpointLearningLoopEvidence(f.db, claim, claim.claim_id!, 'evidence-1')).toBe(
+      true,
+    );
+    expect(await checkpointLearningLoopEvidence(f.db, claim, claim.claim_id!, 'different')).toBe(
+      false,
+    );
+    await markStaleLearningLoopsUnknown(f.db, new Date(Date.now() + 60_000));
+    expect(await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'worker-c'))).toBeNull();
+    expect(await finishLearningLoop(f.db, claim, claim.claim_id!, 'completed', null, null)).toBe(
+      false,
+    );
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'unknown',
+    );
+    expect(
+      (await f.db.query('SELECT evidence_run_id FROM quiz_learning_loop_jobs')).rows[0]
+        .evidence_run_id,
+    ).toBe('evidence-1');
+  });
   it('keeps frozen prompt and rejects a mismatched student or owner', async () => {
     expect(createHash('sha256').update(SHORT_FACTS_SYSTEM).digest('hex')).toBe(
       '9f7b97ce6ba2967be7ef670b527420d6a58095e8be0bff6ed58b3c33f9a45006',
@@ -71,6 +580,16 @@ describe('short facts durable handoff', () => {
     const preview = await service.preview(request());
     expect(preview.source.submissionId).toBe('submission');
     expect((await f.db.query('SELECT id FROM f68_short_facts_runs')).rows).toHaveLength(0);
+  });
+  it('persists the selection-boundary prompt for new runs without changing the frozen baseline', async () => {
+    const run = await service.prepare({ ...request(), promptVersion: 'selection-v2' });
+    expect(run.system).toContain('除非作答明确写出计算过程');
+    expect((await service.read('learner', run.id)).system).toBe(run.system);
+    const extracted = await service.extract('learner', run.id, async (system) => {
+      expect(system).toBe(run.system);
+      return { text: '{"facts":[]}', finishReason: 'stop', model: 'test', usage: null };
+    });
+    expect(extracted.state).toBe('completed');
   });
   it.skipIf(!process.env.F68_TEST_DATABASE_URL)(
     'runs the actual CLI preview against PostgreSQL',

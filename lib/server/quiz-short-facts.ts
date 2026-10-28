@@ -2,7 +2,10 @@ import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 import { readPreparedIn } from '@/lib/persistence/quiz-trace';
 import { evidenceDigest } from '@/lib/evidence/context';
 import { projectShortFactsContext } from '@/lib/evidence/short-facts-context';
-import { SHORT_FACTS_SYSTEM } from '@/lib/evidence/short-facts-system';
+import {
+  SHORT_FACTS_SYSTEM,
+  SHORT_FACTS_SYSTEM_SELECTION_V2,
+} from '@/lib/evidence/short-facts-system';
 import {
   SHORT_FACTS_PROTOCOL,
   shortFactSources,
@@ -27,6 +30,7 @@ type Request = {
   retryOf?: string;
   sceneBinding?: 'operator-confirmed';
   memoryEnvironmentId: string;
+  promptVersion?: 'selection-v2';
 };
 type Reply = { text: string; finishReason: string; model: string; usage: unknown };
 type Stored = {
@@ -79,6 +83,7 @@ export class QuizShortFactsService {
     if (
       !['A', 'B', 'C'].includes(request.student) ||
       !['proxy', 'synthetic'].includes(request.sourceNature) ||
+      (request.promptVersion !== undefined && request.promptVersion !== 'selection-v2') ||
       (request.sceneBinding !== undefined && request.sceneBinding !== 'operator-confirmed') ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         request.memoryEnvironmentId ?? '',
@@ -173,7 +178,10 @@ export class QuizShortFactsService {
         id,
         request,
         context,
-        system: SHORT_FACTS_SYSTEM,
+        system:
+          request.promptVersion === 'selection-v2'
+            ? SHORT_FACTS_SYSTEM_SELECTION_V2
+            : SHORT_FACTS_SYSTEM,
         protocol: SHORT_FACTS_PROTOCOL,
         budgets: { maxOutputTokens: 16000, timeoutMs: 180000, retries: 0 },
         state: 'prepared',
@@ -186,7 +194,7 @@ export class QuizShortFactsService {
       if (
         evidenceDigest(stored.request) !== evidenceDigest(request) ||
         stored.context.digest !== context.digest ||
-        stored.system !== SHORT_FACTS_SYSTEM ||
+        stored.system !== value.system ||
         stored.protocol !== SHORT_FACTS_PROTOCOL ||
         evidenceDigest(stored.budgets) !== evidenceDigest(value.budgets)
       )
