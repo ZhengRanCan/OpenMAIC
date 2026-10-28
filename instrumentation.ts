@@ -91,9 +91,10 @@ export async function register(): Promise<void> {
   let quizLearningLoop: { stop: () => Promise<void> } | undefined;
   try {
     const { startQuizLearningLoop } = await import('@/lib/server/quiz-learning-loop/runner');
-    quizLearningLoop = startQuizLearningLoop();
+    quizLearningLoop = await startQuizLearningLoop();
   } catch {
     console.error('[instrumentation] Quiz learning loop configuration is invalid');
+    throw new Error('QUIZ_LEARNING_LOOP_BOOTSTRAP_FAILED');
   }
   try {
     // Course generation runs on the server in every deployment (classic

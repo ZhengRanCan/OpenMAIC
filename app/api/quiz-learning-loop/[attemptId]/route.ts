@@ -6,6 +6,7 @@ import { retryEvidence } from '@/lib/server/quiz-learning-loop/retry-evidence';
 import { retryMemory } from '@/lib/server/quiz-learning-loop/retry-memory';
 import { openSimulatedMemory } from '@/lib/server/simulated-memory';
 import { readSimulatedLearningLoopConfig } from '@/lib/server/quiz-learning-loop/config';
+import { retryUnstartedLearningLoop } from '@/lib/server/quiz-learning-loop/store';
 
 export const runtime = 'nodejs';
 
@@ -34,8 +35,11 @@ export async function GET(req: Request, context: { params: Promise<{ attemptId: 
              AND EXISTS (SELECT 1 FROM quiz_trace_reviews r WHERE r.id=a.current_review_id
                AND r.attempt_id=a.id AND r.result IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM quiz_learning_loop_preexisting_reviews p WHERE p.review_id=r.id))
-             AND EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id=g.id
-               AND s.step_id LIKE 'scene:%:narration' AND s.output->'scene'->>'id'=a.scene_id)) AS eligible`,
+             AND (EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id=g.id
+               AND s.step_id LIKE 'scene:%:narration' AND s.output->'scene'->>'id'=a.scene_id)
+               OR EXISTS (SELECT 1 FROM quiz_learning_scene_bindings b WHERE b.run_id=g.id
+                 AND b.owner_id=a.owner_id AND b.stage_id=a.stage_id AND b.scene_id=a.scene_id
+                 AND b.student=g.input->>'simulatedLearner'))) AS eligible`,
           [principal.ownerId, attemptId],
         );
         if (!eligibility.rows[0]?.eligible) return new Response(null, { status: 204, headers });
@@ -51,7 +55,7 @@ export async function GET(req: Request, context: { params: Promise<{ attemptId: 
   });
 }
 
-/** Only a failure proven to precede every model call can be retried directly. */
+/** The Evidence ID is checkpointed before any model call; absent ID means no call started. */
 export async function POST(req: Request, context: { params: Promise<{ attemptId: string }> }) {
   return withRequestOwner(req, async (principal, headers) => {
     headers.set('cache-control', 'private, no-store');
@@ -63,17 +67,15 @@ export async function POST(req: Request, context: { params: Promise<{ attemptId:
       if (!body || body.action !== 'retry')
         return Response.json({ error: { code: 'INVALID_REQUEST' } }, { status: 400, headers });
       const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-      const result = await provider.pool.query(
-        `UPDATE quiz_learning_loop_jobs j SET state='queued',claim_id=NULL,claimed_at=NULL,
-           error_code=NULL,updated_at=now()
-         WHERE j.owner_id=$1 AND j.attempt_id=$2 AND j.state='failed'
-           AND j.error_code='MEMORY_ENVIRONMENT_UNAVAILABLE' AND j.evidence_run_id IS NULL
-           AND EXISTS (SELECT 1 FROM quiz_trace_attempts a JOIN stage_meta m ON m.stage_id=a.stage_id
-             AND m.owner_id=a.owner_id AND m.deleted_at IS NULL WHERE a.id=j.attempt_id AND a.owner_id=j.owner_id)
-         RETURNING j.state`,
-        [principal.ownerId, attemptId],
-      );
-      if (result.rows.length === 1) return Response.json({ job: result.rows[0] }, { headers });
+      if (
+        await retryUnstartedLearningLoop(
+          provider.pool,
+          principal.ownerId,
+          attemptId,
+          body.confirmUnknown === true,
+        )
+      )
+        return Response.json({ job: { state: 'queued' } }, { headers });
       const retried = await retryEvidence(
         provider.pool,
         new QuizShortFactsService(provider.withTransaction),

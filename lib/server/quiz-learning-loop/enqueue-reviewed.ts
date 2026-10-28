@@ -25,8 +25,11 @@ export async function enqueueReviewedQuiz(
          AND r.submission_id=a.submission->>'id'
        JOIN generation_runs g ON g.owner_id=a.owner_id AND g.stage_id=a.stage_id
        WHERE a.owner_id=$1 AND a.id=$2 AND g.input->>'simulatedLearner' IN ('A','B','C')
-         AND EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id=g.id
-           AND s.step_id LIKE 'scene:%:narration' AND s.output->'scene'->>'id'=a.scene_id)`,
+         AND (EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id=g.id
+           AND s.step_id LIKE 'scene:%:narration' AND s.output->'scene'->>'id'=a.scene_id)
+           OR EXISTS (SELECT 1 FROM quiz_learning_scene_bindings b WHERE b.run_id=g.id
+             AND b.owner_id=a.owner_id AND b.stage_id=a.stage_id AND b.scene_id=a.scene_id
+             AND b.student=g.input->>'simulatedLearner'))`,
       [owner, attemptId],
     );
     if (result.rows.length === 0) return 'ineligible';

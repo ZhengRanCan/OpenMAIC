@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import {
   QuizShortFactsService,
   ensureShortFactsSchema,
@@ -49,20 +51,21 @@ const invokeFacts: FactsInvoker = async (system, prompt) => {
 };
 
 /** A disabled deployment installs no scanner and makes no model calls. */
-export function startQuizLearningLoop(): { stop: () => Promise<void> } | undefined {
+export async function startQuizLearningLoop(): Promise<{ stop: () => Promise<void> } | undefined> {
   const config = readSimulatedLearningLoopConfig();
   if (!config) return undefined;
+  const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  await withSchemaBootstrapLock(
+    provider.pool as unknown as ConnectableQueryable,
+    async (locked) => {
+      await ensureLearningLoopSchema(locked);
+      await ensureShortFactsSchema(locked);
+    },
+  );
+  await activateLearningLoop(provider.withTransaction, config);
   let stopped = false;
   let active: Promise<void> | undefined;
-  let initialized = false;
   const tick = async () => {
-    const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-    if (!initialized) {
-      await ensureLearningLoopSchema(provider.pool);
-      await ensureShortFactsSchema(provider.pool);
-      await activateLearningLoop(provider.withTransaction, config);
-      initialized = true;
-    }
     await markStaleLearningLoopsUnknown(provider.pool, new Date(Date.now() - 20 * 60 * 1000));
     await discoverReviewedQuizzes(provider.withTransaction, config);
     const job = await provider.withTransaction((tx) => claimLearningLoop(tx, randomUUID()));

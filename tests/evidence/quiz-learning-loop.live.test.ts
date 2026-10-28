@@ -32,7 +32,7 @@ it.skipIf(process.env.F69_LIVE !== '1')(
     const write = (name: string, value: unknown) =>
       writeFileSync(join(output, name), JSON.stringify(value, null, 2), { flag: 'wx' });
     const f = await traceFixture(process.env.F68_TEST_DATABASE_URL);
-    let runner: ReturnType<typeof startQuizLearningLoop>;
+    let runner: Awaited<ReturnType<typeof startQuizLearningLoop>>;
     const previous = process.env.OPENMAIC_SIMULATED_LEARNING_LOOP;
     try {
       await f.db.query(
@@ -57,7 +57,7 @@ it.skipIf(process.env.F69_LIVE !== '1')(
         memoryEnvironmentId: environmentId,
       });
       const before = await memory.read('B');
-      runner = startQuizLearningLoop();
+      runner = await startQuizLearningLoop();
       expect(runner).toBeDefined();
       const deadline = Date.now() + 240000;
       while (Date.now() < deadline) {

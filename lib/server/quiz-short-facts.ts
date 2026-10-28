@@ -109,8 +109,21 @@ export class QuizShortFactsService {
       "SELECT 1 FROM generation_run_steps WHERE run_id=$1 AND step_id LIKE 'scene:%:narration' AND output->'scene'->>'id'=$2",
       [request.generationRunId, quiz.sceneId],
     );
+    let retained = 0;
+    if (!scene.rows.length) {
+      const table = await tx.query<{ name: string | null } & Record<string, unknown>>(
+        "SELECT to_regclass('quiz_learning_scene_bindings')::text AS name",
+      );
+      if (table.rows[0]?.name) {
+        const proof = await tx.query(
+          'SELECT 1 FROM quiz_learning_scene_bindings WHERE run_id=$1 AND owner_id=$2 AND stage_id=$3 AND scene_id=$4 AND student=$5',
+          [request.generationRunId, request.owner, quiz.stageId, quiz.sceneId, request.student],
+        );
+        retained = proof.rows.length;
+      }
+    }
     let binding: 'checkpoint' | 'operator-confirmed' = 'checkpoint';
-    if (scene.rows.length !== 1) {
+    if (scene.rows.length !== 1 && retained !== 1) {
       if (scene.rows.length > 1) throw new Error('RUN_SCENE_MISMATCH');
       const table = await tx.query<{ name: string | null } & Record<string, unknown>>(
         "SELECT to_regclass('f68_short_facts_runs')::text AS name",

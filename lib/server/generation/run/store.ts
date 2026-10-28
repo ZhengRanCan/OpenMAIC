@@ -31,6 +31,10 @@ import { PreclassLearnerContextError } from '@/lib/learner-context/contracts';
 import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
 import { canonicalJson } from '@/lib/learner-memory/contracts';
 import { quizTaskDigest } from '@/lib/server/quiz-learner-context';
+import {
+  ensureLearningSceneBindings,
+  retainLearningSceneBindings,
+} from '@/lib/server/quiz-learning-loop/scene-bindings';
 import type { SceneOutline } from '@/lib/types/generation';
 
 import { generationRunConfig } from './config';
@@ -281,7 +285,10 @@ async function provider() {
   if (!cached || cached.connectionString !== connectionString) {
     const ready = withSchemaBootstrapLock(
       persistence.pool as unknown as ConnectableQueryable,
-      ensureGenerationRunSchema,
+      async (locked) => {
+        await ensureGenerationRunSchema(locked);
+        await ensureLearningSceneBindings(locked);
+      },
     );
     schemaState[SCHEMA_STATE_KEY] = { connectionString, ready };
     ready.catch(() => {
@@ -374,6 +381,7 @@ export async function compactFinishedGenerationRuns(graceMs: number): Promise<nu
         WHERE r.id = s.run_id`,
       [ids],
     );
+    await retainLearningSceneBindings(tx, ids);
     await tx.query('DELETE FROM generation_run_steps WHERE run_id = ANY($1)', [ids]);
     await tx.query(
       `DELETE FROM generation_run_events e USING generation_runs r

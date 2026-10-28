@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,6 +27,7 @@ import {
   ensureLearningLoopSchema,
   finishLearningLoop,
   markStaleLearningLoopsUnknown,
+  retryUnstartedLearningLoop,
 } from '@/lib/server/quiz-learning-loop/store';
 import { processLearningLoop } from '@/lib/server/quiz-learning-loop/process';
 import { createLearningLoopAdapter } from '@/lib/server/quiz-learning-loop/adapter';
@@ -38,6 +40,7 @@ import {
 import { simulatedScope } from '@/lib/learner-memory/simulated-seeds';
 import { retryEvidence } from '@/lib/server/quiz-learning-loop/retry-evidence';
 import { retryMemory } from '@/lib/server/quiz-learning-loop/retry-memory';
+import { retainLearningSceneBindings } from '@/lib/server/quiz-learning-loop/scene-bindings';
 import { buildPreclassLearnerContext } from '@/lib/server/preclass-learner-context';
 
 let f: Awaited<ReturnType<typeof evidenceFixture>>;
@@ -79,6 +82,172 @@ const request = () => ({
 });
 
 describe('short facts durable handoff', () => {
+  it.skipIf(!process.env.F68_TEST_DATABASE_URL)(
+    'serializes concurrent initialization in two independent processes',
+    async () => {
+      await f.db.query(
+        'DROP TABLE quiz_learning_loop_jobs,quiz_learning_loop_preexisting_reviews,quiz_learning_loop_activation,quiz_learning_scene_bindings,f68_short_facts_runs',
+      );
+      const schema = (await f.db.query<{ name: string }>('SELECT current_schema() AS name')).rows[0]
+        .name;
+      const exec = promisify(execFile);
+      const worker = () =>
+        exec(process.execPath, ['tests/evidence/fixtures/claim-worker.mjs'], {
+          cwd: process.cwd(),
+          env: { ...process.env, F69_TEST_SCHEMA: schema, F69_WORKER_MODE: 'bootstrap' },
+          timeout: 30000,
+        });
+      const results = await Promise.all([worker(), worker()]);
+      expect(results.map((result) => JSON.parse(result.stdout).initialized)).toEqual([true, true]);
+      expect(
+        (
+          await f.db.query(
+            "SELECT to_regclass('quiz_learning_loop_jobs') IS NOT NULL AS jobs, to_regclass('f68_short_facts_runs') IS NOT NULL AS facts",
+          )
+        ).rows[0],
+      ).toEqual({ jobs: true, facts: true });
+    },
+    40000,
+  );
+  it.skipIf(!process.env.F68_TEST_DATABASE_URL)(
+    'two independent worker processes cannot claim one task twice',
+    async () => {
+      await enqueueLearningLoop(f.db, {
+        owner: 'learner',
+        submission: 'submission',
+        attempt: f.source.attemptId,
+        generationRun: 'run',
+      });
+      const schema = (await f.db.query<{ name: string }>('SELECT current_schema() AS name')).rows[0]
+        .name;
+      const exec = promisify(execFile);
+      const worker = (id: string) =>
+        exec(process.execPath, ['tests/evidence/fixtures/claim-worker.mjs'], {
+          cwd: process.cwd(),
+          env: { ...process.env, F69_TEST_SCHEMA: schema, F69_WORKER_ID: id },
+          timeout: 30000,
+        });
+      const results = await Promise.all([worker('worker-one'), worker('worker-two')]);
+      expect(results.map((result) => JSON.parse(result.stdout).claimed).sort()).toEqual([
+        false,
+        true,
+      ]);
+    },
+    40000,
+  );
+  it.each([false, true])(
+    'recovers a crash before Evidence checkpoint (prepared=%s)',
+    async (prepared) => {
+      const source = { ...request(), promptVersion: 'selection-v2' as const };
+      await enqueueLearningLoop(f.db, {
+        owner: source.owner,
+        submission: source.submissionId,
+        attempt: source.attemptId,
+        generationRun: source.generationRunId,
+        attribution: {
+          student: source.student,
+          sourceNature: source.sourceNature,
+          conditions: source.conditions,
+          memoryEnvironmentId: source.memoryEnvironmentId,
+        },
+      });
+      const old = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'first'));
+      if (prepared) await service.prepare(source);
+      await markStaleLearningLoopsUnknown(f.db, new Date(Date.now() + 60_000));
+      expect(await retryUnstartedLearningLoop(f.db, source.owner, source.attemptId, false)).toBe(
+        false,
+      );
+      expect(await retryUnstartedLearningLoop(f.db, 'other', source.attemptId, true)).toBe(false);
+      expect(await retryUnstartedLearningLoop(f.db, source.owner, source.attemptId, true)).toBe(
+        true,
+      );
+      expect(await checkpointLearningLoopEvidence(f.db, old!, 'first', 'old')).toBe(false);
+      const current = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'second'));
+      let calls = 0;
+      await processLearningLoop(
+        f.db,
+        current!,
+        createLearningLoopAdapter({
+          service,
+          memory,
+          resolveRequest: requestFromStoredAttribution,
+          extract: async () => {
+            calls++;
+            return { text: '{"facts":[]}', finishReason: 'stop', model: 'fixture', usage: null };
+          },
+          updateMemory: async () => {
+            throw new Error('empty evidence must not invoke Memory');
+          },
+        }),
+      );
+      expect(calls).toBe(1);
+      expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+        'completed',
+      );
+      expect(
+        (await f.db.query('SELECT count(*)::int AS n FROM f68_short_facts_runs')).rows[0].n,
+      ).toBe(1);
+    },
+  );
+  it('discovers and verifies a late submission after generation checkpoints are compacted', async () => {
+    await f.db.query(
+      `UPDATE generation_run_steps SET output=jsonb_set(output,'{scene,stageId}','"stage"'::jsonb) WHERE run_id='run'`,
+    );
+    await retainLearningSceneBindings(f.db, ['run']);
+    await f.db.query("DELETE FROM generation_run_steps WHERE run_id='run'");
+    const config = {
+      sourceNature: 'proxy' as const,
+      conditions: ['代理已查看参考答案'],
+      memoryEnvironmentId: environmentId,
+    };
+    await activateLearningLoop(f.provider.withTransaction, config);
+    const review = await f.service.beginReview('learner', f.source.attemptId, {
+      operationId: 'review',
+      submissionId: 'submission',
+      language: 'en-US',
+    });
+    await f.service.finishReview('learner', review, {
+      results: [
+        {
+          questionId: 'q',
+          correct: true,
+          status: 'correct',
+          earned: 2,
+          evaluation: { state: 'normal', method: 'exact-key' },
+        },
+      ],
+      summary: {
+        status: 'complete',
+        usableEarned: 2,
+        usablePossible: 2,
+        quizPossible: 2,
+        unusableQuestionCount: 0,
+      },
+    });
+    expect(await discoverReviewedQuizzes(f.provider.withTransaction, config)).toBe(1);
+    const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'claim'));
+    const adapter = createLearningLoopAdapter({
+      service,
+      memory,
+      resolveRequest: requestFromStoredAttribution,
+      extract: async () => ({
+        text: '{"facts":[]}',
+        finishReason: 'stop',
+        model: 'fixture',
+        usage: null,
+      }),
+      updateMemory: async () => {
+        throw new Error('empty evidence must not invoke Memory');
+      },
+    });
+    await processLearningLoop(f.db, job!, adapter);
+    expect((await f.db.query('SELECT state FROM quiz_learning_loop_jobs')).rows[0].state).toBe(
+      'completed',
+    );
+    await expect(service.preview({ ...request(), student: 'A' })).rejects.toThrow(
+      'SIMULATED_IDENTITY_MISMATCH',
+    );
+  });
   it('requires explicit confirmation to recover an unknown Memory call', async () => {
     const source = { ...request(), promptVersion: 'selection-v2' as const };
     const ref = Object.keys((await service.preview(source)).refs)[0];

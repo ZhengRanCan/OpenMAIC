@@ -1,7 +1,9 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { ensureLearningSceneBindings } from './scene-bindings';
 
 /** Persistent coordination only. Model calls happen after the claim transaction commits. */
 export async function ensureLearningLoopSchema(db: Queryable): Promise<void> {
+  await ensureLearningSceneBindings(db);
   await db.query(`CREATE TABLE IF NOT EXISTS quiz_learning_loop_jobs (
     owner_id TEXT NOT NULL,
     submission_id TEXT NOT NULL,
@@ -143,6 +145,27 @@ export async function finishLearningLoop(
        AND ($5::text IS NULL OR evidence_run_id IS NULL OR evidence_run_id=$5)
      RETURNING submission_id`,
     [job.owner_id, job.submission_id, claimId, state, evidenceRunId, errorCode],
+  );
+  return result.rows.length === 1;
+}
+
+/** Without an Evidence checkpoint, the worker cannot yet have invoked a model. */
+export async function retryUnstartedLearningLoop(
+  db: Queryable,
+  owner: string,
+  attemptId: string,
+  confirmUnknown: boolean,
+): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE quiz_learning_loop_jobs j SET state='queued',claim_id=NULL,claimed_at=NULL,
+       error_code=NULL,updated_at=now()
+     WHERE j.owner_id=$1 AND j.attempt_id=$2 AND j.evidence_run_id IS NULL
+       AND ((j.state='failed' AND j.error_code='MEMORY_ENVIRONMENT_UNAVAILABLE')
+         OR (j.state='unknown' AND $3::boolean))
+       AND EXISTS (SELECT 1 FROM quiz_trace_attempts a JOIN stage_meta m ON m.stage_id=a.stage_id
+         AND m.owner_id=a.owner_id AND m.deleted_at IS NULL WHERE a.id=j.attempt_id AND a.owner_id=j.owner_id)
+     RETURNING j.state`,
+    [owner, attemptId, confirmUnknown],
   );
   return result.rows.length === 1;
 }

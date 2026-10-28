@@ -41,8 +41,11 @@ export async function discoverReviewedQuizzes(
          AND NOT EXISTS (SELECT 1 FROM quiz_learning_loop_jobs j WHERE j.owner_id=a.owner_id AND j.submission_id=a.submission->>'id')
          AND 1=(SELECT count(*) FROM generation_runs g WHERE g.owner_id=a.owner_id AND g.stage_id=a.stage_id
            AND g.input->>'simulatedLearner' IN ('A','B','C')
-           AND EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id=g.id
-             AND s.step_id LIKE 'scene:%:narration' AND s.output->'scene'->>'id'=a.scene_id))
+           AND (EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id=g.id
+             AND s.step_id LIKE 'scene:%:narration' AND s.output->'scene'->>'id'=a.scene_id)
+             OR EXISTS (SELECT 1 FROM quiz_learning_scene_bindings b WHERE b.run_id=g.id
+               AND b.owner_id=a.owner_id AND b.stage_id=a.stage_id AND b.scene_id=a.scene_id
+               AND b.student=g.input->>'simulatedLearner')))
        ORDER BY r.result->>'savedAt', a.id LIMIT 50`,
       [JSON.stringify(config)],
     );
