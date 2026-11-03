@@ -7,6 +7,8 @@ import {
   buildChatRecordInit,
   fromLegacyRecords,
   normalizeSession,
+  foldRecords,
+  statePayload as savedState,
   planChatSync,
 } from '@/lib/utils/chat-storage-core';
 
@@ -109,6 +111,37 @@ function desired(chat: ChatSession, isolatedWrites = false) {
 }
 
 describe('buildChatRecordInit', () => {
+  it('keeps initial background through the 200-message saved window and generation fold', () => {
+    const initialContext = {
+      stageId: STAGE_ID,
+      stageTitle: 'Original',
+      sceneId: 's',
+      sceneTitle: 'Original scene',
+    };
+    const chat = normalizeSession(
+      session({
+        initialContext,
+        messages: Array.from({ length: 205 }, (_, i) => ({ ...message(), id: `m-${i}` })),
+      }),
+    );
+    const state = savedState(chat);
+    expect(state.messageIds).toHaveLength(200);
+    expect(state.messageIds[0]).toBe('m-5');
+    expect(state.initialContext).toEqual(initialContext);
+    const record = {
+      id: 'state',
+      sessionId: BASE_RUNTIME_ID + ':generation:2',
+      seq: 1,
+      createdAt: '2026-11-02T00:00:00Z',
+      runtimeDslVersion: '0.1.0' as const,
+      payload: state,
+    };
+    expect(foldRecords([record]).session?.initialContext).toEqual(initialContext);
+    expect(savedState(session()).initialContext).toBeUndefined();
+    expect(
+      foldRecords([{ ...record, payload: savedState(session()) }]).session?.initialContext,
+    ).toBeUndefined();
+  });
   it('constructs stable ids and omits malformed optional anchors', () => {
     const chat = {
       ...session(),

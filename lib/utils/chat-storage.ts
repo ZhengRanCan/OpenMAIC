@@ -27,6 +27,13 @@ import {
   newestRuntimeCandidate,
   normalizeSession,
   planChatSync,
+  restoreMarkerPrefix,
+  deletionMarkerId,
+  deletionMarkerChatId,
+  deletionMarkersByChatId,
+  currentRestoreMarker,
+  restoreMarkerTargets,
+  CHAT_DELETION_KIND,
   type ChatMessagePayload,
   type FoldedChat,
   type ChatRuntimeCandidate,
@@ -37,9 +44,6 @@ import {
 } from './chat-storage-core';
 import { chatStoragePartitionLockName, withChatStorageSharedLock } from './chat-storage-lock';
 
-const RESTORE_MARKER_PREFIX = 'chat-restore-marker:';
-const DELETION_MARKER_PREFIX = 'chat-deletion:';
-const CHAT_DELETION_KIND = 'chat-deletion';
 const MAX_CHAT_SYNC_ATTEMPTS = 8;
 const MAX_CHAT_PLAN_STEPS_PER_ATTEMPT = 8;
 const MAX_CHAT_RETRY_DELAY_MS = 500;
@@ -265,81 +269,6 @@ async function context(options: ChatStorageOptions): Promise<{
     sleep: options.sleep ?? defaultChatSyncSleep,
     requiresCrossRealmLock: options.legacyStore === undefined,
   };
-}
-
-function restoreMarkerPrefix(stageId: string): string {
-  return `${RESTORE_MARKER_PREFIX}${encodeURIComponent(stageId)}:`;
-}
-
-function deletionMarkerPrefix(stageId: string): string {
-  return `${DELETION_MARKER_PREFIX}${encodeURIComponent(stageId)}:`;
-}
-
-function deletionMarkerId(stageId: string, learnerKey: string, chatSessionId: string): string {
-  return `${deletionMarkerPrefix(stageId)}${encodeURIComponent(chatSessionId)}:${encodeURIComponent(learnerKey)}`;
-}
-
-function deletionMarkerChatId(view: ChatRuntimeView, stageId: string): string | undefined {
-  if (view.runtimeSession.kind !== CHAT_DELETION_KIND) return undefined;
-  const prefix = deletionMarkerPrefix(stageId);
-  if (!view.runtimeSession.id.startsWith(prefix)) return undefined;
-  const encodedChatId = view.runtimeSession.id.slice(prefix.length).split(':', 1)[0];
-  if (!encodedChatId) return undefined;
-  try {
-    return decodeURIComponent(encodedChatId);
-  } catch {
-    return undefined;
-  }
-}
-
-function deletionMarkersByChatId(
-  views: readonly ChatRuntimeView[],
-  stageId: string,
-): Map<string, ChatRuntimeView[]> {
-  const markers = new Map<string, ChatRuntimeView[]>();
-  for (const view of views) {
-    const chatSessionId = deletionMarkerChatId(view, stageId);
-    if (!chatSessionId) continue;
-    const current = markers.get(chatSessionId) ?? [];
-    current.push(view);
-    markers.set(chatSessionId, current);
-  }
-  return markers;
-}
-
-function currentRestoreMarker(
-  views: readonly ChatRuntimeView[],
-  stageId: string,
-): string | undefined {
-  // RuntimeStore already scopes `views` to one learner. Keep marker discovery
-  // stage-scoped so a marker remains recognizable after mergeLearner re-keys
-  // the session without rewriting its immutable id.
-  const prefix = restoreMarkerPrefix(stageId);
-  return views
-    .filter(
-      (view) =>
-        view.runtimeSession.status === 'completed' && view.runtimeSession.id.startsWith(prefix),
-    )
-    .sort(
-      (left, right) =>
-        Date.parse(left.runtimeSession.createdAt) - Date.parse(right.runtimeSession.createdAt) ||
-        left.runtimeSession.id.localeCompare(right.runtimeSession.id),
-    )
-    .at(-1)?.runtimeSession.id;
-}
-
-function restoreMarkerTargets(view: ChatRuntimeView | undefined): string[] {
-  if (!view) return [];
-  for (const record of view.records) {
-    const payload = record.payload as { kind?: string; runtimeSessionIds?: unknown };
-    if (payload.kind !== 'chat_restore_marker' || !Array.isArray(payload.runtimeSessionIds)) {
-      continue;
-    }
-    return payload.runtimeSessionIds.filter(
-      (runtimeSessionId): runtimeSessionId is string => typeof runtimeSessionId === 'string',
-    );
-  }
-  return [];
 }
 
 async function createRestoreMarker(

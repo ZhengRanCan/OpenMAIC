@@ -47,6 +47,13 @@ export interface MessageAction {
 /**
  * Chat session representing a conversation with one or more agents
  */
+export interface ChatSessionInitialContext {
+  stageId: string;
+  stageTitle: string;
+  sceneId?: string;
+  sceneTitle?: string;
+}
+
 export interface ChatSession {
   id: string;
   type: SessionType;
@@ -59,6 +66,8 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   sceneId?: string;
+  /** Recorded once at actual QA/Discussion creation; never reconstructed on restore. */
+  initialContext?: ChatSessionInitialContext;
   lastActionIndex?: number;
   endReason?: string;
   /** Absolute deadline for the client-side soft-closing grace window. */

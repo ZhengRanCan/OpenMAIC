@@ -140,6 +140,31 @@ afterEach(() => {
 });
 
 describe('chat RuntimeStore cutover', () => {
+  it('round-trips initial context across repeated saves and a new load without recapturing titles', async () => {
+    const store = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    const input = session({
+      initialContext: {
+        stageId: STAGE_ID,
+        stageTitle: 'Original class',
+        sceneId: 'scene',
+        sceneTitle: 'Original scene',
+      },
+    });
+    await saveChatSessions(STAGE_ID, [input], { store, learnerKey: LEARNER_KEY, legacyStore });
+    await saveChatSessions(STAGE_ID, [{ ...input, updatedAt: input.updatedAt + 1 }], {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    const restored = await loadChatSessions(STAGE_ID, {
+      store,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    expect(restored[0].initialContext).toEqual(input.initialContext);
+    expect(restored[0].messages).toHaveLength(1);
+  });
   it('persists chat sessions as replayable RuntimeStore records and loads them back', async () => {
     const store = makeRuntimeStore();
     const legacyStore = new MemoryLegacyChatStore();

@@ -1,6 +1,8 @@
 'use client';
 
 import { sampleInteractiveState } from '@/lib/interactive/chat-observation';
+import { captureChatSessionInitialContext } from '@/lib/chat/session-initial-context';
+import { isChatSessionScopeCurrent, type ChatSessionScope } from '@/lib/chat/session-scope';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -563,6 +565,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   // Track current stageId for data isolation
   const stageId = useStageStore((s) => s.stage?.id);
   const stageIdRef = useRef(stageId);
+  const scopeRef = useRef<ChatSessionScope | undefined>(
+    stageId ? { stageId, epoch: 0 } : undefined,
+  );
+  const scopeEpochRef = useRef(0);
+  const [scopeRevision, setScopeRevision] = useState(0);
+  const restoredScopeEpochRef = useRef(0);
   const currentSceneId = useStageStore((s) => s.currentSceneId);
   const currentSceneIdRef = useRef(currentSceneId);
 
@@ -571,6 +579,23 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     const stored = useStageStore.getState().chats;
     return normalizeStoredSessionsForRestore(stored);
   });
+  const [sessionsOwnerStageId, setSessionsOwnerStageId] = useState(stageId);
+  const [sessionsOwnerEpoch, setSessionsOwnerEpoch] = useState(0);
+  const captureSessionScope = useCallback(() => {
+    const scope = scopeRef.current;
+    return scope !== undefined &&
+      scope.stageId === stageId &&
+      sessionsOwnerStageId === stageId &&
+      sessionsOwnerEpoch === scope.epoch &&
+      isChatSessionScopeCurrent(scope, scopeRef.current, useStageStore.getState().stage?.id)
+      ? scope
+      : undefined;
+  }, [stageId, sessionsOwnerStageId, sessionsOwnerEpoch]);
+  const scopeIsCurrent = useCallback(
+    (scope: ChatSessionScope | undefined) =>
+      isChatSessionScopeCurrent(scope, scopeRef.current, useStageStore.getState().stage?.id),
+    [],
+  );
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
   const [isStreaming, setIsStreaming] = useState(false);
@@ -601,19 +626,32 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   // This synchronous setState is intentional: it resets derived state from
   // an external store (IndexedDB) when the stageId dependency changes.
   useEffect(() => {
-    if (stageId === stageIdRef.current) return;
+    // The classroom may finish loading before the subscription effect mounts.
+    // Reconcile that first transition as well as transitions observed live.
+    if (scopeRef.current?.stageId !== stageId) {
+      const epoch = ++scopeEpochRef.current;
+      scopeRef.current = stageId ? { stageId, epoch } : undefined;
+      setScopeRevision(epoch);
+    }
+    const epoch = scopeEpochRef.current;
+    if (stageId === stageIdRef.current && epoch === restoredScopeEpochRef.current) return;
     stageIdRef.current = stageId;
+    restoredScopeEpochRef.current = epoch;
     softCloseRegistrationsRef.current.forEach(({ timer }) => clearTimeout(timer));
     softCloseRegistrationsRef.current.clear();
     softCloseLifecycleRef.current.clear();
     // Stage changed — reload sessions from store (already populated by loadFromStorage)
     const stored = useStageStore.getState().chats;
-    setSessions(normalizeStoredSessionsForRestore(stored));
+    const restored = normalizeStoredSessionsForRestore(stored);
+    sessionsRef.current = restored;
+    setSessions(restored);
+    setSessionsOwnerStageId(stageId);
+    setSessionsOwnerEpoch(epoch);
     setActiveSessionId(null);
     setExpandedSessionIds(new Set());
     previousLiveSessionRef.current = undefined;
     piSessionBoundariesRef.current.clear();
-  }, [stageId]);
+  }, [stageId, scopeRevision]);
 
   useEffect(() => {
     if (currentSceneId === currentSceneIdRef.current) return;
@@ -634,14 +672,49 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   // Sync sessions back to store for persistence (debounced via store's debouncedSave)
   // Guard: only write to the currently active stage
   useEffect(() => {
-    if (stageIdRef.current && stageIdRef.current === useStageStore.getState().stage?.id) {
-      useStageStore.getState().setChats(sessions);
+    const state = useStageStore.getState();
+    if (
+      stageId &&
+      sessionsOwnerStageId === stageId &&
+      stageId === state.stage?.id &&
+      sessionsOwnerEpoch === scopeRef.current?.epoch
+    ) {
+      state.setChats(sessions);
     }
-  }, [sessions]);
+  }, [sessions, sessionsOwnerStageId, sessionsOwnerEpoch, stageId, scopeRevision]);
 
   // StreamBuffer instances per session (SSE + lecture share the same buffer model)
   const buffersRef = useRef<Map<string, StreamBuffer>>(new Map());
   const pendingRetirementRef = useRef<Promise<void>>(Promise.resolve());
+
+  // Subscribe to every transition, including A -> B -> A batched before a render.
+  // Invalidate pending operations synchronously, before React's restore effects.
+  useEffect(
+    () =>
+      useStageStore.subscribe((next, previous) => {
+        if (next.stage?.id === previous.stage?.id) return;
+        const epoch = ++scopeEpochRef.current;
+        scopeRef.current = next.stage ? { stageId: next.stage.id, epoch } : undefined;
+        setScopeRevision(epoch);
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        streamingSessionIdRef.current = null;
+        const retirements = [...buffersRef.current.values()].map((buffer) => {
+          buffer.shutdown();
+          return buffer.waitForCurrentAction();
+        });
+        buffersRef.current.clear();
+        pendingRetirementRef.current = Promise.all([
+          pendingRetirementRef.current,
+          ...retirements,
+        ]).then(() => undefined);
+        softCloseRegistrationsRef.current.forEach(({ timer }) => clearTimeout(timer));
+        softCloseRegistrationsRef.current.clear();
+        softCloseLifecycleRef.current.clear();
+        setIsStreaming(false);
+      }),
+    [],
+  );
 
   const retireActiveLiveRequest = useCallback(
     (fallbackSessionId?: string | null): string | null => {
@@ -1138,10 +1211,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
   const createStatelessStreamConsumer = useCallback(
     (sessionId: string, controller: AbortController, sessionType: SessionType) => {
+      const requestScope = captureSessionScope();
       let currentBuffer: StreamBuffer | null = null;
       let currentMessageId: string | null = null;
 
       const onEvent = (event: StatelessEvent) => {
+        if (!scopeIsCurrent(requestScope) || controller.signal.aborted) return;
         if (event.type === 'whiteboard') {
           consumePiWhiteboardEvent(event.data, controller.signal);
           return;
@@ -1232,7 +1307,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       return { onEvent, onIterationEnd };
     },
-    [createBufferForSession],
+    [createBufferForSession, captureSessionScope, scopeIsCurrent],
   );
 
   /**
@@ -1249,6 +1324,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       sessionType: SessionType,
       onElementReferenceResponseAccepted?: (response: Response) => void,
     ): Promise<void> => {
+      const requestScope = captureSessionScope();
+      if (!scopeIsCurrent(requestScope)) return;
       // Attach full configs for generated (non-default) agents so the server can use them.
       // The server-side registry only has default agents; generated agents exist only client-side.
       const generatedConfigs = requestTemplate.config.agentIds
@@ -1265,6 +1342,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         // request needs the snapshot built here — /api/chat/pi rejects bodies
         // without storeState.
         const storeState = await buildFreshAgentLoopStoreState();
+        if (!scopeIsCurrent(requestScope) || controller.signal.aborted) return;
         const firstRequestContext = getFirstPiRequestContext(sessionId);
         const piRequestTemplate = firstRequestContext
           ? { ...requestTemplate, storeState, piSessionBoundary: firstRequestContext }
@@ -1306,14 +1384,24 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           userProfile: requestTemplate.userProfile,
         },
         {
-          getStoreState: buildFreshAgentLoopStoreState,
+          getStoreState: async () => {
+            const state = await buildFreshAgentLoopStoreState();
+            if (!scopeIsCurrent(requestScope) || controller.signal.aborted) {
+              throw new DOMException('Aborted', 'AbortError');
+            }
+            return state;
+          },
 
           getMessages: () => {
             const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
             return currentSession?.messages ?? requestTemplate.messages;
           },
 
-          fetchChat: (body, signal) => fetchStatelessChat(body, signal),
+          fetchChat: (body, signal) => {
+            if (!scopeIsCurrent(requestScope) || signal.aborted)
+              throw new DOMException('Aborted', 'AbortError');
+            return fetchStatelessChat(body, signal);
+          },
 
           onEvent: streamConsumer.onEvent,
           onIterationEnd: streamConsumer.onIterationEnd,
@@ -1323,7 +1411,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       // Handle loop completion (UI-specific). Map each outcome.reason to a
       // distinct session state — don't conflate error paths with completion.
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && scopeIsCurrent(requestScope)) {
         switch (outcome.reason) {
           case 'cue_user':
             // Session stays active; UI waits for the next user message.
@@ -1364,6 +1452,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       storeDirectorState,
       t,
       getFirstPiRequestContext,
+      captureSessionScope,
+      scopeIsCurrent,
     ],
   );
 
@@ -1372,6 +1462,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const createSession = useCallback(
     async (type: SessionType, title: string): Promise<string> => {
+      const scope = captureSessionScope();
+      if (!scopeIsCurrent(scope)) throw new DOMException('Aborted', 'AbortError');
+      const creationState = useStageStore.getState();
       const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const now = Date.now();
 
@@ -1388,19 +1481,22 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         },
         toolCalls: [],
         pendingToolCalls: [],
-        sceneId: currentSceneIdRef.current ?? undefined,
+        sceneId: creationState.currentSceneId ?? undefined,
+        ...(type === 'qa' || type === 'discussion'
+          ? { initialContext: captureChatSessionInitialContext(creationState) }
+          : {}),
         createdAt: now,
         updatedAt: now,
       };
 
-      setSessions((prev) => [...prev, newSession]);
+      setSessions((prev) => (scopeIsCurrent(scope) ? [...prev, newSession] : prev));
       setActiveSessionId(sessionId);
       setExpandedSessionIds((prev) => new Set([...prev, sessionId]));
 
       log.info(`[ChatArea] Created session: ${sessionId} (${type})`);
       return sessionId;
     },
-    [registerFirstPiRequest],
+    [registerFirstPiRequest, captureSessionScope, scopeIsCurrent],
   );
 
   /**
@@ -1409,6 +1505,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const endSession = useCallback(
     async (sessionId: string, options: EndSessionOptions = {}): Promise<void> => {
+      const scope = captureSessionScope();
+      if (!scopeIsCurrent(scope)) return;
       log.info(`[ChatArea] Ending session: ${sessionId}`);
       clearSoftCloseRegistration(sessionId);
       softCloseLifecycleRef.current.set(sessionId, 'completed');
@@ -1431,6 +1529,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         );
       }
       await pendingRetirementRef.current;
+      if (!scopeIsCurrent(scope)) return;
       piSessionBoundariesRef.current.delete(sessionId);
       if (isLiveSession && session) {
         previousLiveSessionRef.current = createPreviousLiveSessionContext(
@@ -1504,7 +1603,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         setActiveSessionId(null);
       }
     },
-    [activeSessionId, clearSoftCloseRegistration, retireActiveLiveRequest],
+    [
+      activeSessionId,
+      clearSoftCloseRegistration,
+      retireActiveLiveRequest,
+      captureSessionScope,
+      scopeIsCurrent,
+    ],
   );
 
   const continueSoftClosingSession = useCallback(
@@ -1567,6 +1672,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const softPauseSession = useCallback(
     async (sessionId: string): Promise<void> => {
+      const scope = captureSessionScope();
+      if (!scopeIsCurrent(scope)) return;
       livePausedRef.current = false;
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session) return;
@@ -1587,6 +1694,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
       await pendingRetirementRef.current;
 
+      if (!scopeIsCurrent(scope)) return;
       if (wasStreaming) {
         // Append "..." + interrupted marker to last assistant message, keep status 'active'
         setSessions((prev) =>
@@ -1632,7 +1740,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       log.info(`[ChatArea] Soft-paused session: ${sessionId}`);
     },
-    [retireActiveLiveRequest],
+    [retireActiveLiveRequest, captureSessionScope, scopeIsCurrent],
   );
 
   /**
@@ -1651,10 +1759,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const resumeSession = useCallback(
     async (sessionId: string): Promise<void> => {
+      const scope = captureSessionScope();
+      if (!scopeIsCurrent(scope)) return;
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.status !== 'active') return;
 
       await pendingRetirementRef.current;
+
+      if (!scopeIsCurrent(scope)) return;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -1693,6 +1805,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           log.info('[ChatArea] Resume aborted');
           return;
         }
+        if (!scopeIsCurrent(scope)) return;
         log.error('[ChatArea] Resume error:', error);
         clearLiveSessionAfterError(
           sessionId,
@@ -1706,7 +1819,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       }
     },
-    [clearLiveSessionAfterError, runAgentLoopFn],
+    [clearLiveSessionAfterError, runAgentLoopFn, captureSessionScope, scopeIsCurrent],
   );
 
   /**
@@ -1724,6 +1837,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const sendMessage = useCallback(
     async (content: string, options: ChatMessageSendOptions = {}): Promise<void> => {
+      const scope = captureSessionScope();
+      if (!scopeIsCurrent(scope)) return;
       let sessionId = activeSessionId;
 
       // Interrupt active generation: abort stream and append "..." to the last agent message
@@ -1749,7 +1864,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                         type: 'text',
                         text: (textPart.text || '') + '...',
                       } as UIMessage<ChatMessageMetadata>['parts'][number];
-                      messages[i] = { ...messages[i], parts };
+                      messages[i] = {
+                        ...messages[i],
+                        parts,
+                        metadata: { ...messages[i].metadata, interrupted: true },
+                      };
                       return { ...s, messages, updatedAt: nextChatUpdatedAt(s) };
                     }
                   }
@@ -1766,9 +1885,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       // Capture the next request only after that mutation has settled.
       await pendingRetirementRef.current;
 
+      if (!scopeIsCurrent(scope)) return;
+
       // Validate model configuration before sending: chat resolves the
       // workspace's classroom slot (assigned there or inherited).
-      if (!classroomChatUsable(await loadModelCapabilities())) {
+      const capabilities = await loadModelCapabilities();
+      if (!scopeIsCurrent(scope)) return;
+      if (!classroomChatUsable(capabilities)) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
@@ -1784,6 +1907,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         const activeQAOrDiscussion = sessionsRef.current.filter(isOpenLiveSession);
         for (const session of activeQAOrDiscussion) {
           await endSession(session.id);
+          if (!scopeIsCurrent(scope)) return;
         }
         sessionId = await createSession('qa', 'Q&A');
       } else if (sessionId && activeSession?.status === 'soft-closing') {
@@ -1799,13 +1923,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       }
 
+      if (!scopeIsCurrent(scope)) return;
       const controller = new AbortController();
       abortControllerRef.current = controller;
       streamingSessionIdRef.current = sessionId;
       setIsStreaming(true);
 
       const now = Date.now();
-      const userMessageId = `user-${now}`;
+      const userMessageId = `user-${now}-${nanoid()}`;
 
       // Read all selected agent IDs from settings store
       const settingsState = useSettingsStore.getState();
@@ -1830,9 +1955,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         ? [...existingSession.messages, userMessage]
         : [userMessage];
       const sessionType: SessionType = existingSession?.type || 'qa';
+      const creationState = useStageStore.getState();
+      const fallbackContext = captureChatSessionInitialContext(creationState);
 
       // Pure updater — no side effects
       setSessions((prev) => {
+        if (!scopeIsCurrent(scope)) return prev;
         const exists = prev.some((s) => s.id === sessionId);
         if (exists) {
           return prev.map((s) =>
@@ -1851,7 +1979,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             },
             toolCalls: [],
             pendingToolCalls: [],
-            sceneId: currentSceneIdRef.current ?? undefined,
+            sceneId: creationState.currentSceneId ?? undefined,
+            initialContext: fallbackContext,
             createdAt: now,
             updatedAt: now,
           };
@@ -1892,6 +2021,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           return;
         }
 
+        if (!scopeIsCurrent(scope)) return;
         log.error('[ChatArea] Error:', error);
         clearLiveSessionAfterError(
           sessionId!,
@@ -1915,6 +2045,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       retireActiveLiveRequest,
       runAgentLoopFn,
       t,
+      captureSessionScope,
+      scopeIsCurrent,
     ],
   );
 
@@ -1923,6 +2055,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const startDiscussion = useCallback(
     async (request: DiscussionRequest): Promise<void> => {
+      const scope = captureSessionScope();
+      if (!scopeIsCurrent(scope)) return;
       log.info(`[ChatArea] Starting discussion: "${request.topic}"`);
       // Explicitly clear buffer-pause intent (also cleared transitively via endSession,
       // but being explicit guards against future refactors)
@@ -1930,7 +2064,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       // Validate model configuration before starting discussion: it resolves
       // the workspace's classroom slot (assigned there or inherited).
-      if (!classroomChatUsable(await loadModelCapabilities())) {
+      const capabilities = await loadModelCapabilities();
+      if (!scopeIsCurrent(scope)) return;
+      if (!classroomChatUsable(capabilities)) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
@@ -1939,6 +2075,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       const activeQAOrDiscussion = sessionsRef.current.filter(isOpenLiveSession);
       for (const session of activeQAOrDiscussion) {
         await endSession(session.id);
+        if (!scopeIsCurrent(scope)) return;
       }
 
       const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1958,6 +2095,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
 
       // No pre-created assistant message — agent_start events create them dynamically
+      const creationState = useStageStore.getState();
       const newSession: ChatSession = {
         id: sessionId,
         type: 'discussion',
@@ -1970,12 +2108,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         },
         toolCalls: [],
         pendingToolCalls: [],
-        sceneId: currentSceneIdRef.current ?? undefined,
+        sceneId: creationState.currentSceneId ?? undefined,
+        initialContext: captureChatSessionInitialContext(creationState),
         createdAt: now,
         updatedAt: now,
       };
 
-      setSessions((prev) => [...prev, newSession]);
+      setSessions((prev) => (scopeIsCurrent(scope) ? [...prev, newSession] : prev));
       setActiveSessionId(sessionId);
       setExpandedSessionIds((prev) => new Set([...prev, sessionId]));
 
@@ -2013,6 +2152,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           return;
         }
 
+        if (!scopeIsCurrent(scope)) return;
         log.error('[ChatArea] Discussion error:', error);
         clearLiveSessionAfterError(
           sessionId,
@@ -2028,7 +2168,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n context
-    [clearLiveSessionAfterError, endSession, registerFirstPiRequest, runAgentLoopFn],
+    [
+      clearLiveSessionAfterError,
+      endSession,
+      registerFirstPiRequest,
+      runAgentLoopFn,
+      captureSessionScope,
+      scopeIsCurrent,
+    ],
   );
 
   /**

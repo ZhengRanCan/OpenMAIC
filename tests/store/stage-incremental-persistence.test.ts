@@ -384,6 +384,12 @@ describe('incremental stage flush', () => {
         id: 'chat-1',
         type: 'qa',
         title: 'Chat',
+        initialContext: {
+          stageId: 'stage-1',
+          stageTitle: 'Original',
+          sceneId: 'scene-1',
+          sceneTitle: 'Original scene',
+        },
         status: 'idle',
         messages: [],
         config: { agentIds: [] },
@@ -400,6 +406,15 @@ describe('incremental stage flush', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(incrementalSave).toHaveBeenCalledTimes(2);
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'chats' }]);
+    expect(incrementalSave.mock.calls[1]![2].chats[0].initialContext).toEqual({
+      stageId: 'stage-1',
+      stageTitle: 'Original',
+      sceneId: 'scene-1',
+      sceneTitle: 'Original scene',
+    });
+    expect(useStageStore.getState().chatSnapshot.sessions[0].initialContext?.stageTitle).toBe(
+      'Original',
+    );
   });
 
   it('coalesces streaming chat deltas behind the reference implementation retry cadence', async () => {

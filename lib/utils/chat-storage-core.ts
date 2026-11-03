@@ -12,8 +12,12 @@ import { isEqual } from 'lodash';
 
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
 import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';
+import { isChatSessionInitialContext } from '@/lib/chat/session-initial-context';
 
-const MAX_MESSAGES_PER_SESSION = 200;
+export const MAX_MESSAGES_PER_SESSION = 200;
+export const RESTORE_MARKER_PREFIX = 'chat-restore-marker:';
+export const DELETION_MARKER_PREFIX = 'chat-deletion:';
+export const CHAT_DELETION_KIND = 'chat-deletion';
 const MAX_RUNTIME_RECORDS_PER_CHAT_SESSION = 256;
 const CHAT_PAYLOAD_VERSION = 1;
 const RUNTIME_GENERATION_SEPARATOR = ':generation:';
@@ -40,6 +44,7 @@ export interface ChatSessionStatePayload extends ChatMessageSkeleton {
   createdAt: number;
   updatedAt: number;
   sceneId?: string;
+  initialContext?: ChatSession['initialContext'];
   lastActionIndex?: number;
 }
 
@@ -329,13 +334,16 @@ export function statePayload(session: ChatSession): ChatSessionStatePayload {
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     ...(typeof session.sceneId === 'string' ? { sceneId: session.sceneId } : {}),
+    ...(isChatSessionInitialContext(session.initialContext)
+      ? { initialContext: { ...session.initialContext } }
+      : {}),
     ...(Number.isInteger(session.lastActionIndex)
       ? { lastActionIndex: session.lastActionIndex }
       : {}),
   };
 }
 
-function isMessagePayload(payload: unknown): payload is ChatMessagePayload {
+export function isMessagePayload(payload: unknown): payload is ChatMessagePayload {
   const candidate = payload as Partial<ChatMessagePayload> | null;
   return (
     candidate?.kind === 'chat_message' &&
@@ -350,7 +358,7 @@ function isMessagePayload(payload: unknown): payload is ChatMessagePayload {
   );
 }
 
-function isStatePayload(payload: unknown): payload is ChatSessionStatePayload {
+export function isStatePayload(payload: unknown): payload is ChatSessionStatePayload {
   const candidate = payload as Partial<ChatSessionStatePayload> | null;
   return (
     candidate?.kind === 'chat_session_state' &&
@@ -426,6 +434,9 @@ export function foldRecords(records: RuntimeRecord[]): FoldedChat {
       createdAt: state.createdAt,
       updatedAt: state.updatedAt,
       sceneId: state.sceneId,
+      ...(isChatSessionInitialContext(state.initialContext)
+        ? { initialContext: { ...state.initialContext } }
+        : {}),
       lastActionIndex: state.lastActionIndex,
     },
   };
@@ -464,6 +475,85 @@ export function newestRuntimeCandidate(
     if (left.generation !== right.generation) return right.generation - left.generation;
     return right.runtimeSession.id.localeCompare(left.runtimeSession.id);
   })[0];
+}
+
+export function restoreMarkerPrefix(stageId: string): string {
+  return `${RESTORE_MARKER_PREFIX}${encodeURIComponent(stageId)}:`;
+}
+
+export function deletionMarkerPrefix(stageId: string): string {
+  return `${DELETION_MARKER_PREFIX}${encodeURIComponent(stageId)}:`;
+}
+
+export function deletionMarkerId(
+  stageId: string,
+  learnerKey: string,
+  chatSessionId: string,
+): string {
+  return `${deletionMarkerPrefix(stageId)}${encodeURIComponent(chatSessionId)}:${encodeURIComponent(learnerKey)}`;
+}
+
+export function deletionMarkerChatId(view: ChatRuntimeView, stageId: string): string | undefined {
+  if (view.runtimeSession.kind !== CHAT_DELETION_KIND) return undefined;
+  const prefix = deletionMarkerPrefix(stageId);
+  if (!view.runtimeSession.id.startsWith(prefix)) return undefined;
+  const encodedChatId = view.runtimeSession.id.slice(prefix.length).split(':', 1)[0];
+  if (!encodedChatId) return undefined;
+  try {
+    return decodeURIComponent(encodedChatId);
+  } catch {
+    return undefined;
+  }
+}
+
+export function deletionMarkersByChatId(
+  views: readonly ChatRuntimeView[],
+  stageId: string,
+): Map<string, ChatRuntimeView[]> {
+  const markers = new Map<string, ChatRuntimeView[]>();
+  for (const view of views) {
+    const chatSessionId = deletionMarkerChatId(view, stageId);
+    if (!chatSessionId) continue;
+    const current = markers.get(chatSessionId) ?? [];
+    current.push(view);
+    markers.set(chatSessionId, current);
+  }
+  return markers;
+}
+
+export function currentRestoreMarker(
+  views: readonly ChatRuntimeView[],
+  stageId: string,
+): string | undefined {
+  // RuntimeStore already scopes `views` to one learner. Keep marker discovery
+  // stage-scoped so a marker remains recognizable after mergeLearner re-keys
+  // the session without rewriting its immutable id.
+  const prefix = restoreMarkerPrefix(stageId);
+  return views
+    .filter(
+      (view) =>
+        view.runtimeSession.status === 'completed' && view.runtimeSession.id.startsWith(prefix),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.runtimeSession.createdAt) - Date.parse(right.runtimeSession.createdAt) ||
+        left.runtimeSession.id.localeCompare(right.runtimeSession.id),
+    )
+    .at(-1)?.runtimeSession.id;
+}
+
+export function restoreMarkerTargets(view: ChatRuntimeView | undefined): string[] {
+  if (!view) return [];
+  for (const record of view.records) {
+    const payload = record.payload as { kind?: string; runtimeSessionIds?: unknown };
+    if (payload.kind !== 'chat_restore_marker' || !Array.isArray(payload.runtimeSessionIds)) {
+      continue;
+    }
+    return payload.runtimeSessionIds.filter(
+      (runtimeSessionId): runtimeSessionId is string => typeof runtimeSessionId === 'string',
+    );
+  }
+  return [];
 }
 
 function highestGeneration(
