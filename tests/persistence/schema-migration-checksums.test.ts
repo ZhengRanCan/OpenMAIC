@@ -200,6 +200,13 @@ const SHIPPED: readonly (readonly [
     true,
     'da16ec8f00676cdc76a1b9c158318b67659356db72b4fc8d069c93eeda73f449',
   ],
+  [
+    'dialogue-evidence',
+    1,
+    'immutable_dialogue_evidence',
+    true,
+    'b39591e81dff7cf839efc6ad0ed38eca03a1daf9dd9e7e445c732e813d5797e7',
+  ],
 ];
 
 /**

@@ -1,5 +1,6 @@
 import { QUIZ_TRACE_MIGRATIONS } from './quiz-trace-schema';
 import { QUIZ_EVIDENCE_MIGRATIONS } from './quiz-evidence-schema';
+import { DIALOGUE_EVIDENCE_MIGRATIONS } from './dialogue-evidence-schema';
 /**
  * Every schema store this application provisions, in its bootstrap order: the
  * storage package's PostgreSQL backends and this application's own tables.
@@ -45,4 +46,5 @@ export const APP_SCHEMA_STORES: readonly SchemaMigrationSet[] = [
   GENERATION_RUN_MIGRATIONS,
   QUIZ_TRACE_MIGRATIONS,
   QUIZ_EVIDENCE_MIGRATIONS,
+  DIALOGUE_EVIDENCE_MIGRATIONS,
 ];

@@ -1,5 +1,6 @@
 import { rekeyQuizTraceIn } from './quiz-trace-lifecycle';
 import { rekeyQuizEvidenceIn } from './quiz-evidence-lifecycle';
+import { rekeyDialogueEvidenceIn } from './dialogue-evidence-lifecycle';
 /**
  * Claiming anonymous work on sign-in.
  *
@@ -360,6 +361,7 @@ function participantsInOrder(provider: ServerPersistenceProvider): ClaimParticip
     ...coreParticipants(provider),
     { name: 'quiz-trace', order: 1000, rekey: rekeyQuizTraceIn },
     { name: 'quiz-evidence', order: 1010, rekey: rekeyQuizEvidenceIn },
+    { name: 'dialogue-evidence', order: 1020, rekey: rekeyDialogueEvidenceIn },
     ...state.participants,
   ].sort((a, b) => a.order - b.order || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
