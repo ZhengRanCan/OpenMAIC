@@ -2,14 +2,12 @@ import type { ResolvedModel } from './resolve-model';
 import { dialogueModelIdentity } from './dialogue-evidence';
 import { invariant } from '@/lib/learner-memory/contracts';
 import type { PreparedMemoryRun, CapturedMemoryReply } from '@/lib/learner-memory/contracts';
-import {
-  DIALOGUE_MEMORY_LIMITS,
-  DIALOGUE_MEMORY_VERSION,
-} from '@/lib/learner-memory/dialogue-contracts';
+import { DIALOGUE_MEMORY_LIMITS } from '@/lib/learner-memory/dialogue-contracts';
+import { DIALOGUE_MEMORY_PROMPT_VERSION } from '@/lib/learner-memory/dialogue-prompt';
 export function dialogueMemoryModelIdentity(model: ResolvedModel) {
   return {
     ...dialogueModelIdentity(model),
-    promptVersion: DIALOGUE_MEMORY_VERSION,
+    promptVersion: DIALOGUE_MEMORY_PROMPT_VERSION,
     maxOutputTokens: DIALOGUE_MEMORY_LIMITS.maxOutputTokens,
     timeoutMs: DIALOGUE_MEMORY_LIMITS.timeoutMs,
   };

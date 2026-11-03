@@ -320,6 +320,30 @@ export class LearnerMemoryStore {
       return run;
     });
   }
+  /** Internal review of an interpretation; accurate supporting sources remain unchanged. */
+  async restrictPieceForReview(
+    scope: MemoryScope,
+    pieceId: string,
+    expectedRevision: number,
+    reason: string,
+  ): Promise<void> {
+    invariant(reason.trim().length > 0 && reason.length <= 500, 'RESTRICTION_REASON');
+    invariant(Number.isSafeInteger(expectedRevision) && expectedRevision >= 0, 'INVALID_REVISION');
+    await this.locked(scope, async (tx, state) => {
+      const piece = state.snapshot.pieces.find((p) => p.id === pieceId);
+      invariant(piece, 'MEMORY_PIECE_NOT_FOUND');
+      invariant(piece.formation === 'synthesis', 'MEMORY_PIECE_NOT_SYNTHESIS');
+      // A replay of this exact restriction is harmless even with its original revision.
+      if (piece.restrictions.includes(reason)) return;
+      invariant(state.snapshot.revision === expectedRevision, 'MEMORY_VERSION_CONFLICT');
+      piece.restrictions.push(reason);
+      state.snapshot.revision++;
+      await tx.query(
+        'UPDATE learner_memory_states SET snapshot=$3::jsonb,maintenance=true WHERE namespace=$1 AND learner_key=$2',
+        [...key(scope), JSON.stringify(state.snapshot)],
+      );
+    });
+  }
   async restrictSource(scope: MemoryScope, sourceId: string, reason: string) {
     invariant(reason.trim().length > 0 && reason.length <= 500, 'RESTRICTION_REASON');
     await this.locked(scope, async (tx, state) => {

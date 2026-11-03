@@ -21,12 +21,12 @@ import { chatIdFromRuntime } from '@/lib/server/dialogue-learning-loop/registrat
 import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
 const phase = process.env.F75_LIVE_PHASE;
 const batchId = process.env.F75_BATCH_ID ?? '001';
-const suffix = batchId === '001' ? '' : '002';
+const suffix = batchId === '001' ? '' : batchId;
 it.skipIf(!phase)(
   'F75 isolated native page preparation/readback; never invokes a model itself',
   async () => {
     if (
-      !['001', '002'].includes(batchId) ||
+      !['001', '002', '003'].includes(batchId) ||
       !['prepare', 'readback', 'inspect', 'sources', 'serve', 'preflight'].includes(phase!) ||
       !process.env.DATABASE_URL?.endsWith('/f75_app' + suffix) ||
       !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory' + suffix)
@@ -36,10 +36,13 @@ it.skipIf(!phase)(
     if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-' + batchId))
       throw Error('F75_ARTIFACT_DIR_REQUIRED');
     await mkdir(dir, { recursive: true });
-    const owner = 'f75-controlled' + (suffix ? '-002' : ''),
-      environmentId = suffix
-        ? '00000000-0000-4000-8000-000000000076'
-        : '00000000-0000-4000-8000-000000000075';
+    const owner = 'f75-controlled' + (suffix ? '-' + suffix : ''),
+      environmentId =
+        batchId === '003'
+          ? '00000000-0000-4000-8000-000000000077'
+          : suffix
+            ? '00000000-0000-4000-8000-000000000076'
+            : '00000000-0000-4000-8000-000000000075';
     process.env.OWNER_SINGLE_USER = 'true';
     process.env.OWNER_SINGLE_USER_ID = owner;
     process.env.PERSISTENCE_SHARED_OWNER_ID = '';
@@ -155,7 +158,12 @@ it.skipIf(!phase)(
           run = 'run-F75controlled' + batchId;
         expect(run).toMatch(/^run-[\w-]{16}$/);
         const one = makeSlideScene('f75-density-one', stage, 0, '密度与质量：QA');
-        const two = makeSlideScene('f75-conversion-two', stage, 1, '单位换算：Discussion');
+        const two = makeSlideScene(
+          'f75-conversion-two',
+          stage,
+          batchId === '003' ? 0 : 1,
+          '单位换算：Discussion',
+        );
         if (one.content.type === 'slide') one.content.canvas.viewportRatio = 9 / 16;
         if (two.content.type === 'slide') two.content.canvas.viewportRatio = 9 / 16;
         two.actions = [
@@ -168,7 +176,11 @@ it.skipIf(!phase)(
             agentId: 'default-1',
           },
         ];
-        const doc = makeDocument(stage, 'F75 合成密度课堂', [one, two]);
+        // 003 starts at Discussion; its second scene permits a real return-to-lecture closure.
+        const scenes =
+          batchId === '003' ? [two, { ...one, order: 1, title: '讨论后返回讲授' }] : [one, two];
+        const doc = makeDocument(stage, 'F75 合成密度课堂', scenes);
+        if (batchId === '003') doc.stage.agentIds = ['default-1'];
         doc.outline = {
           ...doc.outline!,
           producer: 'server-job',
@@ -211,8 +223,8 @@ it.skipIf(!phase)(
           version: 'f75-live-' + batchId + '.v1',
           applicationDatabase: 'f75_app' + suffix,
           memoryDatabase: 'f75_memory' + suffix,
-          appPort: suffix ? 3085 : 3075,
-          gatewayPort: suffix ? 3086 : 3076,
+          appPort: batchId === '003' ? 3095 : suffix ? 3085 : 3075,
+          gatewayPort: batchId === '003' ? 3096 : suffix ? 3086 : 3076,
           sourceNature: 'proxy',
           synthetic: true,
           operatorKnowsAnswers: true,
@@ -222,7 +234,9 @@ it.skipIf(!phase)(
           generationRunId: run,
           model: 'deepseek:deepseek-v4-flash',
           scope:
-            'real native page QA/Discussion + automatic stages + next-course planning context; fixed authored initial slides',
+            batchId === '003'
+              ? 'Discussion only + automatic stages + opt-in formal next-course outline; fixed authored initial slides'
+              : 'real native page QA/Discussion + automatic stages + next-course planning context; fixed authored initial slides',
           limits: {
             totalCalls: 16,
             evidenceCalls: 2,
@@ -256,13 +270,20 @@ it.skipIf(!phase)(
             [owner],
           )
         ).rows;
-        if (phase === 'readback') expect(jobs).toHaveLength(2);
+        if (phase === 'readback') expect(jobs).toHaveLength(batchId === '003' ? 1 : 2);
         const store = new DialogueLoopStore(app),
           memory = new DialogueMemoryService(app, opened.memory, loadDialogueMemorySettings);
         const result = [];
         for (const row of jobs) {
           const job = await store.read(owner, row.id as string);
-          if (phase === 'readback') expect(job.state).toBe('completed');
+          if (phase === 'readback') {
+            expect(job.state).toBe('completed');
+            if (batchId === '003') {
+              expect(job.snapshot?.type).toBe('discussion');
+              expect(job.snapshot?.status).toBe('completed');
+              expect(job.memoryState).toBe('completed');
+            }
+          }
           const evidence = await readDialogueEvidenceRun(app, owner, job.evidenceRunId!);
           const delivery = job.memoryDeliveryId
             ? await memory.read(owner, job.memoryDeliveryId)

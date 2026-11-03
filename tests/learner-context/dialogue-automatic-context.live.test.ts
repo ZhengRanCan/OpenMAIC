@@ -231,9 +231,9 @@ it.skipIf(process.env.F75_CONTEXT_READBACK !== '1')(
   'F75 next-class formal context readback without paid selection',
   async () => {
     const batchId = process.env.F75_BATCH_ID ?? '001';
-    const suffix = batchId === '001' ? '' : '002';
+    const suffix = batchId === '001' ? '' : batchId;
     if (
-      !['001', '002'].includes(batchId) ||
+      !['001', '002', '003'].includes(batchId) ||
       !process.env.DATABASE_URL?.endsWith('/f75_app' + suffix) ||
       !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory' + suffix)
     )
@@ -309,4 +309,216 @@ it.skipIf(process.env.F75_CONTEXT_READBACK !== '1')(
       await provider.pool.end();
     }
   },
+);
+
+function assertCompletedGatewayRecords(records: { state: string; usage: unknown }[]) {
+  if (
+    !records.length ||
+    records.some((r) => {
+      if (r.state !== 'completed' || !r.usage || typeof r.usage !== 'object') return true;
+      const u = r.usage as Record<string, unknown>;
+      return ['prompt_tokens', 'completion_tokens', 'total_tokens'].some(
+        (k) => typeof u[k] !== 'number' || !Number.isFinite(u[k]) || (u[k] as number) < 0,
+      );
+    })
+  )
+    throw Error('F75_GATEWAY_FAILED_OR_UNKNOWN_NO_RETRY');
+}
+it.each([
+  null,
+  {},
+  { prompt_tokens: 1, completion_tokens: 1 },
+  { prompt_tokens: 1, completion_tokens: 1, total_tokens: NaN },
+])('rejects incomplete usage at the final outline checkpoint: %j', (usage) => {
+  expect(() => assertCompletedGatewayRecords([{ state: 'completed', usage }])).toThrow(
+    'F75_GATEWAY_FAILED_OR_UNKNOWN_NO_RETRY',
+  );
+});
+it('accepts fully accounted terminal calls and rejects unknown state', () => {
+  const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
+  expect(() => assertCompletedGatewayRecords([{ state: 'completed', usage }])).not.toThrow();
+  expect(() => assertCompletedGatewayRecords([{ state: 'unknown', usage }])).toThrow(
+    'F75_GATEWAY_FAILED_OR_UNKNOWN_NO_RETRY',
+  );
+});
+/** Paid only when explicitly enabled: the server performs the selector and outline steps. */
+it.skipIf(process.env.F75_NEXT_CLASS_START !== '1')(
+  'F75 live-003 creates a formal next-class run and stops at outline confirmation',
+  async () => {
+    if (
+      process.env.F75_BATCH_ID !== '003' ||
+      !process.env.DATABASE_URL?.endsWith('/f75_app003') ||
+      !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory003')
+    )
+      throw Error('F75_LIVE003_ISOLATION_REQUIRED');
+    const dir = path.resolve(process.env.F75_ARTIFACT_DIR ?? '');
+    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-003'))
+      throw Error('F75_ARTIFACT_DIR_REQUIRED');
+    const batch = JSON.parse(await readFile(path.join(dir, 'batch.json'), 'utf8'));
+    expect(batch.owner).toBe('f75-controlled-003');
+    expect(batch.environmentId).toBe('00000000-0000-4000-8000-000000000077');
+    expect(batch.applicationDatabase).toBe('f75_app003');
+    expect(batch.memoryDatabase).toBe('f75_memory003');
+    expect(batch.appPort).toBe(3095);
+    expect(batch.gatewayPort).toBe(3096);
+    process.env.OPENMAIC_SIMULATED_LEARNING_LOOP = JSON.stringify({
+      sourceNature: 'proxy',
+      conditions: [
+        'F75 isolated synthetic classroom; operator knows reference answers; not real learner evidence',
+      ],
+      memoryEnvironmentId: batch.environmentId,
+    });
+    process.env.OPENMAIC_DIALOGUE_EVIDENCE_BINDINGS_FILE = '';
+    const base = 'http://127.0.0.1:3095';
+    const gateway = 'http://127.0.0.1:3096';
+    const write = (name: string, value: unknown) =>
+      writeFile(path.join(dir, name), JSON.stringify(value, null, 2) + '\n', { flag: 'wx' });
+    const getBudget = async () => {
+      const response = await fetch(gateway + '/__f75/status', {
+        signal: AbortSignal.timeout(10_000),
+        redirect: 'error',
+      });
+      expect(response.ok).toBe(true);
+      return (await response.json()) as {
+        stopped: boolean;
+        calls: number;
+        counts: { evidence: number; memory: number; other: number };
+        records: { state: string; usage: unknown }[];
+      };
+    };
+    const readRun = async (id: string) => {
+      const response = await fetch(base + '/api/generation-runs/' + encodeURIComponent(id), {
+        signal: AbortSignal.timeout(15_000),
+        redirect: 'error',
+      });
+      expect(response.ok).toBe(true);
+      const body = await response.json();
+      expect(body.success).toBe(true);
+      return body.run as import('@/lib/server/generation/run/types').GenerationRunSnapshot;
+    };
+    const provider = await getServerPersistenceProvider(process.env.DATABASE_URL!);
+    let intentWritten = false;
+    try {
+      const jobs = await provider.pool.query(
+        'SELECT data FROM dialogue_loop_jobs WHERE owner_id=$1',
+        [batch.owner],
+      );
+      expect(jobs.rows).toHaveLength(1);
+      expect(jobs.rows[0].data).toMatchObject({
+        state: 'completed',
+        memoryState: 'completed',
+        snapshot: { type: 'discussion', status: 'completed' },
+      });
+      const formal = await readSimulatedLearnerMemory('A');
+      expect(formal.usable.revision).toBeGreaterThan(0);
+      expect(formal.coverage.some((s) => s.valid && s.source_id.includes(':dialogue:'))).toBe(true);
+      const before = await getBudget();
+      expect(before.stopped).toBe(false);
+      assertCompletedGatewayRecords(before.records);
+      expect(before.counts.evidence).toBe(1);
+      expect(before.counts.memory).toBe(1);
+      // Reserve at least a selector and an outline call; the gateway remains the final authority.
+      expect(before.counts.other).toBeLessThanOrEqual(batch.limits.otherCalls - 2);
+      const existing = await provider.pool.query(
+        'SELECT id FROM generation_runs WHERE owner_id=$1 AND id<>$2',
+        [batch.owner, batch.generationRunId],
+      );
+      expect(existing.rows).toHaveLength(0);
+      const input = {
+        requirement: batch.inputs.nextClass,
+        simulatedLearner: 'A',
+        materialIds: [],
+        interactive: false,
+        taskEngine: false,
+        agents: { mode: 'preset', agentIds: ['default-1'] },
+        outlineReview: 'wait',
+      };
+      // Written before POST. A timeout/unknown response never permits a second paid start.
+      await write('next-class-intent.json', {
+        input,
+        expectedMemoryRevision: formal.usable.revision,
+        formalCoverage: formal.coverage,
+        gatewayBefore: before,
+      });
+      intentWritten = true;
+      const started = await fetch(base + '/api/generation-runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(15_000),
+        redirect: 'error',
+      });
+      const startBody = await started.json();
+      await write('next-class-start.json', { status: started.status, body: startBody });
+      expect(started.status).toBe(202);
+      expect(startBody.success).toBe(true);
+      const id = startBody.run.id as string;
+      expect(id).toMatch(/^run-[\w-]{16}$/);
+      expect(id).not.toBe(batch.generationRunId);
+      let run = await readRun(id);
+      const deadline = Date.now() + 240_000;
+      while (run.state !== 'awaiting_outline_confirmation') {
+        const status = await getBudget();
+        if (status.records.some((r) => ['failed', 'unknown'].includes(r.state)))
+          throw Error('F75_GATEWAY_FAILED_OR_UNKNOWN_NO_RETRY');
+        if (!['preparing', 'outlining'].includes(run.state)) {
+          await write('next-class-terminal.json', { run, gateway: status });
+          throw Error('F75_NEXT_CLASS_DID_NOT_REACH_OUTLINE_WAIT');
+        }
+        if (Date.now() >= deadline) throw Error('F75_NEXT_CLASS_POLL_TIMEOUT_NO_RETRY');
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        run = await readRun(id);
+      }
+      const checkpoints = await provider.pool.query(
+        'SELECT step_id,output FROM generation_run_steps WHERE run_id=$1 ORDER BY step_id',
+        [id],
+      );
+      const context = run.outline?.learnerContext;
+      // Persist the actual result even if a semantic assertion fails; never fabricate a selection.
+      const gatewayAfter = await getBudget();
+      await write('next-class-outline-wait.json', {
+        run,
+        checkpoints: checkpoints.rows,
+        expectedMemoryRevision: formal.usable.revision,
+        gatewayAfter,
+        fullCourseGenerated: false,
+      });
+      assertCompletedGatewayRecords(gatewayAfter.records);
+      expect(run.input).toMatchObject(input);
+      expect(run.outlineAutoConfirmAt).toBeUndefined();
+      expect(run.progress.scenesCompleted).toBe(0);
+      expect(context?.memoryRevision).toBe(formal.usable.revision);
+      expect(context?.student).toBe('A');
+      expect(context?.status).toBe('ready');
+      expect(
+        context?.selected.some((p) => p.supports.some((s) => s.kind === 'dialogue_evidence')),
+      ).toBe(true);
+      expect(checkpoints.rows.find((r) => r.step_id === 'learner-context')?.output).toEqual(
+        context,
+      );
+      expect(checkpoints.rows.some((r) => r.step_id.startsWith('scene:'))).toBe(false);
+      await write('next-class-verification.json', {
+        passed: true,
+        runId: id,
+        memoryRevision: context!.memoryRevision,
+        selected: context!.selected,
+        state: run.state,
+        formalGenerationEntry: true,
+        fullCourseGenerated: false,
+      });
+    } catch (error) {
+      if (intentWritten) {
+        // Any failed/unknown paid path closes the global gateway; no recovery or automatic retry.
+        await fetch(gateway + '/__f75/shutdown', {
+          method: 'POST',
+          signal: AbortSignal.timeout(5_000),
+          redirect: 'error',
+        }).catch(() => {});
+      }
+      throw error;
+    } finally {
+      await provider.pool.end();
+    }
+  },
+  300_000,
 );
