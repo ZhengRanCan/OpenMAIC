@@ -9,12 +9,22 @@ import {
 import { SIMULATED_MEMORY_SYSTEM } from './simulated-prompt';
 import { LearnerMemoryStore } from '@/lib/persistence/learner-memory-store';
 import { readMemory, updateMemory, type MemoryInvoker } from '@/lib/server/learner-memory';
+import type { DialogueSourceAuthority } from './dialogue-contracts';
 
 /** Local simulation adapter. All writes remain in the same Memory tables and transactions. */
 export class SimulatedMemoryEnvironment {
   readonly store: LearnerMemoryStore;
-  constructor(readonly provider: { withTransaction: WithTransaction }) {
-    this.store = new LearnerMemoryStore({ ...provider, systemPrompt: SIMULATED_MEMORY_SYSTEM });
+  constructor(
+    readonly provider: {
+      withTransaction: WithTransaction;
+      systemPrompt?: string;
+      sourceAuthority?: DialogueSourceAuthority;
+    },
+  ) {
+    this.store = new LearnerMemoryStore({
+      ...provider,
+      systemPrompt: provider.systemPrompt ?? SIMULATED_MEMORY_SYSTEM,
+    });
   }
   private async seedOne(tx: Queryable, student: SimulatedStudent, reset: boolean) {
     const seed = simulatedSeed(student),

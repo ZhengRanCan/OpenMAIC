@@ -207,6 +207,13 @@ const SHIPPED: readonly (readonly [
     true,
     'b39591e81dff7cf839efc6ad0ed38eca03a1daf9dd9e7e445c732e813d5797e7',
   ],
+  [
+    'dialogue-memory',
+    1,
+    'source_bound_memory_deliveries',
+    true,
+    'b655a084b11cc6f31ac25521bca449a16a030b79cd1940c619d6b27df666e15e',
+  ],
 ];
 
 /**

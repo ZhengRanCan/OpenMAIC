@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import type { ServerPersistenceProvider } from './server-provider';
 import { fenceOwnerWrite } from './owner-merges';
+import { restrictDialogueMemoryIn } from './dialogue-memory-lifecycle';
 import { readDialogueSourceIn } from './dialogue-trace-read';
 import {
   dialogueEvidenceRunIn,
@@ -394,6 +395,9 @@ export class DialogueEvidenceStore {
         [owner, run.reuseKey],
       );
       for (const row of rows.rows) {
+        await restrictDialogueMemoryIn(tx, owner, {
+          evidenceRunId: (row.data as DialogueEvidenceRun).id,
+        });
         const revoked = redactDialogueRun(row.data as DialogueEvidenceRun, 'evidence_deleted');
         await save(tx, owner, revoked);
       }

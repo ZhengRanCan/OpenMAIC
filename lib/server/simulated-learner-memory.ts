@@ -36,6 +36,9 @@ export async function readSimulatedLearnerMemory(
     const { nodePostgresTransaction } = await import('@openmaic/storage/server/reference');
     const withTransaction = nodePostgresTransaction(pool as unknown as ConnectableQueryable);
     const store = new LearnerMemoryStore({
+      sourceAuthority: (
+        await import('./dialogue-memory-authority')
+      ).createDialogueMemoryAuthority(),
       withTransaction: (body) =>
         withTransaction(async (tx) => {
           // The formal store normally creates an empty state when absent. Consumers

@@ -25,7 +25,7 @@ export const scopeSchema = z.strictObject({
 export type MemoryScope = z.infer<typeof scopeSchema>;
 const rawSourceSchema = z.strictObject({
   id,
-  kind: z.enum(['quiz_evidence', 'declaration', 'confirmed_experience']),
+  kind: z.enum(['quiz_evidence', 'dialogue_evidence', 'declaration', 'confirmed_experience']),
   text,
   refs: z.array(text).min(1).max(32),
   conditions: z.array(text).max(32),

@@ -33,6 +33,7 @@ export async function openSimulatedMemory(connectionString = process.env.MEMORY_
   const { nodePostgresTransaction } = await import('@openmaic/storage/server/reference');
   const memory = new SimulatedMemoryEnvironment({
     withTransaction: nodePostgresTransaction(pool as unknown as ConnectableQueryable),
+    sourceAuthority: (await import('./dialogue-memory-authority')).createDialogueMemoryAuthority(),
   });
   return { memory, close: () => pool.end() };
 }

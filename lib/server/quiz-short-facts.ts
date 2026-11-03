@@ -265,6 +265,7 @@ export class QuizShortFactsService {
       if ((await readMemoryEnvironment(tx)) !== run.request.memoryEnvironmentId)
         throw new Error('MEMORY_ENVIRONMENT_MISMATCH');
       const sameTransaction = new SimulatedMemoryEnvironment({
+        sourceAuthority: memory.provider.sourceAuthority,
         withTransaction: (body) => body(tx),
       });
       const existing = await sameTransaction.store.getRun(scope, operationId);
@@ -427,6 +428,7 @@ export class QuizShortFactsService {
       if (pending.rows.some((row) => !batchSources.some((source) => source.id === row.source_id)))
         throw new Error('MEMORY_PENDING_SOURCES');
       const sameTransaction = new SimulatedMemoryEnvironment({
+        sourceAuthority: memory.provider.sourceAuthority,
         withTransaction: (body) => body(tx),
       });
       await sameTransaction.ingest(run.request.student, batchSources);

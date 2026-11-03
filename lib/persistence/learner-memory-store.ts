@@ -21,6 +21,7 @@ import {
 import { buildMemoryPrompt } from '@/lib/learner-memory/prompt';
 import { validateTransition } from '@/lib/learner-memory/transition';
 import { projectMemory, renderMemory } from '@/lib/learner-memory/read';
+import type { DialogueSourceAuthority } from '@/lib/learner-memory/dialogue-contracts';
 
 type Row<T> = Record<string, unknown> & T;
 interface State {
@@ -37,7 +38,42 @@ const key = (scope: MemoryScope) => [scope.namespace, scope.learnerKey];
 
 /** Explicit experiment adapter. No public identity/production wiring is implied. */
 export class LearnerMemoryStore {
-  constructor(readonly provider: { withTransaction: WithTransaction; systemPrompt?: string }) {}
+  constructor(
+    readonly provider: {
+      withTransaction: WithTransaction;
+      systemPrompt?: string;
+      sourceAuthority?: DialogueSourceAuthority;
+    },
+  ) {}
+  private async refreshDialogueSources(tx: Queryable, scope: MemoryScope, state: State) {
+    const rows = await tx.query<Row<{ data: MemorySource }>>(
+      "SELECT data FROM learner_memory_sources WHERE namespace=$1 AND learner_key=$2 AND valid AND data->>'kind'='dialogue_evidence'",
+      key(scope),
+    );
+    let changed = false;
+    for (const { data } of rows.rows) {
+      invariant(this.provider.sourceAuthority, 'DIALOGUE_SOURCE_AUTHORITY_REQUIRED');
+      const reason = await this.provider.sourceAuthority(scope, data, tx);
+      if (!reason) continue;
+      await tx.query(
+        'UPDATE learner_memory_sources SET valid=false WHERE namespace=$1 AND learner_key=$2 AND source_id=$3 AND version=$4',
+        [...key(scope), data.id, data.version],
+      );
+      for (const p of state.snapshot.pieces)
+        if (p.supports.some((s) => s.id === data.id && s.version === data.version)) {
+          p.restrictions = [...new Set([...p.restrictions, reason])];
+          state.maintenance = true;
+        }
+      changed = true;
+    }
+    if (changed) {
+      state.snapshot.revision++;
+      await tx.query(
+        'UPDATE learner_memory_states SET snapshot=$3::jsonb,maintenance=$4 WHERE namespace=$1 AND learner_key=$2',
+        [...key(scope), JSON.stringify(state.snapshot), state.maintenance],
+      );
+    }
+  }
   private async locked<T>(
     scope: MemoryScope,
     body: (tx: Queryable, state: State) => Promise<T>,
@@ -52,6 +88,7 @@ export class LearnerMemoryStore {
         'SELECT snapshot,maintenance FROM learner_memory_states WHERE namespace=$1 AND learner_key=$2 FOR UPDATE',
         key(scope),
       );
+      await this.refreshDialogueSources(tx, scope, result.rows[0]);
       return body(tx, result.rows[0]);
     });
   }
@@ -78,6 +115,13 @@ export class LearnerMemoryStore {
     invariant(new Set(sources.map((s) => s.id)).size === sources.length, 'DUPLICATE_SOURCE_ID');
     await this.locked(scope, async (tx) => {
       for (const s of sources) {
+        if (s.kind === 'dialogue_evidence') {
+          invariant(this.provider.sourceAuthority, 'DIALOGUE_SOURCE_AUTHORITY_REQUIRED');
+          invariant(
+            !(await this.provider.sourceAuthority(scope, s, tx)),
+            'DIALOGUE_SOURCE_RESTRICTED',
+          );
+        }
         const prior = await tx.query<Row<SourceRow>>(
           'SELECT data,valid,current,processed FROM learner_memory_sources WHERE namespace=$1 AND learner_key=$2 AND source_id=$3 AND version=$4',
           [...key(scope), s.id, s.version],
