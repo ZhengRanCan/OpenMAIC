@@ -13,6 +13,10 @@ import { model, reply } from '../persistence/dialogue-evidence-fixture';
 import { memoryModel, controlledMemoryReply } from '../persistence/dialogue-memory-fixture';
 import { readDialogueEvidenceRun } from '@/lib/persistence/dialogue-evidence-read';
 import { ensureMemorySchema } from '@/lib/persistence/learner-memory-schema';
+import { invokeMemorySelectionModel } from '@/lib/server/learner-memory-selection-model';
+import { resolveModel } from '@/lib/server/resolve-model';
+import { readSimulatedLearnerMemory } from '@/lib/server/simulated-learner-memory';
+import { PreclassLearnerContextError } from '@/lib/learner-context/contracts';
 const authority = vi.hoisted(() => ({
   current: undefined as
     | import('@/lib/learner-memory/dialogue-contracts').DialogueSourceAuthority
@@ -30,6 +34,90 @@ vi.mock('@/lib/server/dialogue-memory-authority', async (original) => {
         : authority.current,
   };
 });
+
+it.skipIf(process.env.F75_CONTEXT_CHECKPOINT !== '1')(
+  'F75 live-002 formal preclass selection input checkpoint; no model invocation',
+  async () => {
+    if (
+      process.env.F75_BATCH_ID !== '002' ||
+      !process.env.DATABASE_URL?.endsWith('/f75_app002') ||
+      !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory002')
+    )
+      throw Error('F75_LIVE002_ISOLATION_REQUIRED');
+    const dir = path.resolve(process.env.F75_ARTIFACT_DIR ?? '');
+    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-002'))
+      throw Error('F75_ARTIFACT_DIR_REQUIRED');
+    const batch = JSON.parse(await readFile(path.join(dir, 'batch.json'), 'utf8'));
+    process.env.OPENMAIC_SIMULATED_LEARNING_LOOP = JSON.stringify({
+      sourceNature: 'proxy',
+      conditions: [
+        'F75 isolated synthetic classroom; operator knows reference answers; not real learner evidence',
+      ],
+      memoryEnvironmentId: batch.environmentId,
+    });
+    process.env.OPENMAIC_DIALOGUE_EVIDENCE_BINDINGS_FILE = '';
+    const provider = await getServerPersistenceProvider(process.env.DATABASE_URL!);
+    try {
+      const formal = await readSimulatedLearnerMemory('A');
+      expect(formal.usable.revision).toBeGreaterThan(0);
+      expect(formal.coverage.some((s) => s.source_id.includes(':dialogue:') && s.valid)).toBe(true);
+      const resolved = await resolveModel({
+        stage: 'scene-outlines-stream',
+        workspaceId: batch.owner,
+        modelString: batch.model,
+      });
+      let selectedInput: unknown = null,
+        checkpoint = false;
+      await expect(
+        buildPreclassLearnerContext(
+          { student: 'A', task: batch.inputs.nextClass, content: {} },
+          {
+            select: async (prompt) => {
+              selectedInput = JSON.parse(prompt.user);
+              return invokeMemorySelectionModel({
+                resolvedModel: resolved,
+                usageLabel: 'f75-live002-read-checkpoint',
+                prompt,
+                beforeSelect: async () => {
+                  checkpoint = true;
+                  throw new PreclassLearnerContextError('F75_READ_CHECKPOINT_REACHED');
+                },
+              });
+            },
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'F75_READ_CHECKPOINT_REACHED' });
+      expect(checkpoint).toBe(true);
+      expect((await readSimulatedLearnerMemory('A')).usable.revision).toBe(formal.usable.revision);
+      const input = selectedInput as { memory: { sources: { kind: string }[] }[] };
+      expect(input.memory.some((p) => p.sources.some((s) => s.kind === 'dialogue_evidence'))).toBe(
+        true,
+      );
+      await writeFile(
+        path.join(dir, 'formal-selection-checkpoint.json'),
+        JSON.stringify(
+          {
+            checkpoint: true,
+            formalMemoryRevision: formal.usable.revision,
+            formalCoverage: formal.coverage,
+            selectedInput,
+            modelCalls: 0,
+            selectionResultProduced: false,
+            nextClassCreated: false,
+            fullCourseGenerated: false,
+            limitation:
+              'Stopped at the production selector beforeSelect hook; no actual model selection result or new generation run.',
+          },
+          null,
+          2,
+        ) + '\n',
+        { flag: 'wx' },
+      );
+    } finally {
+      await provider.pool.end();
+    }
+  },
+);
 const contractUrl = process.env.PG_CONTRACT_URL;
 if (!contractUrl && process.env.STORAGE_PG_CONTRACT_REQUIRED === '1')
   throw Error('F75 requires PG_CONTRACT_URL');
@@ -142,13 +230,16 @@ it.skipIf(!contractUrl)(
 it.skipIf(process.env.F75_CONTEXT_READBACK !== '1')(
   'F75 next-class formal context readback without paid selection',
   async () => {
+    const batchId = process.env.F75_BATCH_ID ?? '001';
+    const suffix = batchId === '001' ? '' : '002';
     if (
-      !process.env.DATABASE_URL?.endsWith('/f75_app') ||
-      !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory')
+      !['001', '002'].includes(batchId) ||
+      !process.env.DATABASE_URL?.endsWith('/f75_app' + suffix) ||
+      !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory' + suffix)
     )
       throw Error('F75_ISOLATED_DATABASES_REQUIRED');
     const dir = path.resolve(process.env.F75_ARTIFACT_DIR ?? '');
-    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-001'))
+    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-' + batchId))
       throw Error('F75_ARTIFACT_DIR_REQUIRED');
     const batch = JSON.parse(await readFile(path.join(dir, 'batch.json'), 'utf8'));
     process.env.OPENMAIC_SIMULATED_LEARNING_LOOP = JSON.stringify({

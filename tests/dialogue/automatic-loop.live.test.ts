@@ -17,22 +17,29 @@ import { getProvider } from '@/lib/ai/providers';
 import { readDialogueEvidenceRun } from '@/lib/persistence/dialogue-evidence-read';
 import { DialogueMemoryService } from '@/lib/server/dialogue-memory';
 import { loadDialogueMemorySettings } from '@/lib/server/dialogue-memory-authority';
+import { chatIdFromRuntime } from '@/lib/server/dialogue-learning-loop/registration';
+import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
 const phase = process.env.F75_LIVE_PHASE;
+const batchId = process.env.F75_BATCH_ID ?? '001';
+const suffix = batchId === '001' ? '' : '002';
 it.skipIf(!phase)(
   'F75 isolated native page preparation/readback; never invokes a model itself',
   async () => {
     if (
-      !['prepare', 'readback', 'serve'].includes(phase!) ||
-      !process.env.DATABASE_URL?.endsWith('/f75_app') ||
-      !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory')
+      !['001', '002'].includes(batchId) ||
+      !['prepare', 'readback', 'inspect', 'sources', 'serve', 'preflight'].includes(phase!) ||
+      !process.env.DATABASE_URL?.endsWith('/f75_app' + suffix) ||
+      !process.env.MEMORY_DATABASE_URL?.endsWith('/f75_memory' + suffix)
     )
       throw Error('F75_ISOLATED_DATABASES_REQUIRED');
     const dir = path.resolve(process.env.F75_ARTIFACT_DIR ?? '');
-    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-001'))
+    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-' + batchId))
       throw Error('F75_ARTIFACT_DIR_REQUIRED');
     await mkdir(dir, { recursive: true });
-    const owner = 'f75-controlled',
-      environmentId = '00000000-0000-4000-8000-000000000075';
+    const owner = 'f75-controlled' + (suffix ? '-002' : ''),
+      environmentId = suffix
+        ? '00000000-0000-4000-8000-000000000076'
+        : '00000000-0000-4000-8000-000000000075';
     process.env.OWNER_SINGLE_USER = 'true';
     process.env.OWNER_SINGLE_USER_ID = owner;
     process.env.PERSISTENCE_SHARED_OWNER_ID = '';
@@ -93,6 +100,46 @@ it.skipIf(!phase)(
           expect(sha(await readFile(path.join(base, f.path)))).toBe(f.sha256);
         originals[rel] = m.files.length;
       }
+      if (phase === 'preflight') {
+        expect(
+          (await app.pool.query('SELECT count(*)::int AS n FROM dialogue_loop_jobs')).rows[0].n,
+        ).toBe(0);
+        const resolved = await resolveModel({
+          stage: 'quiz-evidence',
+          workspaceId: owner,
+          modelString: 'deepseek:deepseek-v4-flash',
+        });
+        expect(!!resolved.apiKey).toBe(true);
+        await write('preflight.json', {
+          passed: true,
+          externalCalls: 0,
+          model: 'deepseek:deepseek-v4-flash',
+          credentialAvailable: true,
+          originalHashes: originals,
+        });
+        return;
+      }
+      if (phase === 'sources') {
+        const batch = JSON.parse(await readFile(path.join(dir, 'batch.json'), 'utf8'));
+        const rows = await app.pool.query(
+          "SELECT id FROM runtime_sessions WHERE learner_key=$1 AND stage_id=$2 AND kind='chat'",
+          [owner, batch.stageId],
+        );
+        const ids = [
+          ...new Set(
+            rows.rows
+              .map((row) => chatIdFromRuntime(row.id as string, batch.stageId, owner))
+              .filter((id): id is string => !!id),
+          ),
+        ];
+        const sources = [];
+        for (const chatSessionId of ids)
+          sources.push(
+            await readDialogueSource(app, owner, { stageId: batch.stageId, chatSessionId }),
+          );
+        await write('source-windows.json', { additionalModelCalls: 0, sources });
+        return;
+      }
       if (phase === 'prepare') {
         await opened.memory.provider.withTransaction(async (tx) => {
           await tx.query(
@@ -104,8 +151,8 @@ it.skipIf(!phase)(
         const before = await opened.memory.read('A');
         await write('memory-before.json', before);
         await ensureGenerationRunSchema(app.pool);
-        const stage = 'f75-classroom',
-          run = 'run-F75controlled001';
+        const stage = 'f75-classroom' + suffix,
+          run = 'run-F75controlled' + batchId;
         expect(run).toMatch(/^run-[\w-]{16}$/);
         const one = makeSlideScene('f75-density-one', stage, 0, '密度与质量：QA');
         const two = makeSlideScene('f75-conversion-two', stage, 1, '单位换算：Discussion');
@@ -161,7 +208,11 @@ it.skipIf(!phase)(
           );
         await write('seed-document.json', doc);
         await write('batch.json', {
-          version: 'f75-live-001.v1',
+          version: 'f75-live-' + batchId + '.v1',
+          applicationDatabase: 'f75_app' + suffix,
+          memoryDatabase: 'f75_memory' + suffix,
+          appPort: suffix ? 3085 : 3075,
+          gatewayPort: suffix ? 3086 : 3076,
           sourceNature: 'proxy',
           synthetic: true,
           operatorKnowsAnswers: true,
@@ -176,6 +227,7 @@ it.skipIf(!phase)(
             totalCalls: 16,
             evidenceCalls: 2,
             memoryCalls: 2,
+            otherCalls: 12,
             maxOutputPerOtherCall: 8192,
             totalConfiguredOutput: 131072,
             totalRequestBytes: 2097152,
@@ -204,22 +256,22 @@ it.skipIf(!phase)(
             [owner],
           )
         ).rows;
-        expect(jobs).toHaveLength(2);
+        if (phase === 'readback') expect(jobs).toHaveLength(2);
         const store = new DialogueLoopStore(app),
           memory = new DialogueMemoryService(app, opened.memory, loadDialogueMemorySettings);
         const result = [];
         for (const row of jobs) {
           const job = await store.read(owner, row.id as string);
-          expect(job.state).toBe('completed');
+          if (phase === 'readback') expect(job.state).toBe('completed');
           const evidence = await readDialogueEvidenceRun(app, owner, job.evidenceRunId!);
           const delivery = job.memoryDeliveryId
             ? await memory.read(owner, job.memoryDeliveryId)
             : null;
-          result.push({ job, evidence, delivery });
+          result.push({ job: { ...job, token: null, leaseExpiresAt: null }, evidence, delivery });
         }
         const formal = await readSimulatedLearnerMemory('A');
         expect(formal.coverage.some((s) => s.source_id.includes(':dialogue:'))).toBe(true);
-        await write('restart-readback.json', {
+        await write(phase === 'inspect' ? 'inspect-readback.json' : 'restart-readback.json', {
           results: result,
           formal,
           originalHashes: originals,
