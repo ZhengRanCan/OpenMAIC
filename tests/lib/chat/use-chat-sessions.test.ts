@@ -55,6 +55,7 @@ describe('normalizeStoredSessionsForRestore', () => {
       ['soft-closing', 'completed', 'user_goodbye'],
       ['completed', 'completed', undefined],
     ]);
+    expect(restored.every((session) => session.learningClosure === undefined)).toBe(true);
   });
 });
 

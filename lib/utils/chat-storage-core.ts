@@ -13,6 +13,7 @@ import { isEqual } from 'lodash';
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
 import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';
 import { isChatSessionInitialContext } from '@/lib/chat/session-initial-context';
+import { learningClosureSchema, loopId } from '@/lib/dialogue/learning-loop-contracts';
 
 export const MAX_MESSAGES_PER_SESSION = 200;
 export const RESTORE_MARKER_PREFIX = 'chat-restore-marker:';
@@ -45,6 +46,8 @@ export interface ChatSessionStatePayload extends ChatMessageSkeleton {
   updatedAt: number;
   sceneId?: string;
   initialContext?: ChatSession['initialContext'];
+  learningRunId?: string;
+  learningClosure?: ChatSession['learningClosure'];
   lastActionIndex?: number;
 }
 
@@ -340,6 +343,12 @@ export function statePayload(session: ChatSession): ChatSessionStatePayload {
     ...(Number.isInteger(session.lastActionIndex)
       ? { lastActionIndex: session.lastActionIndex }
       : {}),
+    ...(loopId.safeParse(session.learningRunId).success
+      ? { learningRunId: session.learningRunId }
+      : {}),
+    ...(learningClosureSchema.safeParse(session.learningClosure).success
+      ? { learningClosure: session.learningClosure }
+      : {}),
   };
 }
 
@@ -438,6 +447,12 @@ export function foldRecords(records: RuntimeRecord[]): FoldedChat {
         ? { initialContext: { ...state.initialContext } }
         : {}),
       lastActionIndex: state.lastActionIndex,
+      ...(loopId.safeParse(state.learningRunId).success
+        ? { learningRunId: state.learningRunId }
+        : {}),
+      ...(learningClosureSchema.safeParse(state.learningClosure).success
+        ? { learningClosure: state.learningClosure }
+        : {}),
     },
   };
 }

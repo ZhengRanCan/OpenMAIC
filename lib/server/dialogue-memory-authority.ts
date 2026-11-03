@@ -5,7 +5,7 @@ import {
   dialogueSourceStatusIn,
 } from '@/lib/persistence/dialogue-evidence-read';
 import {
-  matchDialogueBinding,
+  resolveDialogueBindingIn,
   verifyDialogueBindingIn,
   loadDialogueEvidenceSettings,
 } from './dialogue-evidence-provenance';
@@ -42,7 +42,7 @@ export async function verifiedDialogueEvidenceIn(
   const live = await dialogueSourceStatusIn(tx, owner, run);
   if (live.status !== 'available')
     throw new DialogueMemoryError('SOURCE_' + live.status.toUpperCase());
-  const binding = matchDialogueBinding(run.snapshot, settings);
+  const binding = await resolveDialogueBindingIn(tx, run.snapshot, settings);
   if (
     !binding ||
     run.ownerId !== run.snapshot.ownerId ||

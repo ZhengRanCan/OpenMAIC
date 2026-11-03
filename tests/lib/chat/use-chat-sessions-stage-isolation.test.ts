@@ -101,8 +101,15 @@ describe('actual chat hook stage isolation and initial context', () => {
   });
 
   it('captures QA and Discussion on their actual entry points and keeps the original context on follow-up', async () => {
+    act(() =>
+      useStageStore.setState({
+        outlineProducer: 'server-job',
+        outlineProducerRef: 'run-0123456789abcdef',
+      }),
+    );
     await act(async () => api.sendMessage('first question'));
     const first = api.sessions[0];
+    expect(first.learningRunId).toBe('run-0123456789abcdef');
     expect(first.initialContext).toEqual({
       stageId: 'a',
       stageTitle: 'Class a',
@@ -128,6 +135,9 @@ describe('actual chat hook stage isolation and initial context', () => {
       sceneId: 'new',
       sceneTitle: 'Scene new',
     });
+    expect(api.sessions.at(-1)?.learningRunId).toBe('run-0123456789abcdef');
+    await act(async () => api.endSession(api.sessions.at(-1)!.id, { source: 'scene_switch' }));
+    expect(api.sessions.at(-1)?.learningClosure?.source).toBe('scene_switch');
   });
 
   it('accepts the first classroom loaded before passive subscription effects mount', async () => {
@@ -190,6 +200,12 @@ describe('actual chat hook stage isolation and initial context', () => {
   });
 
   it('uses the same initial context capture in the missing-selected-session fallback', async () => {
+    act(() =>
+      useStageStore.setState({
+        outlineProducer: 'server-job',
+        outlineProducerRef: 'run-0123456789abcdef',
+      }),
+    );
     await act(async () => api.createSession('qa', 'selected session'));
     // Simulate a selected ID whose session disappeared before the next send.
     api.sessions.splice(0);
@@ -197,6 +213,7 @@ describe('actual chat hook stage isolation and initial context', () => {
     expect(api.sessions).toHaveLength(1);
     expect(api.sessions[0]).toMatchObject({
       initialContext: { stageId: 'a', sceneId: 'a-scene' },
+      learningRunId: 'run-0123456789abcdef',
       messages: [{ parts: [{ type: 'text', text: 'fallback question' }] }],
     });
   });

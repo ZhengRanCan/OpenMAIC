@@ -89,6 +89,15 @@ export async function register(): Promise<void> {
     | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
     | undefined;
   let quizLearningLoop: { stop: () => Promise<void> } | undefined;
+  let dialogueLearningLoop: { stop: () => Promise<void> } | undefined;
+  try {
+    const { startDialogueLearningLoop } =
+      await import('@/lib/server/dialogue-learning-loop/runner');
+    dialogueLearningLoop = await startDialogueLearningLoop();
+  } catch {
+    console.error('[instrumentation] Dialogue learning loop configuration is invalid');
+    throw new Error('DIALOGUE_LEARNING_LOOP_BOOTSTRAP_FAILED');
+  }
   try {
     const { startQuizLearningLoop } = await import('@/lib/server/quiz-learning-loop/runner');
     quizLearningLoop = await startQuizLearningLoop();
@@ -147,6 +156,11 @@ export async function register(): Promise<void> {
         await quizLearningLoop?.stop();
       } catch {
         console.error('[instrumentation] Quiz learning loop drain failed');
+      }
+      try {
+        await dialogueLearningLoop?.stop();
+      } catch {
+        console.error('[instrumentation] Dialogue learning loop drain failed');
       }
       try {
         await extractionRunner?.stop();

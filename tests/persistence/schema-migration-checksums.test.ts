@@ -214,6 +214,13 @@ const SHIPPED: readonly (readonly [
     true,
     'b655a084b11cc6f31ac25521bca449a16a030b79cd1940c619d6b27df666e15e',
   ],
+  [
+    'dialogue-learning-loop',
+    1,
+    'controlled_session_closures_and_jobs',
+    true,
+    '49827bf3b55d30c309a3be9509a99c13167af52c559b3c2e6c9ca562c2e84379',
+  ],
 ];
 
 /**

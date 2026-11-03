@@ -2,6 +2,7 @@ import { deleteQuizTraceIn } from './quiz-trace-lifecycle';
 import { deleteQuizEvidenceIn } from './quiz-evidence-lifecycle';
 import { deleteDialogueEvidenceIn } from './dialogue-evidence-lifecycle';
 import { restrictDialogueMemoryIn } from './dialogue-memory-lifecycle';
+import { restrictDialogueLoopIn } from './dialogue-learning-loop-lifecycle';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 import type { Scene, Stage } from '@openmaic/dsl';
@@ -395,6 +396,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         await deleteQuizEvidenceIn(queryable, this.ownerId, stageId);
         await deleteDialogueEvidenceIn(queryable, this.ownerId, stageId);
         await restrictDialogueMemoryIn(queryable, this.ownerId, { stageId });
+        await restrictDialogueLoopIn(queryable, this.ownerId, { stageId });
         await deleteQuizTraceIn(queryable, this.ownerId, { stageId });
         await tombstoneStageMeta(queryable, stageId);
         // A course that is still generating ends with its deletion, in this

@@ -72,6 +72,23 @@ async function addReceipt(tx: Queryable, d: DialogueMemoryDelivery, op: string, 
 }
 export class DialogueMemoryStore {
   constructor(readonly provider: Provider) {}
+  async findBlockingDelivery(
+    owner: string,
+    student: string,
+    environment: string,
+    sourceIds: string[],
+  ): Promise<string | null> {
+    return this.provider.withTransaction(async (tx) => {
+      await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      const r = await tx.query(
+        `SELECT d.id FROM dialogue_memory_deliveries d WHERE d.owner_id=$1 AND d.student=$2 AND d.environment_id=$3
+        AND d.state NOT IN ('completed','empty','revoked') AND EXISTS(SELECT 1 FROM dialogue_memory_source_links l WHERE l.owner_id=d.owner_id AND l.evidence_run_id=d.evidence_run_id AND l.source_id=ANY($4::text[]))
+        AND NOT EXISTS(SELECT 1 FROM dialogue_memory_deliveries c WHERE c.owner_id=d.owner_id AND c.retry_of=d.id) ORDER BY d.id LIMIT 1`,
+        [owner, student, environment, sourceIds],
+      );
+      return (r.rows[0]?.id as string) ?? null;
+    });
+  }
   async prepare(
     owner: string,
     request: DeliveryRequest,

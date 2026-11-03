@@ -11,6 +11,7 @@ import { CircleStop, MessageCircleMore } from 'lucide-react';
 import { InlineActionTag } from './inline-action-tag';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useSoftCloseCountdown } from './use-soft-close-countdown';
+import { DialogueLearningStatus } from './dialogue-learning-status';
 
 /** Extended message part type covering standard + custom action parts */
 interface MessagePart {
@@ -350,6 +351,15 @@ export function ChatSessionComponent({
       </div>
 
       {/* Session controls for Q&A and Discussion */}
+      {session.status === 'completed' &&
+        session.learningClosure &&
+        session.initialContext?.stageId &&
+        (session.type === 'qa' || session.type === 'discussion') && (
+          <DialogueLearningStatus
+            stageId={session.initialContext.stageId}
+            chatSessionId={session.id}
+          />
+        )}
       <AnimatePresence>
         {canEnd && onEndSession && (
           <motion.div

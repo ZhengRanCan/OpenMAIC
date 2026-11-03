@@ -3,6 +3,7 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 import type { ServerPersistenceProvider } from './server-provider';
 import { fenceOwnerWrite } from './owner-merges';
 import { restrictDialogueMemoryIn } from './dialogue-memory-lifecycle';
+import { restrictDialogueLoopIn } from './dialogue-learning-loop-lifecycle';
 import { readDialogueSourceIn } from './dialogue-trace-read';
 import {
   dialogueEvidenceRunIn,
@@ -17,7 +18,7 @@ import { DIALOGUE_EVIDENCE_SYSTEM } from '@/lib/dialogue/evidence-prompt';
 import { validateDialogueEvidenceReply } from '@/lib/dialogue/evidence-validation';
 import { digest } from '@/lib/learner-memory/contracts';
 import {
-  matchDialogueBinding,
+  resolveDialogueBindingIn,
   verifyDialogueBindingIn,
 } from '@/lib/server/dialogue-evidence-provenance';
 import {
@@ -34,6 +35,8 @@ import {
   type DialogueCapturedReply,
   type DialogueRecovery,
 } from '@/lib/dialogue/evidence-contracts';
+import type { DialogueSourceWindow } from '@/lib/dialogue/trace-types';
+import { dialogueContentDigest } from '@/lib/dialogue/trace-projection';
 
 async function lockStage(tx: Queryable, owner: string, stage: string) {
   const rows = await tx.query(
@@ -98,7 +101,7 @@ async function eligible(
   settings: DialogueEvidenceSettings,
 ) {
   if (!run.snapshot || !run.binding || run.snapshot.ownerId !== run.ownerId) return false;
-  const binding = matchDialogueBinding(run.snapshot, settings);
+  const binding = await resolveDialogueBindingIn(tx, run.snapshot, settings);
   return (
     !!binding &&
     digest(binding) === digest(run.binding) &&
@@ -114,6 +117,31 @@ export class DialogueEvidenceStore {
     settings: DialogueEvidenceSettings,
     model: DialogueModelIdentity,
   ): Promise<DialogueEvidenceRun> {
+    return this.prepareUsing(owner, request, settings, model);
+  }
+  async prepareSnapshot(
+    owner: string,
+    request: PrepareDialogueRequest,
+    snapshot: DialogueSourceWindow,
+    settings: DialogueEvidenceSettings,
+    model: DialogueModelIdentity,
+  ): Promise<DialogueEvidenceRun> {
+    if (
+      snapshot.ownerId !== owner ||
+      snapshot.stageId !== request.stageId ||
+      snapshot.chatSessionId !== request.chatSessionId ||
+      snapshot.contentDigest !== dialogueContentDigest(snapshot)
+    )
+      throw new DialogueEvidenceError('SNAPSHOT_MISMATCH');
+    return this.prepareUsing(owner, request, settings, model, snapshot);
+  }
+  private async prepareUsing(
+    owner: string,
+    request: PrepareDialogueRequest,
+    settings: DialogueEvidenceSettings,
+    model: DialogueModelIdentity,
+    frozen?: DialogueSourceWindow,
+  ): Promise<DialogueEvidenceRun> {
     return this.provider.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, owner);
       await lockStage(tx, owner, request.stageId);
@@ -125,9 +153,9 @@ export class DialogueEvidenceStore {
       const prior = await receipt(tx, owner, request.operationId, intent);
       if (prior) return prior;
       const read = await readDialogueSourceIn(tx, owner, request);
-      const snapshot = read.status === 'available' ? read.source : null;
+      const snapshot = read.status === 'available' ? (frozen ?? read.source) : null;
       const context = snapshot ? buildDialogueEvidenceContext(snapshot) : null;
-      const binding = snapshot ? matchDialogueBinding(snapshot, settings) : null;
+      const binding = snapshot ? await resolveDialogueBindingIn(tx, snapshot, settings) : null;
       const verified =
         snapshot && binding && (await verifyDialogueBindingIn(tx, snapshot, binding));
       const reason = !snapshot
@@ -395,6 +423,9 @@ export class DialogueEvidenceStore {
         [owner, run.reuseKey],
       );
       for (const row of rows.rows) {
+        await restrictDialogueLoopIn(tx, owner, {
+          evidenceRunId: (row.data as DialogueEvidenceRun).id,
+        });
         await restrictDialogueMemoryIn(tx, owner, {
           evidenceRunId: (row.data as DialogueEvidenceRun).id,
         });

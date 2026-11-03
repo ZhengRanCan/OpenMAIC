@@ -47,6 +47,7 @@ describe('shared simulated formal Memory reader and F65 compatibility', () => {
       if (sql.startsWith('SELECT snapshot,maintenance'))
         return { rows: [{ snapshot, maintenance: false }] };
       if (sql.startsWith('SELECT source_id')) return { rows: [] };
+      if (sql.startsWith('SELECT data FROM learner_memory_sources')) return { rows: [] };
       throw new Error('Unexpected SQL in read-only consumer');
     });
   });

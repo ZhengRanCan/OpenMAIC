@@ -265,8 +265,9 @@ async function createPersistenceHandler(
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
+  const { dialogueLoopRuntime } = await import('@/lib/persistence/dialogue-learning-loop-runtime');
   const guardedRuntimeStore = mergeThroughClaim(
-    guardedServerRuntimeStore(runtimeStore, pool),
+    dialogueLoopRuntime(guardedServerRuntimeStore(runtimeStore, pool), { withTransaction }),
     principal,
   );
   return createStorageHttpHandler(guardedRuntimeStore, documentStore, {

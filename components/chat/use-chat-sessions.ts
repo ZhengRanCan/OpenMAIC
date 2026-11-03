@@ -43,6 +43,7 @@ import { createLogger } from '@/lib/logger';
 import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
+import { learningRunCandidate, captureLearningClosure } from '@/lib/dialogue/learning-loop-client';
 import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 
@@ -782,6 +783,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         );
       }
       piSessionBoundariesRef.current.delete(sessionId);
+      const learningClosure = captureLearningClosure(data?.source ?? 'turn_complete');
       setSessions((prev) =>
         prev.map((s) =>
           s.id === sessionId
@@ -790,6 +792,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 status: 'completed' as SessionStatus,
                 updatedAt: Date.now(),
                 endReason: data?.endReason ?? s.endReason,
+                learningClosure,
                 softCloseDeadline: undefined,
                 directorState: data?.directorState ?? s.directorState,
               }
@@ -1423,6 +1426,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                   ? {
                       ...s,
                       status: 'completed' as SessionStatus,
+                      learningClosure: captureLearningClosure('turn_complete'),
                       updatedAt: nextChatUpdatedAt(s),
                     }
                   : s,
@@ -1482,6 +1486,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         toolCalls: [],
         pendingToolCalls: [],
         sceneId: creationState.currentSceneId ?? undefined,
+        learningRunId: learningRunCandidate(creationState),
         ...(type === 'qa' || type === 'discussion'
           ? { initialContext: captureChatSessionInitialContext(creationState) }
           : {}),
@@ -1506,6 +1511,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const endSession = useCallback(
     async (sessionId: string, options: EndSessionOptions = {}): Promise<void> => {
       const scope = captureSessionScope();
+      const learningClosure = captureLearningClosure(options.source ?? 'manual_stop');
       if (!scopeIsCurrent(scope)) return;
       log.info(`[ChatArea] Ending session: ${sessionId}`);
       clearSoftCloseRegistration(sessionId);
@@ -1578,6 +1584,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             }
             return {
               ...withChatSessionStatus(s, 'completed'),
+              learningClosure,
               messages,
               softCloseDeadline: undefined,
             };
@@ -1592,6 +1599,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             s.id === sessionId
               ? {
                   ...withChatSessionStatus(s, 'completed'),
+                  learningClosure,
                   softCloseDeadline: undefined,
                 }
               : s,
@@ -1981,6 +1989,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             pendingToolCalls: [],
             sceneId: creationState.currentSceneId ?? undefined,
             initialContext: fallbackContext,
+            learningRunId: learningRunCandidate(creationState),
             createdAt: now,
             updatedAt: now,
           };
@@ -2110,6 +2119,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         pendingToolCalls: [],
         sceneId: creationState.currentSceneId ?? undefined,
         initialContext: captureChatSessionInitialContext(creationState),
+        learningRunId: learningRunCandidate(creationState),
         createdAt: now,
         updatedAt: now,
       };

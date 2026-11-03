@@ -52,6 +52,20 @@ function messagePayload(chat: ChatSession) {
   };
 }
 
+it('preserves optional controlled run and real closure without manufacturing them for old state', () => {
+  const chat = {
+    ...session(),
+    learningRunId: 'run-controlled',
+    learningClosure: { id: 'close-1', source: 'manual_stop' as const },
+  };
+  const payload = savedState(chat);
+  expect(payload).toMatchObject({
+    learningRunId: 'run-controlled',
+    learningClosure: chat.learningClosure,
+  });
+  expect(savedState(session())).not.toHaveProperty('learningClosure');
+});
+
 function statePayload(chat: ChatSession) {
   return {
     kind: 'chat_session_state' as const,

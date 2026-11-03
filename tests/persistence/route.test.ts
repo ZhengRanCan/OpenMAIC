@@ -6,6 +6,25 @@ import type { RequestListener } from 'node:http';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// These stores are exercised on real PostgreSQL elsewhere; route fakes do
+// not implement the schema-migration lock and catalogue protocol.
+vi.mock('@/lib/persistence/dialogue-evidence-schema', async (original) => ({
+  ...(await original<object>()),
+  ensureDialogueEvidenceSchema: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/persistence/quiz-evidence-schema', async (original) => ({
+  ...(await original<object>()),
+  ensureQuizEvidenceSchema: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/persistence/dialogue-memory-schema', async (original) => ({
+  ...(await original<object>()),
+  ensureDialogueMemorySchema: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/persistence/dialogue-learning-loop-schema', async (original) => ({
+  ...(await original<object>()),
+  ensureDialogueLoopSchema: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Schema bootstrap is serialized by a PostgreSQL advisory lock on a dedicated
 // connection; the fakes here have no connections, and the lock itself is
 // exercised against a real server in schema-bootstrap-concurrency.pg.test.ts.

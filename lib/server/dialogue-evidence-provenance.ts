@@ -54,6 +54,37 @@ export function matchDialogueBinding(
   );
   return matches.length === 1 ? matches[0] : null;
 }
+/** Source authority remains readable when automatic scheduling is disabled. */
+export async function resolveDialogueBindingIn(
+  tx: Queryable,
+  source: DialogueSourceWindow,
+  settings: DialogueEvidenceSettings,
+): Promise<DialogueBinding | null> {
+  const legacy = matchDialogueBinding(source, settings);
+  const tables = await tx.query("SELECT to_regclass('dialogue_loop_bindings') AS bindings");
+  if (!tables.rows[0]?.bindings) return legacy;
+  const r = await tx.query(
+    `SELECT b.binding,b.revoked,s.revoked AS session_revoked FROM dialogue_loop_bindings b JOIN dialogue_loop_sessions s USING(owner_id,stage_id,chat_session_id)
+    WHERE b.owner_id=$1 AND b.stage_id=$2 AND b.chat_session_id=$3 AND b.source_digest=$4 AND b.environment_id=$5`,
+    [
+      source.ownerId,
+      source.stageId,
+      source.chatSessionId,
+      source.contentDigest,
+      settings.memoryEnvironmentId,
+    ],
+  );
+  if (!r.rows.length) return legacy;
+  if (r.rows.length !== 1 || r.rows[0].revoked || r.rows[0].session_revoked) return null;
+  const parsed = bindingSchema.safeParse(r.rows[0].binding);
+  if (!parsed.success) throw new DialogueEvidenceError('INVALID_DIALOGUE_BINDINGS', 503);
+  if (legacy && JSON.stringify(legacy) !== JSON.stringify(parsed.data)) {
+    // JSONB key order is not semantic; normalize both through the same schema.
+    if (JSON.stringify(bindingSchema.parse(legacy)) !== JSON.stringify(parsed.data))
+      throw new DialogueEvidenceError('CONFLICTING_DIALOGUE_BINDINGS', 503);
+  }
+  return parsed.data;
+}
 /** This proof supplements an exact Session registration; a Scene alone proves no learner identity. */
 export async function verifyDialogueBindingIn(
   tx: Queryable,

@@ -27,6 +27,7 @@ import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock
 import { ensureWorkspaceModelConfigSchema } from '@/lib/persistence/workspace-model-config';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { ensureDialogueLoopSchema } from './dialogue-learning-loop-schema';
 import { ensureOwnerAgentSchema } from '@/lib/server/agents/store';
 
 export type PersistencePoolFactory = (connectionString: string) => Pool;
@@ -93,6 +94,7 @@ async function createServerPersistenceProvider(
       await ensureQuizEvidenceSchema(locked);
       await ensureDialogueEvidenceSchema(locked);
       await ensureDialogueMemorySchema(locked);
+      await ensureDialogueLoopSchema(locked);
     });
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = configuredLazyAssetByteStore(queryable);
