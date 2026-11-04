@@ -122,7 +122,16 @@ export function buildOutlinePrompt(
   if (hasLearnerContext) {
     return {
       system: prompts.system,
-      user: `${prompts.user}\n\n## Learner Context\n\nThe following context comes from simulated learning records. Follow this session's explicit requirements first. Keep each record's original conditions; specific experiences do not establish long-term mastery.\n\n${context.learnerContext}`,
+      user: `${prompts.user}\n\n## Learner Context\n\nThe following context comes from simulated learning records. Follow this session's explicit requirements first. Keep each record's original conditions; specific experiences do not establish long-term mastery.
+
+Historical attribution rules (apply to every outline field, including descriptions and key points):
+- Distinguish teacher-provided values or results, steps actually produced by the student, and the student's self-reported difficulties. A teacher-provided conversion result is not a conversion completed by the student.
+- For example, using a teacher-provided 600 g divided by 30 shows the student's division step; it does not show the student converted kilograms to grams.
+- Preserve chronology: a later teacher explanation is not help already available during an earlier student response. An unanswered later request or practice question must not become a student response, completion, or demonstrated understanding.
+- Even "completed with help" must refer only to the step the student actually performed; it must not transfer completion to a preceding step supplied by the teacher.
+- Keep historical recall separate from planned teaching: a planned exercise is not an observed past performance. If the record cannot be faithfully summarized, omit the recall rather than fill in a missing event.
+
+${context.learnerContext}`,
     };
   }
 

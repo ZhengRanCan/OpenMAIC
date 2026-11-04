@@ -129,6 +129,27 @@ describe('buildOutlinePrompt golden output', () => {
     },
   );
 
+  test('separates teacher help, observed student work and future plans when supplying historical records', () => {
+    const learnerContext =
+      '教师先给0.6kg=600g，学生只算600÷30=20并自报不能独立换算；教师随后讲右移三位并让试算，未见后续学生回复。';
+    const requirements = { requirement: 'Plan the next density lesson.' };
+    const prompts = buildOutlinePrompt(requirements, { learnerContext });
+    for (const rule of [
+      'teacher-provided values or results',
+      'not a conversion completed by the student',
+      '600 g divided by 30',
+      'Preserve chronology',
+      'An unanswered later request',
+      'Even "completed with help"',
+      'Keep historical recall separate from planned teaching',
+      'omit the recall',
+    ])
+      expect(prompts.user).toContain(rule);
+    expect(prompts.user.endsWith(learnerContext)).toBe(true);
+    expect(prompts.system).toBe(buildOutlinePrompt(requirements).system);
+    expect(buildOutlinePrompt(requirements).user).not.toContain('Historical attribution rules');
+  });
+
   test('passes Learner Context to the model call through the generation API', async () => {
     const learnerContext = '经历原文\n条件：给出公式后。';
     const aiCall = vi.fn().mockResolvedValue(

@@ -18,6 +18,10 @@ import {
   invokeDialogueMemoryModel,
 } from '@/lib/server/dialogue-memory-model';
 const phase = process.env.F75_MEMORY_REPAIR_PHASE;
+const MEMORY_REPAIR_OPERATION_ID = 'f75:003:chronology:memory-v2-1';
+it('uses an operation ID accepted by the existing Memory store', () => {
+  expect(MEMORY_REPAIR_OPERATION_ID).toMatch(/^[\w:-]{1,120}$/);
+});
 const sha = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
 const complete = (
   records: {
@@ -44,7 +48,7 @@ it.skipIf(!phase)(
     )
       throw Error('F75_REPAIR_ISOLATION_REQUIRED');
     const dir = path.resolve(process.env.F75_ARTIFACT_DIR ?? '');
-    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-003/repair-v2'))
+    if (!dir.replaceAll('\\', '/').endsWith('/docs/log/artifacts/F75/live-003/repair-v2.1'))
       throw Error('F75_REPAIR_DIR_REQUIRED');
     const originalDir = path.dirname(dir),
       batch = JSON.parse(await readFile(path.join(originalDir, 'batch.json'), 'utf8'));
@@ -59,6 +63,124 @@ it.skipIf(!phase)(
     expect(summary.calls).toBe(11);
     expect(summary.counts).toEqual({ evidence: 1, memory: 1, other: 9 });
     expect(complete(summary.records)).toBe(true);
+    const legacyDir = path.join(originalDir, 'repair-v2');
+    const legacy = JSON.parse(
+      await readFile(path.join(legacyDir, 'memory-gateway-summary.json'), 'utf8'),
+    );
+    const failed = JSON.parse(await readFile(path.join(legacyDir, 'result.json'), 'utf8'));
+    expect(legacy.calls).toBe(1);
+    expect(legacy.counts).toEqual({ evidence: 0, memory: 1, other: 0 });
+    expect(complete(legacy.records)).toBe(true);
+    const checkLedger = (ledger: typeof summary) => {
+      expect(ledger.calls).toBe(ledger.records.length);
+      expect(ledger.inputBytes).toBe(
+        ledger.records.reduce((n: number, r: { requestBytes: number }) => n + r.requestBytes, 0),
+      );
+      expect(ledger.outputBudget).toBe(
+        ledger.records.reduce(
+          (n: number, r: { maxOutputTokens: number }) => n + r.maxOutputTokens,
+          0,
+        ),
+      );
+      for (const kind of ['evidence', 'memory', 'other'])
+        expect(ledger.counts[kind]).toBe(
+          ledger.records.filter((r: { kind: string }) => r.kind === kind).length,
+        );
+    };
+    checkLedger(summary);
+    checkLedger(legacy);
+    expect(failed.result.run).toMatchObject({
+      state: 'failed',
+      errorCode: 'BATCH_COVERAGE',
+      id: 'f75:003:chronology:memory-v2',
+    });
+    const authorization = JSON.parse(
+      await readFile(path.join(dir, 'budget-authorization.json'), 'utf8'),
+    );
+    expect(authorization).toMatchObject({
+      approved: true,
+      memoryCalls: 3,
+      totalCalls: 16,
+      previousMemoryCalls: 2,
+      scope: 'F75 live-003 repair-v2.1',
+      otherLimitsUnchanged: true,
+    });
+    expect(batch.limits.memoryCalls).toBe(2);
+    const overallLimits = { ...batch.limits, memoryCalls: authorization.memoryCalls };
+    const base = {
+      calls: summary.calls + legacy.calls,
+      counts: {
+        evidence: summary.counts.evidence + legacy.counts.evidence,
+        memory: summary.counts.memory + legacy.counts.memory,
+        other: summary.counts.other + legacy.counts.other,
+      },
+      inputBytes: summary.inputBytes + legacy.inputBytes,
+      outputBudget: summary.outputBudget + legacy.outputBudget,
+      tokens: [...summary.records, ...legacy.records].reduce(
+        (n: number, r: { usage: { total_tokens: number } }) => n + r.usage.total_tokens,
+        0,
+      ),
+    };
+    expect(base).toEqual({
+      calls: 12,
+      counts: { evidence: 1, memory: 2, other: 9 },
+      inputBytes: 126598,
+      outputBudget: 88016,
+      tokens: 32835,
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(originalDir, 'artifact-manifest.json'), 'utf8'),
+    );
+    expect(manifest.files).toHaveLength(62);
+    const paths = new Set<string>([
+      '../batch.json',
+      '../gateway-summary.json',
+      '../original-raw-manifest.json',
+      '../artifact-manifest.json',
+      '../restart-readback.json',
+      '../repair-v2/allocation.json',
+      '../repair-v2/memory-gateway-summary.json',
+      '../repair-v2/result.json',
+      'budget-authorization.json',
+    ]);
+    for (const file of manifest.files) {
+      expect(path.isAbsolute(file.path)).toBe(false);
+      const target = path.resolve(originalDir, file.path);
+      const relative = path.relative(originalDir, target);
+      expect(relative).not.toBe('');
+      expect(
+        relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative),
+      ).toBe(false);
+      expect(sha(await readFile(target))).toBe(file.sha256);
+      paths.add('../' + file.path);
+    }
+    for (const [folder, prefix, records] of [
+      [originalDir, 'call-', summary.records],
+      [legacyDir, 'memory-call-', legacy.records],
+    ] as const) {
+      for (const record of records) {
+        const stem = prefix + String(record.index).padStart(3, '0');
+        const meta = JSON.parse(await readFile(path.join(folder, stem + '.meta.json'), 'utf8'));
+        expect(meta).toEqual(record);
+        const response = JSON.parse(
+          await readFile(path.join(folder, stem + '.response.json'), 'utf8'),
+        );
+        expect(response.status).toBe(200);
+        expect(response.usage).toEqual(record.usage);
+        const request = JSON.parse(
+          await readFile(path.join(folder, stem + '.request.json'), 'utf8'),
+        );
+        expect(sha(JSON.stringify(request))).toBe(record.requestHash);
+        for (const extension of ['request', 'response', 'meta'])
+          paths.add(
+            '../' + (folder === legacyDir ? 'repair-v2/' : '') + stem + '.' + extension + '.json',
+          );
+      }
+    }
+    const ledgerHashes: Record<string, string> = {};
+    for (const relative of paths)
+      ledgerHashes[relative] = sha(await readFile(path.join(dir, relative)));
+
     const write = (name: string, value: unknown) =>
       writeFile(path.join(dir, name), JSON.stringify(value, null, 2) + '\n', { flag: 'wx' });
     process.env.OWNER_SINGLE_USER = 'true';
@@ -81,7 +203,7 @@ it.skipIf(!phase)(
     });
     const scope = simulatedScope('A'),
       gateway = 'http://127.0.0.1:3096',
-      base = 'http://127.0.0.1:3095';
+      appBase = 'http://127.0.0.1:3095';
     const budget = async () => {
       const r = await fetch(gateway + '/__f75/status', {
         signal: AbortSignal.timeout(10000),
@@ -93,38 +215,34 @@ it.skipIf(!phase)(
     try {
       if (phase === 'preflight') {
         const before = await memory.read('A');
-        expect(before.usable.revision).toBe(1);
-        expect(before.maintenancePending).toBe(false);
-        expect(summary.calls + 3).toBeLessThanOrEqual(batch.limits.totalCalls);
-        expect(summary.counts.memory + 1).toBeLessThanOrEqual(batch.limits.memoryCalls);
-        expect(summary.counts.other + 2).toBeLessThanOrEqual(batch.limits.otherCalls);
-        expect(summary.outputBudget + 8192 + 16384).toBeLessThanOrEqual(
-          batch.limits.totalConfiguredOutput,
-        );
-        expect(summary.inputBytes + 65536 + 131072).toBeLessThanOrEqual(
-          batch.limits.totalRequestBytes,
-        );
-        expect(DIALOGUE_MEMORY_PROMPT_VERSION).toBe('dialogue-memory.v2');
+        expect(before.usable.revision).toBe(2);
+        expect(before.maintenancePending).toBe(true);
+        expect(before.coverage.every((s) => s.valid && s.current && s.processed)).toBe(true);
+        expect(base.calls + 3).toBeLessThanOrEqual(overallLimits.totalCalls);
+        expect(base.counts.memory + 1).toBeLessThanOrEqual(overallLimits.memoryCalls);
+        expect(base.counts.other + 2).toBeLessThanOrEqual(overallLimits.otherCalls);
+        expect(base.outputBudget + 24576).toBeLessThanOrEqual(overallLimits.totalConfiguredOutput);
+        expect(base.inputBytes + 196608).toBeLessThanOrEqual(overallLimits.totalRequestBytes);
+        expect(DIALOGUE_MEMORY_PROMPT_VERSION).toBe('dialogue-memory.v2.1');
+        const targetPieceId = original.formal.sections.learning_experiences[0].id;
+        expect(
+          before.snapshot.pieces.find((p) => p.id === targetPieceId)?.restrictions.length,
+        ).toBeGreaterThan(0);
+        expect(await memory.store.getRun(scope, failed.result.run.id)).toEqual(failed.result.run);
         await write('allocation.json', {
-          originalSummarySha256: sha(
-            await readFile(path.join(originalDir, 'gateway-summary.json')),
-          ),
-          originalRawManifestSha256: sha(
-            await readFile(path.join(originalDir, 'original-raw-manifest.json')),
-          ),
-          baseCalls: summary.calls,
-          baseCounts: summary.counts,
-          baseTokens: summary.records.reduce(
-            (n: number, r: { usage: { total_tokens: number } }) => n + r.usage.total_tokens,
-            0,
-          ),
+          ledgerHashes,
+          baseCalls: base.calls,
+          baseCounts: base.counts,
+          baseTokens: base.tokens,
+          baseInputBytes: base.inputBytes,
+          baseOutputBudget: base.outputBudget,
           owner: batch.owner,
           environmentId: batch.environmentId,
           systemHashes: { memory: sha(DIALOGUE_MEMORY_SYSTEM) },
           promptVersion: DIALOGUE_MEMORY_PROMPT_VERSION,
           additionalCalls: 3,
-          totalCallsUpperBound: 14,
-          overallLimits: batch.limits,
+          totalCallsUpperBound: 15,
+          overallLimits,
           phases: {
             memory: {
               allowedKind: 'memory',
@@ -146,16 +264,60 @@ it.skipIf(!phase)(
             },
           },
           expectedRevision: before.usable.revision,
-          targetPieceId: original.formal.sections.learning_experiences[0].id,
+          targetPieceId,
+          failedMemoryRunId: failed.result.run.id,
         });
         return;
       }
       const allocation = JSON.parse(await readFile(path.join(dir, 'allocation.json'), 'utf8'));
-      expect(allocation.originalSummarySha256).toBe(
-        sha(await readFile(path.join(originalDir, 'gateway-summary.json'))),
-      );
+      expect(allocation.ledgerHashes).toEqual(ledgerHashes);
       expect(allocation.promptVersion).toBe(DIALOGUE_MEMORY_PROMPT_VERSION);
+      expect(allocation.systemHashes.memory).toBe(sha(DIALOGUE_MEMORY_SYSTEM));
+      expect(allocation.overallLimits).toEqual(overallLimits);
+      const requireReview = async () => {
+        const accepted = JSON.parse(await readFile(path.join(dir, 'content-review.json'), 'utf8'));
+        expect(accepted.passed).toBe(true);
+        expect(accepted.resultSha256).toBe(sha(await readFile(path.join(dir, 'result.json'))));
+        const result = JSON.parse(await readFile(path.join(dir, 'result.json'), 'utf8'));
+        expect(result.result.run.state).toBe('completed');
+        expect(result.model.promptVersion).toBe(DIALOGUE_MEMORY_PROMPT_VERSION);
+        expect(result.result.memory.maintenancePending).toBe(false);
+        const ledger = JSON.parse(
+          await readFile(path.join(dir, 'memory-gateway-summary.json'), 'utf8'),
+        );
+        expect(ledger.calls).toBe(1);
+        expect(ledger.counts).toEqual({ evidence: 0, memory: 1, other: 0 });
+        expect(complete(ledger.records)).toBe(true);
+        checkLedger(ledger);
+        expect(result.gateway.records).toEqual(ledger.records);
+        const meta = JSON.parse(
+          await readFile(path.join(dir, 'memory-call-001.meta.json'), 'utf8'),
+        );
+        expect(meta).toEqual(ledger.records[0]);
+        const request = JSON.parse(
+          await readFile(path.join(dir, 'memory-call-001.request.json'), 'utf8'),
+        );
+        const response = JSON.parse(
+          await readFile(path.join(dir, 'memory-call-001.response.json'), 'utf8'),
+        );
+        expect(sha(JSON.stringify(request))).toBe(meta.requestHash);
+        expect(response.status).toBe(200);
+        expect(response.usage).toEqual(meta.usage);
+        expect(meta.systemHash).toBe(allocation.systemHashes.memory);
+        expect(base.calls + ledger.calls + 2).toBeLessThanOrEqual(overallLimits.totalCalls);
+        expect(base.counts.memory + ledger.counts.memory).toBeLessThanOrEqual(
+          overallLimits.memoryCalls,
+        );
+        expect(base.outputBudget + ledger.outputBudget + 16384).toBeLessThanOrEqual(
+          overallLimits.totalConfiguredOutput,
+        );
+        expect(base.inputBytes + ledger.inputBytes + 131072).toBeLessThanOrEqual(
+          overallLimits.totalRequestBytes,
+        );
+        return accepted;
+      };
       if (phase!.startsWith('serve-')) {
+        if (phase === 'serve-next') await requireReview();
         const resolved = await resolveModel({
           stage: 'quiz-evidence',
           workspaceId: batch.owner,
@@ -181,34 +343,48 @@ it.skipIf(!phase)(
         return;
       }
       if (phase === 'memory') {
+        const zeroCallBytes = await readFile(
+          path.join(dir, 'zero-call-001-memory-gateway-summary.json'),
+          'utf8',
+        ).catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+          throw error;
+        });
+        if (zeroCallBytes !== null) {
+          const zeroCall = JSON.parse(zeroCallBytes);
+          expect(zeroCall.calls).toBe(0);
+          expect(zeroCall.records).toEqual([]);
+          expect(zeroCall.counts).toEqual({ evidence: 0, memory: 0, other: 0 });
+          expect(zeroCall.stopped).toBe(true);
+        }
         const before = await memory.read('A'),
           ledger = await budget();
         expect(before.usable.revision).toBe(allocation.expectedRevision);
+        expect(before.maintenancePending).toBe(true);
+        expect(ledger.stage).toBe('memory');
         expect(ledger.calls).toBe(0);
         expect(ledger.stopped).toBe(false);
         const reason =
           'semantic_review:chronology: 教师先给0.6kg=600g，学生只算600÷30=20且自报不能独立换算；教师随后才讲1kg=1000g/右移三位并让试算，未见后续学生作答。原Memory倒置时序并无据声称学生完成换算，请仅以仍准确的Evidence纠正。';
         await write('memory-intent.json', {
-          operationId: 'f75:003:chronology:memory-v2',
+          operationId: MEMORY_REPAIR_OPERATION_ID,
           pieceId: allocation.targetPieceId,
           expectedRevision: before.usable.revision,
           reason,
           originalReplySha256: sha(JSON.stringify(original.results[0].delivery.memoryRun.reply)),
         });
-        await memory.store.restrictPieceForReview(
-          scope,
-          allocation.targetPieceId,
-          before.usable.revision,
-          reason,
-        );
         const restricted = await memory.read('A');
         expect(restricted.maintenancePending).toBe(true);
         expect(restricted.coverage.every((s) => s.valid && s.processed)).toBe(true);
         await write('restricted.json', restricted);
-        const operation = 'f75:003:chronology:memory-v2';
+        const operation = MEMORY_REPAIR_OPERATION_ID;
         const prepared = await memory.store.prepare(scope, operation);
         expect(prepared.state).toBe('prepared');
         expect(prepared.batch).toHaveLength(0);
+        expect(Object.keys(prepared.aliases).every((alias) => alias.startsWith('s'))).toBe(true);
+        expect(
+          Object.values(prepared.aliases).some((source) => source.kind === 'dialogue_evidence'),
+        ).toBe(true);
         expect(prepared.prompt.system).toBe(DIALOGUE_MEMORY_SYSTEM);
         await write('prepared.json', prepared);
         // The client has only a dummy loopback credential; the gateway owns the provider key.
@@ -224,6 +400,7 @@ it.skipIf(!phase)(
           invokeDialogueMemoryModel(resolved, run),
         );
         const afterLedger = await budget();
+        expect(await memory.store.getRun(scope, failed.result.run.id)).toEqual(failed.result.run);
         const oldRun = await memory.store.getRun(scope, original.results[0].delivery.memoryRun.id);
         expect(oldRun.reply).toEqual(original.results[0].delivery.memoryRun.reply);
         await write('result.json', {
@@ -240,13 +417,12 @@ it.skipIf(!phase)(
         expect(afterLedger.calls).toBe(1);
         return;
       }
-      const accepted = JSON.parse(await readFile(path.join(dir, 'content-review.json'), 'utf8'));
-      expect(accepted.passed).toBe(true);
-      expect(accepted.resultSha256).toBe(sha(await readFile(path.join(dir, 'result.json'))));
+      const accepted = await requireReview();
       const formal = await memory.read('A');
       expect(formal.maintenancePending).toBe(false);
       expect(formal.usable.revision).toBeGreaterThan(1);
       const ledger = await budget();
+      expect(ledger.stage).toBe('next');
       expect(ledger.calls).toBe(0);
       expect(ledger.stopped).toBe(false);
       const oldNext = JSON.parse(
@@ -266,7 +442,7 @@ it.skipIf(!phase)(
           outlineReview: 'wait',
         },
       });
-      const discarded = await fetch(base + '/api/generation-runs/' + oldNext.runId, {
+      const discarded = await fetch(appBase + '/api/generation-runs/' + oldNext.runId, {
         method: 'DELETE',
         signal: AbortSignal.timeout(15000),
         redirect: 'error',
@@ -277,7 +453,7 @@ it.skipIf(!phase)(
       });
       expect(discarded.ok).toBe(true);
       const input = JSON.parse(await readFile(path.join(dir, 'next-intent.json'), 'utf8')).input;
-      const started = await fetch(base + '/api/generation-runs', {
+      const started = await fetch(appBase + '/api/generation-runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
@@ -287,10 +463,11 @@ it.skipIf(!phase)(
       const start = await started.json();
       await write('next-start.json', { status: started.status, body: start });
       expect(started.status).toBe(202);
+      expect(start.success).toBe(true);
       const id = start.run.id as string;
       expect(id).not.toBe(oldNext.runId);
       const readRun = async () => {
-        const r = await fetch(base + '/api/generation-runs/' + id, {
+        const r = await fetch(appBase + '/api/generation-runs/' + id, {
           signal: AbortSignal.timeout(15000),
           redirect: 'error',
         });
@@ -325,6 +502,8 @@ it.skipIf(!phase)(
       expect(complete(after.records)).toBe(true);
       expect(after.calls).toBe(2);
       expect(run.progress.scenesCompleted).toBe(0);
+      expect(run.input).toMatchObject(input);
+      expect(steps.some((step) => step.step_id.startsWith('scene:'))).toBe(false);
       expect(run.outlineAutoConfirmAt).toBeUndefined();
       expect(run.outline?.learnerContext?.memoryRevision).toBe(formal.usable.revision);
       expect(run.outline?.learnerContext?.status).toBe('ready');

@@ -157,6 +157,27 @@ describe('outline step', () => {
     expect(mocks.capabilities).not.toHaveBeenCalled();
   });
 
+  it('carries attribution boundaries and the unchanged accurate history into the actual outline model request', async () => {
+    streams(OUTLINE_TEXT);
+    const learnerContext =
+      '教师先给0.6kg=600g，学生只算600÷30=20并自报不能独立换算；教师随后讲右移三位并让试算，未见后续学生回复。\n条件：隔离代理记录。';
+    await generateOutlines({ ...body, learnerContext, model }, stepContext([]));
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(1);
+    const request = mocks.streamLLM.mock.calls[0]![0] as { system: string; prompt: string };
+    expect(request.prompt).toBe(buildOutlinePrompt(body.requirements, { learnerContext }).user);
+    expect(request.prompt.endsWith(learnerContext)).toBe(true);
+    for (const rule of [
+      'teacher-provided values or results',
+      'not a conversion completed by the student',
+      'Preserve chronology',
+      'An unanswered later request',
+      'Even "completed with help"',
+      'Keep historical recall separate from planned teaching',
+      'omit the recall',
+    ])
+      expect(request.prompt).toContain(rule);
+  });
+
   it('retries an empty answer, reporting each retry, and then fails with the last error', async () => {
     streams('');
     const events: OutlineEvent[] = [];
