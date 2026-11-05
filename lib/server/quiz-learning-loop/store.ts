@@ -96,7 +96,11 @@ export async function claimLearningLoop(
     `UPDATE quiz_learning_loop_jobs SET state='running',claim_id=$1,claimed_at=now(),updated_at=now()
      WHERE (owner_id,submission_id)=(
        SELECT owner_id,submission_id FROM quiz_learning_loop_jobs WHERE state='queued'
-       ORDER BY created_at,owner_id,submission_id FOR UPDATE SKIP LOCKED LIMIT 1
+       AND (error_code IS DISTINCT FROM 'MEMORY_PENDING_SOURCES'
+         OR updated_at <= now() - interval '10 seconds')
+       ORDER BY CASE WHEN error_code='MEMORY_PENDING_SOURCES'
+         THEN updated_at + interval '10 seconds' ELSE created_at END,owner_id,submission_id
+       FOR UPDATE SKIP LOCKED LIMIT 1
      ) RETURNING *`,
     [claimId],
   );
@@ -135,12 +139,15 @@ export async function finishLearningLoop(
   db: Queryable,
   job: Pick<LearningLoopJob, 'owner_id' | 'submission_id'>,
   claimId: string,
-  state: 'unknown' | 'failed' | 'completed',
+  state: 'queued' | 'unknown' | 'failed' | 'completed',
   evidenceRunId: string | null,
   errorCode: string | null,
 ): Promise<boolean> {
   const result = await db.query(
-    `UPDATE quiz_learning_loop_jobs SET state=$4,evidence_run_id=COALESCE($5,evidence_run_id),error_code=$6,updated_at=now()
+    `UPDATE quiz_learning_loop_jobs SET state=$4,evidence_run_id=COALESCE($5,evidence_run_id),
+       error_code=$6,updated_at=now(),
+       claim_id=CASE WHEN $4='queued' THEN NULL ELSE claim_id END,
+       claimed_at=CASE WHEN $4='queued' THEN NULL ELSE claimed_at END
      WHERE owner_id=$1 AND submission_id=$2 AND claim_id=$3 AND state='running'
        AND ($5::text IS NULL OR evidence_run_id IS NULL OR evidence_run_id=$5)
      RETURNING submission_id`,

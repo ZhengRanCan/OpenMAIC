@@ -15,7 +15,7 @@ import type { MemoryInvoker } from '@/lib/server/learner-memory';
 import { simulatedScope } from '@/lib/learner-memory/simulated-seeds';
 import { SimulatedMemoryEnvironment } from '@/lib/learner-memory/simulated-environment';
 import { updateMemory } from '@/lib/server/learner-memory';
-import { sourceKey } from '@/lib/learner-memory/contracts';
+import { MemoryError, sourceKey } from '@/lib/learner-memory/contracts';
 import { randomUUID } from 'node:crypto';
 
 type Student = 'A' | 'B' | 'C';
@@ -426,7 +426,7 @@ export class QuizShortFactsService {
         if (!batchSources.length) throw new Error('DEFER_ALREADY_PROCESSED');
       }
       if (pending.rows.some((row) => !batchSources.some((source) => source.id === row.source_id)))
-        throw new Error('MEMORY_PENDING_SOURCES');
+        throw new MemoryError('MEMORY_PENDING_SOURCES');
       const sameTransaction = new SimulatedMemoryEnvironment({
         sourceAuthority: memory.provider.sourceAuthority,
         withTransaction: (body) => body(tx),

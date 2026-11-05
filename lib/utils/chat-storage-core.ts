@@ -8,7 +8,7 @@ import type {
 } from '@openmaic/dsl';
 import type { RuntimeSessionInit } from '@openmaic/storage';
 import type { UIMessage } from 'ai';
-import { isEqual } from 'lodash';
+import isEqual from 'lodash/isEqual.js';
 
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
 import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';

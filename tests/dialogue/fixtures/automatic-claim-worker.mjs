@@ -17,20 +17,6 @@ try {
     logLevel: 'silent',
     server: { middlewareMode: true },
     resolve: { alias: { '@': process.cwd() } },
-    ssr: { noExternal: ['lodash'] },
-    // Native SSR does not synthesize lodash's named CJS export like Vitest does.
-    plugins: [
-      {
-        name: 'f75-lodash-cjs',
-        resolveId(id) {
-          if (id === 'lodash') return '\0f75-lodash';
-        },
-        load(id) {
-          if (id === '\0f75-lodash')
-            return "import lodash from 'lodash/lodash.js'; export const isEqual=lodash.isEqual;";
-        },
-      },
-    ],
   });
   const pool = new pg.Pool({
     connectionString: process.env.PG_CONTRACT_URL,

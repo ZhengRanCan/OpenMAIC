@@ -23,7 +23,7 @@ export async function processLearningLoop(
   if (job.state !== 'running' || !job.claim_id) throw new Error('INVALID_LEARNING_LOOP_CLAIM');
   const claim = job.claim_id;
   let evidenceId = job.evidence_run_id;
-  const finish = (state: 'unknown' | 'failed' | 'completed', code: string | null) =>
+  const finish = (state: 'queued' | 'unknown' | 'failed' | 'completed', code: string | null) =>
     finishLearningLoop(db, job, claim, state, evidenceId, code);
   try {
     const prepared = await processor.prepare(job);
@@ -48,7 +48,9 @@ export async function processLearningLoop(
       return;
     }
     const memory = await processor.handoff(job, evidenceId);
-    if (memory.state === 'calling') {
+    if (memory.state === 'waiting') {
+      await finish('queued', 'MEMORY_PENDING_SOURCES');
+    } else if (memory.state === 'calling') {
       await finish('unknown', 'MEMORY_CALL_UNKNOWN');
     } else if (!['completed', 'noop', 'empty'].includes(memory.state)) {
       await finish('failed', 'MEMORY_NOT_COMPLETED');

@@ -1,6 +1,7 @@
 import { QuizShortFactsService, type FactsInvoker } from '@/lib/server/quiz-short-facts';
 import type { MemoryInvoker } from '@/lib/server/learner-memory';
 import type { SimulatedMemoryEnvironment } from '@/lib/learner-memory/simulated-environment';
+import { MemoryError } from '@/lib/learner-memory/contracts';
 import type { LearningLoopJob } from './store';
 import type { LearningLoopProcessor } from './process';
 
@@ -38,16 +39,22 @@ export function createLearningLoopAdapter(options: {
       return options.service.extract(job.owner_id, id, options.extract);
     },
     async handoff(job, id) {
-      const result = await options.service.handoff(
-        job.owner_id,
-        id,
-        options.memory,
-        options.updateMemory,
-        job.memory_recovery_id ?? undefined,
-      );
-      return result.update
-        ? { state: result.update.run.state, decisions: result.update.run.decisions }
-        : { state: 'empty' };
+      try {
+        const result = await options.service.handoff(
+          job.owner_id,
+          id,
+          options.memory,
+          options.updateMemory,
+          job.memory_recovery_id ?? undefined,
+        );
+        return result.update
+          ? { state: result.update.run.state, decisions: result.update.run.decisions }
+          : { state: 'empty' };
+      } catch (error) {
+        if (error instanceof MemoryError && error.code === 'MEMORY_PENDING_SOURCES')
+          return { state: 'waiting' };
+        throw error;
+      }
     },
   };
 }
