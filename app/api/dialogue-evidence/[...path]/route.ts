@@ -120,7 +120,7 @@ async function handle(req: NextRequest) {
         const result = await extractDialogueEvidence(
           owner,
           path[1],
-          dialogueModelIdentity(model),
+          dialogueModelIdentity(model, current.promptVersion),
           store,
           read,
           (run) => invokeDialogueModel(model, run),

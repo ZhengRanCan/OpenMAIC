@@ -14,7 +14,10 @@ import {
   buildDialogueEvidenceContext,
   dialogueCandidateFingerprint,
 } from '@/lib/dialogue/evidence-context';
-import { DIALOGUE_EVIDENCE_SYSTEM } from '@/lib/dialogue/evidence-prompt';
+import {
+  DIALOGUE_EVIDENCE_SYSTEM,
+  DIALOGUE_EVIDENCE_SYSTEM_V1,
+} from '@/lib/dialogue/evidence-prompt';
 import { validateDialogueEvidenceReply } from '@/lib/dialogue/evidence-validation';
 import { digest } from '@/lib/learner-memory/contracts';
 import {
@@ -25,6 +28,7 @@ import {
   DIALOGUE_CONTEXT_VERSION,
   DIALOGUE_EVIDENCE_PROTOCOL,
   DIALOGUE_PROMPT_VERSION,
+  LEGACY_DIALOGUE_PROMPT_VERSION,
   DIALOGUE_LIMITS,
   DialogueEvidenceError,
   type DialogueEvidenceRun,
@@ -152,9 +156,19 @@ export class DialogueEvidenceStore {
       });
       const prior = await receipt(tx, owner, request.operationId, intent);
       if (prior) return prior;
+      const promptVersion = model.promptVersion;
+      if (
+        promptVersion !== DIALOGUE_PROMPT_VERSION &&
+        promptVersion !== LEGACY_DIALOGUE_PROMPT_VERSION
+      )
+        throw new DialogueEvidenceError('UNSUPPORTED_PROMPT_VERSION');
+      const system =
+        promptVersion === LEGACY_DIALOGUE_PROMPT_VERSION
+          ? DIALOGUE_EVIDENCE_SYSTEM_V1
+          : DIALOGUE_EVIDENCE_SYSTEM;
       const read = await readDialogueSourceIn(tx, owner, request);
       const snapshot = read.status === 'available' ? (frozen ?? read.source) : null;
-      const context = snapshot ? buildDialogueEvidenceContext(snapshot) : null;
+      const context = snapshot ? buildDialogueEvidenceContext(snapshot, system) : null;
       const binding = snapshot ? await resolveDialogueBindingIn(tx, snapshot, settings) : null;
       const verified =
         snapshot && binding && (await verifyDialogueBindingIn(tx, snapshot, binding));
@@ -170,7 +184,7 @@ export class DialogueEvidenceStore {
         stage: request.stageId,
         session: request.chatSessionId,
         content: snapshot?.contentDigest ?? read,
-        prompt: DIALOGUE_PROMPT_VERSION,
+        prompt: promptVersion,
         environment: settings.memoryEnvironmentId,
         // Ineligible checks consume no paid opportunity: registering later can prepare this content.
         eligibility: reason === 'not_eligible' ? 'not_eligible' : 'eligible',
@@ -195,7 +209,7 @@ export class DialogueEvidenceStore {
           chatSessionId: request.chatSessionId,
           reuseKey,
           protocol: DIALOGUE_EVIDENCE_PROTOCOL,
-          promptVersion: DIALOGUE_PROMPT_VERSION,
+          promptVersion,
           contextVersion: DIALOGUE_CONTEXT_VERSION,
           state: reason ? 'blocked' : 'prepared',
           reason,
@@ -203,7 +217,7 @@ export class DialogueEvidenceStore {
           updatedAt: now,
           snapshot,
           context,
-          system: DIALOGUE_EVIDENCE_SYSTEM,
+          system,
           binding: verified ? binding : null,
           model,
           reply: null,

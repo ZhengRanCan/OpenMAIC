@@ -1,4 +1,5 @@
 import type { DialogueLoopJob } from '@/lib/dialogue/learning-loop-contracts';
+import { LEGACY_DIALOGUE_PROMPT_VERSION } from '@/lib/dialogue/evidence-contracts';
 import { DialogueLoopError } from '@/lib/dialogue/learning-loop-contracts';
 import { DIALOGUE_MEMORY_SYSTEM } from '@/lib/learner-memory/dialogue-prompt';
 import { SimulatedMemoryEnvironment } from '@/lib/learner-memory/simulated-environment';
@@ -59,7 +60,10 @@ export async function withDialogueLoopDeps<T>(
       memory: new DialogueMemoryService(app, memory, loadDialogueMemorySettings),
       config,
       settings: loadDialogueMemorySettings,
-      evidenceModel: dialogueModelIdentity(model),
+      evidenceModel: dialogueModelIdentity(
+        model,
+        job.evidencePromptVersion ?? LEGACY_DIALOGUE_PROMPT_VERSION,
+      ),
       memoryModel: dialogueMemoryModelIdentity(model),
       readEvidence: (owner, id) => readDialogueEvidenceRun(app, owner, id),
       invokeEvidence: (run) => {

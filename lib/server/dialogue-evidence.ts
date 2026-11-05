@@ -11,7 +11,10 @@ import {
 } from '@/lib/dialogue/evidence-contracts';
 import type { DialogueEvidenceStore } from '@/lib/persistence/dialogue-evidence-store';
 
-export function dialogueModelIdentity(model: ResolvedModel): DialogueModelIdentity {
+export function dialogueModelIdentity(
+  model: ResolvedModel,
+  promptVersion: string = DIALOGUE_PROMPT_VERSION,
+): DialogueModelIdentity {
   return {
     provider: model.providerId,
     model: model.modelId,
@@ -24,7 +27,7 @@ export function dialogueModelIdentity(model: ResolvedModel): DialogueModelIdenti
         : { mode: 'default' }),
     maxOutputTokens: DIALOGUE_LIMITS.maxOutputTokens,
     timeoutMs: DIALOGUE_LIMITS.timeoutMs,
-    promptVersion: DIALOGUE_PROMPT_VERSION,
+    promptVersion,
   };
 }
 export async function invokeDialogueModel(

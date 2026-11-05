@@ -5,6 +5,8 @@ import {
   noteDialogueSessionCreatedIn,
 } from '@/lib/server/dialogue-learning-loop/registration';
 import { enqueueClosedDialogueIn } from '@/lib/server/dialogue-learning-loop/enqueue';
+import { DIALOGUE_PROMPT_VERSION } from '@/lib/dialogue/evidence-contracts';
+import { digest } from '@/lib/learner-memory/contracts';
 const url = process.env.PG_CONTRACT_URL;
 if (!url && process.env.STORAGE_PG_CONTRACT_REQUIRED === '1')
   throw Error('F75 requires PG_CONTRACT_URL');
@@ -86,6 +88,35 @@ describe.skipIf(!url)('persistent dialogue closure versions', () => {
     ).toBeNull();
     const { job } = await f.create('qualified');
     await expect(f.jobs.read('foreign', job.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+  it('keeps an existing job on its original Prompt when the same closure is rescanned', async () => {
+    const { job } = await f.create();
+    expect(job.evidencePromptVersion).toBe(DIALOGUE_PROMPT_VERSION);
+    expect(job.key).toBe(
+      digest({
+        owner: job.ownerId,
+        stageId: job.stageId,
+        chatSessionId: job.chatSessionId,
+        content: job.snapshot!.contentDigest,
+        prompt: 'dialogue-prompt.v1',
+        config: f.config,
+      }),
+    );
+    await f.db.query(
+      "UPDATE dialogue_loop_jobs SET data=data-'evidencePromptVersion' WHERE id=$1",
+      [job.id],
+    );
+    const existing = await f.provider.withTransaction((tx) =>
+      enqueueClosedDialogueIn(
+        tx,
+        'owner',
+        { stageId: job.stageId, chatSessionId: job.chatSessionId },
+        f.config,
+      ),
+    );
+    expect(existing?.id).toBe(job.id);
+    expect(existing?.evidencePromptVersion).toBeUndefined();
+    expect((await f.db.query('SELECT id FROM dialogue_loop_jobs')).rows).toHaveLength(1);
   });
   it('claims once across workers and never automatically reclaims an expired invocation', async () => {
     const { job } = await f.create();

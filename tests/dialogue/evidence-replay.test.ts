@@ -5,6 +5,7 @@ import {
   replayDialogueEvidence,
   validateDialogueOrigin,
 } from '@/scripts/dialogue-evidence-replay';
+import type { DialogueEvidenceRun } from '@/lib/dialogue/evidence-contracts';
 describe('Dialogue offline replay', () => {
   it('uses actual captured source and raw response, without API calls or Gold', () => {
     const input = JSON.parse(
@@ -46,6 +47,26 @@ describe('Dialogue offline replay', () => {
     ])
       expect(() => validateDialogueOrigin(origin)).toThrow();
   });
+  it.each([
+    ['qa', 'question_help', '教师解释千克除以立方厘米'],
+    ['discussion', 'learning_performance', '教师确认12 g/cm³计算正确'],
+  ])(
+    'replays the frozen F76 %s semantic negative at the structural boundary',
+    (mode, kept, bad) => {
+      const batch = JSON.parse(
+        readFileSync(`../docs/log/artifacts/F76/live-001/after-${mode}.json`, 'utf8'),
+      ) as { dialogue: { evidence: DialogueEvidenceRun }[] };
+      const { evidence } = batch.dialogue.at(-1)!;
+      const structural = replayDialogueEvidence(evidence, evidence.reply!);
+      // The human-reviewed negative is intentionally structure-valid.
+      expect(structural.state).toBe('completed');
+      expect(structural.facts[0].type).toBe(kept);
+      expect(structural.facts[1]).toMatchObject({
+        type: 'learning_performance',
+        evidence: expect.stringContaining(bad),
+      });
+    },
+  );
 });
 
 // Explicit, synthetic-only acceptance harness. No automatic model execution.

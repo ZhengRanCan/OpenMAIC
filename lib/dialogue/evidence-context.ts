@@ -12,6 +12,7 @@ import { DIALOGUE_EVIDENCE_SYSTEM } from './evidence-prompt';
 
 export function buildDialogueEvidenceContext(
   source: DialogueSourceWindow,
+  system: string = DIALOGUE_EVIDENCE_SYSTEM,
 ): DialogueEvidenceContext {
   if (source.messages.length > 200) throw new Error('SOURCE_MESSAGE_LIMIT');
   const sourceIndex: Record<string, DialogueReference> = Object.create(null);
@@ -56,12 +57,12 @@ export function buildDialogueEvidenceContext(
     messages,
     allowedRefs: messages.map((m) => m.id),
   });
-  const inputBytes = Buffer.byteLength(DIALOGUE_EVIDENCE_SYSTEM) + Buffer.byteLength(text);
+  const inputBytes = Buffer.byteLength(system) + Buffer.byteLength(text);
   return {
     text,
     sourceIndex,
     messageVersions,
-    inputDigest: digest({ system: DIALOGUE_EVIDENCE_SYSTEM, text }),
+    inputDigest: digest({ system, text }),
     inputBytes,
     tooLarge: inputBytes > DIALOGUE_LIMITS.inputBytes,
   };

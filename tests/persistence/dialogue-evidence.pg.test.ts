@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dialogueEvidenceFixture, model, reply } from './dialogue-evidence-fixture';
 import { readDialogueEvidenceRun } from '@/lib/persistence/dialogue-evidence-read';
+import { DIALOGUE_PROMPT_VERSION } from '@/lib/dialogue/evidence-contracts';
+import {
+  DIALOGUE_EVIDENCE_SYSTEM,
+  DIALOGUE_EVIDENCE_SYSTEM_V1,
+} from '@/lib/dialogue/evidence-prompt';
+import { digest } from '@/lib/learner-memory/contracts';
 const url = process.env.PG_CONTRACT_URL;
 if (!url && process.env.STORAGE_PG_CONTRACT_REQUIRED === '1')
   throw Error('F73 requires PG_CONTRACT_URL');
@@ -13,6 +19,24 @@ describe.skipIf(!url)('F73 real PostgreSQL Evidence', () => {
     await f?.close();
   });
   const prepare = () => f.store.prepare('owner', f.request(), f.settings, model);
+  it('uses v2 for new requests and preserves the v1 request and digest on replay', async () => {
+    const request = f.request();
+    const old = await f.store.prepare('owner', request, f.settings, model);
+    const upgraded = { ...model, promptVersion: DIALOGUE_PROMPT_VERSION };
+    const replayed = await f.store.prepare('owner', request, f.settings, upgraded);
+    const fresh = await f.store.prepare('owner', f.request(), f.settings, upgraded);
+    expect(replayed.id).toBe(old.id);
+    expect(fresh.id).not.toBe(old.id);
+    expect(replayed.system).toBe(DIALOGUE_EVIDENCE_SYSTEM_V1);
+    expect(fresh.system).toBe(DIALOGUE_EVIDENCE_SYSTEM);
+    expect(fresh.promptVersion).toBe(DIALOGUE_PROMPT_VERSION);
+    expect(fresh.context!.text).toBe(replayed.context!.text);
+    for (const run of [replayed, fresh]) {
+      expect(run.context!.inputDigest).toBe(
+        digest({ system: run.system, text: run.context!.text }),
+      );
+    }
+  });
   it('freezes source, deduplicates concurrent prepare and claim, captures exactly once and reads after restart', async () => {
     const runs = await Promise.all([prepare(), prepare()]);
     expect(runs[0].id).toBe(runs[1].id);

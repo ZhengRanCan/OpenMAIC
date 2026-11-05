@@ -52,6 +52,7 @@ export interface DialogueLoopJob {
   binding: DialogueBinding | null;
   closure: LearningClosure;
   configDigest: string;
+  evidencePromptVersion?: string;
   modelDigest?: string;
   evidenceRunId: string | null;
   memoryDeliveryId: string | null;

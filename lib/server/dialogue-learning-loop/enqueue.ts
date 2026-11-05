@@ -5,7 +5,10 @@ import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { readDialogueSourceIn } from '@/lib/persistence/dialogue-trace-read';
 import { foldRecords } from '@/lib/utils/chat-storage-core';
 import { digest } from '@/lib/learner-memory/contracts';
-import { DIALOGUE_PROMPT_VERSION } from '@/lib/dialogue/evidence-contracts';
+import {
+  DIALOGUE_PROMPT_VERSION,
+  LEGACY_DIALOGUE_PROMPT_VERSION,
+} from '@/lib/dialogue/evidence-contracts';
 import {
   learningClosureSchema,
   type DialogueLoopJob,
@@ -41,7 +44,8 @@ export async function enqueueClosedDialogueIn(
     owner,
     ...locator,
     content: source.contentDigest,
-    prompt: DIALOGUE_PROMPT_VERSION,
+    // Preserve the original source identity across Prompt upgrades.
+    prompt: LEGACY_DIALOGUE_PROMPT_VERSION,
     config,
   });
   const existing = await tx.query('SELECT data FROM dialogue_loop_jobs WHERE reuse_key=$1', [key]);
@@ -69,6 +73,7 @@ export async function enqueueClosedDialogueIn(
     binding,
     closure: closure.data,
     configDigest: digest(config),
+    evidencePromptVersion: DIALOGUE_PROMPT_VERSION,
     evidenceRunId: null,
     memoryDeliveryId: null,
     blockingDeliveryId: null,

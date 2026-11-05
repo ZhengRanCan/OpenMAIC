@@ -3,7 +3,8 @@ import type { DialogueSourceWindow } from './trace-types';
 
 export const DIALOGUE_EVIDENCE_PROTOCOL = 'dialogue-evidence.v1';
 export const DIALOGUE_CONTEXT_VERSION = 'dialogue-context.v1';
-export const DIALOGUE_PROMPT_VERSION = 'dialogue-prompt.v1';
+export const LEGACY_DIALOGUE_PROMPT_VERSION = 'dialogue-prompt.v1';
+export const DIALOGUE_PROMPT_VERSION = 'dialogue-prompt.v2';
 export const DIALOGUE_LIMITS = {
   inputBytes: 128 * 1024,
   outputBytes: 256000,
