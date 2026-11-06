@@ -225,12 +225,15 @@ export class QuizShortFactsService {
     return found.rows[0].data;
   }
   async read(owner: string, id: string) {
-    return this.withTransaction(async (tx) => {
-      const run = await this.readIn(tx, owner, id);
-      const current = await this.previewIn(tx, run.request);
-      if (current.digest !== run.context.digest) throw new Error('SOURCE_OR_REQUEST_CHANGED');
-      return run;
-    });
+    return this.withTransaction((tx) => this.readVerifiedIn(tx, owner, id));
+  }
+
+  /** Recheck a saved short-facts run in the caller's source validation transaction. */
+  async readVerifiedIn(tx: Queryable, owner: string, id: string) {
+    const run = await this.readIn(tx, owner, id);
+    const current = await this.previewIn(tx, run.request);
+    if (current.digest !== run.context.digest) throw new Error('SOURCE_OR_REQUEST_CHANGED');
+    return run;
   }
   private async save(tx: Queryable, run: Stored) {
     await tx.query('UPDATE f68_short_facts_runs SET data=$3::jsonb WHERE owner_id=$1 AND id=$2', [

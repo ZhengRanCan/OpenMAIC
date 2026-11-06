@@ -1,8 +1,15 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ensureAssetSchema, PgAssetStore } from '@openmaic/storage/asset/pg';
+import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
+import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
+import { QuizTraceService } from '@/lib/persistence/quiz-trace';
+import { ensureQuizTraceSchema } from '@/lib/persistence/quiz-trace-schema';
 import { LearnerMastery } from '@/lib/server/learner-mastery';
+import { ensureShortFactsSchema, QuizShortFactsService } from '@/lib/server/quiz-short-facts';
+import type { Scene } from '@/lib/types/stage';
 import { dialogueEvidenceFixture, model, reply } from './dialogue-evidence-fixture';
 
 const url = process.env.PG_CONTRACT_URL;
@@ -157,6 +164,150 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
       expect.objectContaining({ coverage: 'direct', assistance: 'independent' }),
     ]);
     expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
+  });
+
+  it('uses verified Quiz short facts on the same target while preserving the process gap', async () => {
+    const discussion = await saveEvidence();
+    const before = await service.maintain(locator, [discussion], synthesis('assisted'));
+    await ensureAssetSchema(f.db);
+    await f.db.query('CREATE TABLE document_scenes(stage_id TEXT,id TEXT,data JSONB)');
+    await ensureQuizTraceSchema(f.db);
+    await ensureShortFactsSchema(f.db);
+    const assets = (tx: Queryable, withTransaction: WithTransaction) =>
+      new PgAssetStore(tx, { withTransaction, byteStore: new PgAssetByteStore(f.db) });
+    const trace = new QuizTraceService({
+      ...f.provider,
+      pool: f.db,
+      runtimeStore: f.runtime,
+      assetStore: assets(f.db, f.provider.withTransaction),
+      assetStoreIn: (tx) => assets(tx, (body) => body(tx)),
+    });
+    const scene: Scene = {
+      id: 'quiz-scene',
+      stageId: 'stage',
+      title: '密度小测',
+      order: 1,
+      type: 'quiz',
+      content: {
+        type: 'quiz',
+        questions: [
+          {
+            id: 'density',
+            type: 'single',
+            question: '质量 0.42 kg，体积 70 cm³，密度是多少？',
+            options: [
+              { value: 'A', label: '6 g/cm³' },
+              { value: 'B', label: '0.006 g/cm³' },
+            ],
+            answer: ['A'],
+          },
+        ],
+      },
+    };
+    await f.db.query('INSERT INTO document_scenes VALUES($1,$2,$3::jsonb)', [
+      'stage',
+      scene.id,
+      JSON.stringify(scene),
+    ]);
+    await f.db.query(
+      'INSERT INTO generation_run_steps(run_id,step_id,output) VALUES($1,$2,$3::jsonb)',
+      [
+        'run',
+        'scene:1:narration',
+        JSON.stringify({ scene: { id: scene.id, stageId: scene.stageId } }),
+      ],
+    );
+    const attempt = await trace.prepare('owner', {
+      operationId: 'quiz-start',
+      mode: 'start',
+      stageId: 'stage',
+      sceneId: scene.id,
+      scene,
+    });
+    await trace.submit('owner', attempt.attemptId, {
+      operationId: 'quiz-submit',
+      submissionId: 'quiz-submission',
+      answers: { density: 'B' },
+    });
+    const facts = new QuizShortFactsService(f.provider.withTransaction);
+    const prepared = await facts.prepare({
+      owner: 'owner',
+      generationRunId: 'run',
+      attemptId: attempt.attemptId,
+      submissionId: 'quiz-submission',
+      student: 'A',
+      conditions: ['authored synthetic fixture'],
+      sourceNature: 'synthetic',
+      memoryEnvironmentId: f.settings.memoryEnvironmentId,
+    });
+    const quiz = await facts.extract('owner', prepared.id, async () => ({
+      text: JSON.stringify({
+        facts: [
+          {
+            type: 'error_performance',
+            evidence: '学生选择 0.006 g/cm³，答案错误，未提交计算过程。',
+            refs: Object.keys(prepared.context.refs),
+          },
+        ],
+      }),
+      finishReason: 'stop',
+      model: 'synthetic-test',
+      usage: null,
+    }));
+    expect(quiz.state).toBe('completed');
+    const source = { kind: 'quiz', runId: quiz.id } as const;
+    const generate = (assistance: 'independent' | 'unknown') =>
+      vi.fn(async (system: string, user: string) => {
+        const { evidence, previous } = JSON.parse(user);
+        expect(system).toContain('仅凭选项至多判为 partial');
+        expect(previous).toEqual(before?.state);
+        expect(evidence).toMatchObject([
+          {
+            type: 'quiz_performance',
+            questions: [{ type: 'single', submitted: 'B', answerKey: ['A'] }],
+          },
+        ]);
+        const evidenceRef = evidence[0].evidenceRef;
+        return JSON.stringify({
+          assessments: [
+            {
+              evidenceRef,
+              coverage: 'partial',
+              result: 'incorrect',
+              assistance,
+              observation: '选错答案，具体过程未知。',
+            },
+          ],
+          candidateState: {
+            summary: '在教师给出换算值后算对，之后综合选择题选错，未提交过程。',
+            unverified,
+            adoptedEvidenceRefs: [evidenceRef],
+          },
+        });
+      });
+    await expect(service.maintain(locator, [source], generate('independent'))).rejects.toThrow(
+      'MASTERY_INVALID_ASSESSMENT',
+    );
+    expect(await service.read(locator)).toEqual(before);
+    const invoke = generate('unknown');
+    const after = await service.maintain(locator, [discussion, source], invoke);
+    expect(after?.state.unverified).toEqual(unverified);
+    expect(after?.state.observations).toEqual([
+      before?.state.observations[0],
+      expect.objectContaining({
+        evidenceRef: `quiz:${quiz.id}/0`,
+        coverage: 'partial',
+        result: 'incorrect',
+        assistance: 'unknown',
+      }),
+    ]);
+    expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
+    expect(await service.maintain(locator, [discussion, source, { ...source }], invoke)).toEqual(
+      after,
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
+    await f.db.query('DELETE FROM f68_short_facts_runs WHERE id=$1', [quiz.id]);
+    await expect(service.read(locator)).rejects.toThrow('SHORT_FACTS_NOT_FOUND');
   });
 
   it.skipIf(process.env.F80_LIVE !== '1')(
