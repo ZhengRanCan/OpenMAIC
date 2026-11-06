@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
 import { LearnerMastery } from '@/lib/server/learner-mastery';
@@ -45,6 +47,11 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
   let f: Fixture;
   let service: LearnerMastery;
   beforeEach(async () => {
+    if (process.env.F80_LIVE === '1') {
+      const database = new URL(url!);
+      if (database.hostname !== '127.0.0.1' || database.pathname !== '/f80_live')
+        throw new Error('F80 live tests require a dedicated local database');
+    }
     f = await dialogueEvidenceFixture(url!);
     await f.db.query("UPDATE generation_runs SET outline=$1, outline_revision=1 WHERE id='run'", [
       JSON.stringify({ outlines: [{ id: 'scene', type: 'slide' }], targets: [target] }),
@@ -151,6 +158,100 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     ]);
     expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
   });
+
+  it.skipIf(process.env.F80_LIVE !== '1')(
+    'live model retains helped work and closes the gap after independent work',
+    async () => {
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+      const output = process.env.F80_ARTIFACT_DIR;
+      if (!apiKey || !output)
+        throw new Error('F80 requires an artifact directory and DeepSeek credential');
+      await mkdir(output);
+      let calls = 0;
+      const save = (file: string, value: unknown) =>
+        writeFile(join(output, `${file}.json`), JSON.stringify(value, null, 2) + '\n', {
+          flag: 'wx',
+        });
+      const runStep =
+        (name: 'assisted' | 'independent') => async (system: string, user: string) => {
+          const expected = name === 'assisted' ? 0 : 1;
+          if (calls !== expected) throw new Error('F80 call limit');
+          calls++;
+          const request = {
+            model: 'deepseek-v4-flash',
+            thinking: { type: 'disabled' },
+            max_tokens: 2048,
+            temperature: 0,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+          };
+          const body = JSON.stringify(request);
+          expect(Buffer.byteLength(body)).toBeLessThanOrEqual(65536);
+          await save(`${name}.request`, request);
+          const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+            method: 'POST',
+            body,
+            headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+            redirect: 'error',
+            signal: AbortSignal.timeout(120_000),
+          });
+          if (!response.ok) {
+            await save(`${name}.error`, { status: response.status });
+            throw new Error(`F80 DeepSeek HTTP ${response.status}`);
+          }
+          const result = await response.json();
+          const choice = result.choices?.[0];
+          const content = choice?.message?.content;
+          await save(`${name}.response`, {
+            content,
+            model: result.model,
+            usage: result.usage,
+            finishReason: choice?.finish_reason,
+          });
+          expect(choice?.finish_reason).toBe('stop');
+          expect(Number.isFinite(result.usage?.total_tokens)).toBe(true);
+          if (typeof content !== 'string' || !content.trim())
+            throw new Error('F80 empty model response');
+          return content;
+        };
+
+      const first = await saveEvidence();
+      const before = await service.maintain(locator, [first], runStep('assisted'));
+      const reader = new LearnerMastery(f.provider, f.settings);
+      const firstRead = await reader.read(locator);
+      await save('assisted.mastery', firstRead);
+      expect(firstRead).toEqual(before);
+      expect(before?.state.observations).toMatchObject([
+        { coverage: 'partial', result: 'correct', assistance: 'assisted' },
+      ]);
+      expect(before?.state.unverified.length).toBeGreaterThan(0);
+
+      const second = await saveEvidence(true);
+      const after = await service.maintain(locator, [first, second], runStep('independent'));
+      const secondRead = await reader.read(locator);
+      await save('independent.mastery', secondRead);
+      expect(secondRead).toEqual(after);
+      expect(after?.state.observations).toEqual([
+        before?.state.observations[0],
+        expect.objectContaining({
+          coverage: 'direct',
+          result: 'correct',
+          assistance: 'independent',
+        }),
+      ]);
+      expect(after?.state.unverified).toEqual([]);
+      const duplicate = vi.fn(async () => {
+        throw new Error('F80 duplicate call');
+      });
+      expect(await service.maintain(locator, [first, second], duplicate)).toEqual(after);
+      expect(duplicate).not.toHaveBeenCalled();
+      expect(calls).toBe(2);
+    },
+    260_000,
+  );
 
   it('fences concurrent invocation and retains an unknown outcome without redispatch', async () => {
     const run = await saveEvidence();
