@@ -889,6 +889,13 @@ export async function executeGenerationRun(
       );
     }
     const contextText = context ? renderPreclassLearnerContext(context) : '';
+    const student = input.simulatedLearner;
+    const mastery =
+      student && services.learnerMastery
+        ? await withDeadline('mastery-read', STEP_DEADLINES_MS.learnerContextRecheck, signal, () =>
+            services.learnerMastery!(owner, student),
+          )
+        : [];
     // Outline items reach subscribers while the model writes: each is
     // appended (fenced) in order, and the final commit waits for them.
     let appending: Promise<unknown> = Promise.resolve();
@@ -938,6 +945,7 @@ export async function executeGenerationRun(
             ...materialImages(),
             ...(research?.context ? { researchContext: research.context } : {}),
             ...(contextText ? { learnerContext: contextText } : {}),
+            ...(mastery.length ? { learnerMastery: mastery } : {}),
           },
           { log, signal: callSignal, emit },
         ),
@@ -946,6 +954,16 @@ export async function executeGenerationRun(
       await appending;
     }
     if (appendFailure) throw appendFailure;
+    if (mastery.length && student && services.learnerMastery) {
+      const current = await withDeadline(
+        'mastery-recheck',
+        STEP_DEADLINES_MS.learnerContextRecheck,
+        signal,
+        () => services.learnerMastery!(owner, student),
+      );
+      if (JSON.stringify(current) !== JSON.stringify(mastery))
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+    }
     if (context)
       await withDeadline(
         'learner-context-recheck',
@@ -971,6 +989,14 @@ export async function executeGenerationRun(
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
       taskEngineMode: result.taskEngineMode,
       ...(context ? { learnerContext: context } : {}),
+      ...(mastery.length
+        ? {
+            masteryTargets: mastery.map(({ target }) => ({
+              id: target.id,
+              revision: target.revision,
+            })),
+          }
+        : {}),
     };
     // The run waits for confirmation holding no worker, unless its caller
     // asked for the outline to be confirmed with it. A `countdown` run (as the

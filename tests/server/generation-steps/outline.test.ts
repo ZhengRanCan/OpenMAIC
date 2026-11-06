@@ -194,6 +194,26 @@ describe('outline step', () => {
     expect(requirements.userBio).toBe('Browser bio');
   });
 
+  it('renders Mastery separately from Memory without replacing the current request', async () => {
+    streams(OUTLINE_TEXT);
+    const learnerMastery = [
+      {
+        target: { id: 'old-target', revision: 1, statement: 'Show common-denominator addition.' },
+        summary: 'Completed one step with help.',
+        unverified: ['Show the full independent process.'],
+      },
+    ];
+    await generateOutlines(
+      { ...body, learnerContext: 'Prefers diagrams.', learnerMastery, model },
+      stepContext([]),
+    );
+    const prompt = mocks.streamLLM.mock.calls[0]![0].prompt;
+    expect(prompt).toContain(body.requirements.requirement);
+    expect(prompt).toContain('Prefers diagrams.\n\n## Learner Mastery');
+    expect(prompt).toContain('The current classroom request takes priority');
+    expect(prompt).toContain(JSON.stringify(learnerMastery));
+  });
+
   it.each([
     { mode: { interactiveMode: true }, vocational: 'false' },
     { mode: { taskEngineMode: true }, vocational: 'true' },

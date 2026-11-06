@@ -17,6 +17,7 @@ import {
   buildPreclassLearnerContext,
 } from '@/lib/server/preclass-learner-context';
 import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
+import { readPlannerMastery, type PlannerMastery } from '@/lib/server/learner-mastery';
 import {
   assertQuizContextCurrent,
   buildQuizLearnerContext,
@@ -214,6 +215,7 @@ export interface RunStepServices {
     context: FrozenLearnerContext,
     ctx: StepContext,
   ): Promise<void>;
+  learnerMastery?(ownerId: string, student: SimulatedLearnerId): Promise<PlannerMastery[]>;
   quizLearnerContext?(
     ownerId: string,
     input: Parameters<typeof buildQuizLearnerContext>[0],
@@ -479,6 +481,8 @@ export const defaultRunStepServices: RunStepServices = {
     }
     return research({ ...input, config, rewriteModel }, ctx);
   },
+
+  learnerMastery: readPlannerMastery,
 
   async outline(ownerId, input, ctx) {
     return generateOutlines(

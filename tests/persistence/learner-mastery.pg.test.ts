@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { createOpenAI } from '@ai-sdk/openai';
 import { ensureAssetSchema, PgAssetStore } from '@openmaic/storage/asset/pg';
 import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
@@ -8,6 +10,17 @@ import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
 import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { ensureQuizTraceSchema } from '@/lib/persistence/quiz-trace-schema';
 import { LearnerMastery } from '@/lib/server/learner-mastery';
+import * as persistence from '@/lib/persistence/server-provider';
+import * as dialogueSettings from '@/lib/server/dialogue-evidence-provenance';
+import { executeGenerationRun } from '@/lib/server/generation/run/engine';
+import { defaultRunStepServices } from '@/lib/server/generation/run/services';
+import {
+  claimNextGenerationRun,
+  createGenerationRun,
+  readGenerationRun,
+  resetGenerationRunSchemaForTests,
+} from '@/lib/server/generation/run/store';
+import { generateOutlines } from '@/lib/server/generation/steps/outline';
 import { ensureShortFactsSchema, QuizShortFactsService } from '@/lib/server/quiz-short-facts';
 import type { Scene } from '@/lib/types/stage';
 import { dialogueEvidenceFixture, model, reply } from './dialogue-evidence-fixture';
@@ -65,7 +78,12 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     ]);
     service = new LearnerMastery(f.provider, f.settings);
   });
-  afterEach(async () => f?.close());
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    resetGenerationRunSchemaForTests();
+    await f?.close();
+  });
 
   async function saveEvidence(independent = false, question = false) {
     const chatSessionId = independent ? 'new-problem' : 'assisted-problem';
@@ -166,9 +184,7 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
   });
 
-  it('uses verified Quiz short facts on the same target while preserving the process gap', async () => {
-    const discussion = await saveEvidence();
-    const before = await service.maintain(locator, [discussion], synthesis('assisted'));
+  async function saveQuizEvidence() {
     await ensureAssetSchema(f.db);
     await f.db.query('CREATE TABLE document_scenes(stage_id TEXT,id TEXT,data JSONB)');
     await ensureQuizTraceSchema(f.db);
@@ -255,7 +271,13 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
       usage: null,
     }));
     expect(quiz.state).toBe('completed');
-    const source = { kind: 'quiz', runId: quiz.id } as const;
+    return { kind: 'quiz', runId: quiz.id } as const;
+  }
+
+  it('uses verified Quiz short facts on the same target while preserving the process gap', async () => {
+    const discussion = await saveEvidence();
+    const before = await service.maintain(locator, [discussion], synthesis('assisted'));
+    const source = await saveQuizEvidence();
     const generate = (assistance: 'independent' | 'unknown') =>
       vi.fn(async (system: string, user: string) => {
         const { evidence, previous } = JSON.parse(user);
@@ -295,19 +317,25 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     expect(after?.state.observations).toEqual([
       before?.state.observations[0],
       expect.objectContaining({
-        evidenceRef: `quiz:${quiz.id}/0`,
+        evidenceRef: `quiz:${source.runId}/0`,
         coverage: 'partial',
         result: 'incorrect',
         assistance: 'unknown',
       }),
     ]);
     expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
+    expect(await service.listForPlanner('owner', 'A')).toEqual([
+      { target, summary: after?.state.summary, unverified },
+    ]);
+    expect(await service.listForPlanner('owner', 'B')).toEqual([]);
+    expect(await service.listForPlanner('foreign', 'A')).toEqual([]);
     expect(await service.maintain(locator, [discussion, source, { ...source }], invoke)).toEqual(
       after,
     );
     expect(invoke).toHaveBeenCalledTimes(1);
-    await f.db.query('DELETE FROM f68_short_facts_runs WHERE id=$1', [quiz.id]);
+    await f.db.query('DELETE FROM f68_short_facts_runs WHERE id=$1', [source.runId]);
     await expect(service.read(locator)).rejects.toThrow('SHORT_FACTS_NOT_FOUND');
+    expect(await service.listForPlanner('owner', 'A')).toEqual([]);
   });
 
   it.skipIf(process.env.F80_LIVE !== '1')(
@@ -403,6 +431,240 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     },
     260_000,
   );
+
+  it('Quiz and next-class Planner use the persisted mastery state', async () => {
+    const live = process.env.F80_LIVE === '1';
+    const output = process.env.F80_ARTIFACT_DIR;
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (live) {
+      if (!output || !apiKey) throw new Error('Missing F80 live configuration');
+      await mkdir(output);
+    }
+    const save = async (file: string, value: unknown) => {
+      if (live && output)
+        await writeFile(join(output, `${file}.json`), JSON.stringify(value, null, 2) + '\n', {
+          flag: 'wx',
+        });
+    };
+    const endpoint = 'https://api.deepseek.com/v1/chat/completions';
+    const modelId = 'deepseek-v4-flash';
+    const attempted = new Set<string>();
+    async function send(
+      name: string,
+      request: Record<string, unknown>,
+      signal?: AbortSignal | null,
+    ) {
+      if (!live || !apiKey) throw new Error('F80 network not armed');
+      if (attempted.has(name) || attempted.size >= 3) throw new Error('F80 call limit');
+      attempted.add(name);
+      const payload = {
+        ...request,
+        model: modelId,
+        thinking: { type: 'disabled' },
+        max_tokens: 2048,
+      };
+      const body = JSON.stringify(payload);
+      expect(Buffer.byteLength(body)).toBeLessThanOrEqual(65536);
+      await save(`${name}.request`, payload);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body,
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        redirect: 'error',
+        signal: AbortSignal.any([AbortSignal.timeout(120_000), ...(signal ? [signal] : [])]),
+      });
+      if (!response.ok) {
+        await save(`${name}.error`, { status: response.status });
+        throw new Error(`F80 DeepSeek HTTP ${response.status}`);
+      }
+      return response;
+    }
+
+    const discussion = await saveEvidence();
+    const before = await service.maintain(locator, [discussion], synthesis('assisted'));
+    const quiz = await saveQuizEvidence();
+    const after = await service.maintain(locator, [discussion, quiz], async (system, user) => {
+      if (!live) {
+        const evidenceRef = JSON.parse(user).evidence[0].evidenceRef;
+        return JSON.stringify({
+          assessments: [
+            {
+              evidenceRef,
+              coverage: 'partial',
+              result: 'incorrect',
+              assistance: 'unknown',
+              observation: '选择了错误选项。',
+            },
+          ],
+          candidateState: {
+            summary: '受助算对，之后密度选择题选错。',
+            unverified,
+            adoptedEvidenceRefs: [evidenceRef],
+          },
+        });
+      }
+      const response = await send('quiz', {
+        response_format: { type: 'json_object' },
+        temperature: 0,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      });
+      const result = await response.json();
+      await save('quiz.response', result);
+      expect(result.choices?.[0]?.finish_reason).toBe('stop');
+      expect(result.usage?.total_tokens).toBeGreaterThan(0);
+      return result.choices[0].message.content;
+    });
+    await save('quiz.mastery', await service.read(locator));
+    expect(after?.state.observations).toEqual([
+      before?.state.observations[0],
+      expect.objectContaining({ coverage: 'partial', result: 'incorrect', assistance: 'unknown' }),
+    ]);
+    expect(after?.state.unverified.join('')).toMatch(/换算/);
+    expect(after?.state.unverified.join('')).toMatch(/列式/);
+
+    vi.stubEnv('OPENMAIC_DIALOGUE_EVIDENCE_ENABLED', 'true');
+    vi.stubEnv(
+      'OPENMAIC_SIMULATED_LEARNING_LOOP',
+      JSON.stringify({
+        memoryEnvironmentId: f.settings.memoryEnvironmentId,
+        sourceNature: 'synthetic',
+        conditions: ['F80 synthetic'],
+      }),
+    );
+    vi.spyOn(dialogueSettings, 'loadDialogueEvidenceSettings').mockResolvedValue(f.settings);
+    vi.spyOn(persistence, 'getServerPersistenceProvider').mockResolvedValue({
+      ...f.provider,
+      pool: f.db,
+      runtimeStore: f.runtime,
+    } as persistence.ServerPersistenceProvider);
+    const fingerprint = (data: unknown) =>
+      createHash('sha256').update(JSON.stringify(data)).digest('hex');
+    const cases = [
+      ['related', '生成三页中文密度接续课，练习如何用质量和体积求密度。'],
+      ['unrelated', '生成三页中文浮沉课，题目直接给出物体与液体的密度，只比较密度并解释浮沉。'],
+    ] as const;
+    for (const [name, requirement] of cases) {
+      let capture: Promise<void> | undefined;
+      const provider = createOpenAI({
+        apiKey,
+        baseURL: 'https://api.deepseek.com/v1',
+        fetch: async (url, init) => {
+          if (String(url) !== endpoint) throw new Error('Unexpected F80 model endpoint');
+          const response = await send(
+            name,
+            { ...JSON.parse(String(init?.body)), stream_options: { include_usage: true } },
+            init?.signal,
+          );
+          capture = response
+            .clone()
+            .text()
+            .then(async (stream) => {
+              const events = stream
+                .split(/\r?\n/)
+                .filter((line) => line.startsWith('data: {'))
+                .map((line) => JSON.parse(line.slice(6)));
+              await save(`${name}.response`, events);
+              expect(events.findLast((event) => event.usage)?.usage?.total_tokens).toBeGreaterThan(
+                0,
+              );
+              expect(
+                events.findLast((event) => event.choices?.[0]?.finish_reason)?.choices[0]
+                  .finish_reason,
+              ).toBe('stop');
+            });
+          void capture.catch(() => {});
+          return response;
+        },
+      });
+      const run = await createGenerationRun(
+        'owner',
+        {
+          requirement,
+          simulatedLearner: 'A',
+          materialIds: [],
+          interactive: false,
+          taskEngine: false,
+          agents: { mode: 'preset', agentIds: [] },
+          outlineReview: 'wait',
+        },
+        { maxActiveRunsPerOwner: 3, maxWaitingRunsPerOwner: 3 },
+      );
+      const claim = await claimNextGenerationRun('f80-live', {
+        runId: run.id,
+        leaseTtlMs: 150_000,
+        maxTakeovers: 0,
+      });
+      if (!claim) throw new Error('Missing F80 generation claim');
+      const outcome = await executeGenerationRun(claim, {
+        signal: AbortSignal.timeout(125_000),
+        services: {
+          ...defaultRunStepServices,
+          learnerContext: async (_owner, input) => ({
+            schemaVersion: 'learner-context.v1',
+            promptVersion: 'learner-context-selection.v1',
+            student: input.student,
+            memoryRevision: 0,
+            status: 'ready',
+            selected: [],
+            taskDigest: fingerprint(input.task),
+            contentDigest: fingerprint({
+              pdfText: input.content.pdfText ?? '',
+              researchContext: input.content.researchContext ?? '',
+            }),
+          }),
+          validateLearnerContext: async () => {},
+          outline: async (_owner, input, ctx) => {
+            expect(input.requirements.requirement).toBe(requirement);
+            expect(input.learnerContext).toBeUndefined();
+            expect(input.learnerMastery).toEqual([
+              { target, summary: after?.state.summary, unverified: after?.state.unverified },
+            ]);
+            if (!live)
+              return {
+                outlines: [1, 2, 3].map((order) => ({
+                  id: `o${order}`,
+                  type: 'slide',
+                  title: `页 ${order}`,
+                  description: '内容',
+                  keyPoints: ['说明'],
+                  order,
+                })),
+                languageDirective: '使用中文',
+                courseTitle: '受控测试',
+                taskEngineMode: false,
+              };
+            return generateOutlines(
+              {
+                ...input,
+                allowImageGeneration: false,
+                allowVideoGeneration: false,
+                model: {
+                  model: provider.chat(modelId),
+                  modelInfo: { id: modelId, name: modelId, outputWindow: 2048, capabilities: {} },
+                  modelString: `deepseek:${modelId}`,
+                  serverManaged: false,
+                  thinkingConfig: undefined,
+                },
+              },
+              { ...ctx, workspaceId: null, resolveVisionImages: async () => [] },
+            );
+          },
+        },
+      });
+      await capture;
+      expect(outcome).toBe('waiting');
+      const stored = await readGenerationRun(run.id, 'owner');
+      await save(`${name}.outline`, stored?.outline);
+      expect(stored?.outline?.masteryTargets).toEqual([
+        { id: target.id, revision: target.revision },
+      ]);
+      expect(stored?.outline?.outlines).toHaveLength(3);
+    }
+    expect(attempted.size).toBe(live ? 3 : 0);
+  }, 390_000);
 
   it('fences concurrent invocation and retains an unknown outcome without redispatch', async () => {
     const run = await saveEvidence();

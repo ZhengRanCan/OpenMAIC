@@ -17,8 +17,16 @@ import {
 } from '@/lib/persistence/dialogue-evidence-read';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { readPreparedIn } from '@/lib/persistence/quiz-trace';
-import type { ServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { resolveDialogueBindingIn, verifyDialogueBindingIn } from './dialogue-evidence-provenance';
+import {
+  getServerPersistenceProvider,
+  type ServerPersistenceProvider,
+} from '@/lib/persistence/server-provider';
+import {
+  loadDialogueEvidenceSettings,
+  resolveDialogueBindingIn,
+  verifyDialogueBindingIn,
+} from './dialogue-evidence-provenance';
+import { readSimulatedLearningLoopConfig } from './quiz-learning-loop/config';
 import type { CourseTarget } from './generation/run/types';
 import { QuizShortFactsService } from './quiz-short-facts';
 
@@ -27,6 +35,20 @@ export interface MasteryLocator {
   runId: string;
   targetId: string;
   targetRevision: number;
+}
+export type PlannerMastery = Pick<MasteryState['state'], 'summary' | 'unverified'> & {
+  target: CourseTarget;
+};
+
+export async function readPlannerMastery(ownerId: string, student: CourseScope['student']) {
+  const config = readSimulatedLearningLoopConfig();
+  if (config?.sourceNature !== 'synthetic') return [];
+  const settings =
+    process.env.OPENMAIC_DIALOGUE_EVIDENCE_ENABLED === 'true'
+      ? await loadDialogueEvidenceSettings()
+      : { bindings: [], memoryEnvironmentId: config.memoryEnvironmentId };
+  const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  return new LearnerMastery(provider, settings).listForPlanner(ownerId, student);
 }
 interface CourseScope {
   stageId: string;
@@ -301,6 +323,68 @@ export class LearnerMastery {
       const row = await this.readRow(tx, locator);
       await this.verifyRefs(tx, locator, course, this.adopted(row));
       return row.state;
+    });
+  }
+
+  async listForPlanner(
+    ownerId: string,
+    student: CourseScope['student'],
+  ): Promise<PlannerMastery[]> {
+    return this.provider.withTransaction(async (tx) => {
+      await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+      const result = await tx.query<{
+        run_id: string;
+        target_id: string;
+        target_revision: number;
+        data: Row;
+      }>(
+        `SELECT m.run_id,m.target_id,m.target_revision,m.data FROM generation_target_mastery m
+         JOIN generation_runs r ON r.id=m.run_id JOIN stage_meta s ON s.stage_id=r.stage_id AND s.owner_id=r.owner_id
+         WHERE r.owner_id=$1 AND r.input->>'simulatedLearner'=$2 AND m.environment_id=$3
+           AND r.state='completed' AND s.deleted_at IS NULL AND m.data->'state' <> 'null'::jsonb
+         ORDER BY r.created_at DESC,r.id,m.target_id,m.target_revision DESC LIMIT 12`,
+        [ownerId, student, this.settings.memoryEnvironmentId],
+      );
+      const usable: PlannerMastery[] = [];
+      for (const row of result.rows) {
+        const locator = {
+          ownerId,
+          runId: row.run_id,
+          targetId: row.target_id,
+          targetRevision: row.target_revision,
+        };
+        const state = row.data.state;
+        if (!state || state.learnerId !== `simulated-${student}`) continue;
+        try {
+          const course = await readCourse(tx, locator, false);
+          if (state.target.statement !== course.target.statement) continue;
+          await this.verifyRefs(tx, locator, course, this.adopted(row.data));
+          usable.push({
+            target: course.target,
+            summary: state.state.summary,
+            unverified: state.state.unverified,
+          });
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            ![
+              'MASTERY_COURSE_UNAVAILABLE',
+              'MASTERY_TARGET_UNAVAILABLE',
+              'MASTERY_SOURCE_UNAVAILABLE',
+              'MASTERY_SOURCE_CHANGED',
+              'SHORT_FACTS_NOT_FOUND',
+              'SOURCE_OR_REQUEST_CHANGED',
+              'NOT_FOUND',
+              'ATTEMPT_NOT_FOUND',
+              'VERSION_NOT_FOUND',
+              'RUN_SCENE_PROOF_UNAVAILABLE',
+            ].includes(error.message)
+          )
+            throw error;
+        }
+        if (usable.length === 3) break;
+      }
+      return usable;
     });
   }
 

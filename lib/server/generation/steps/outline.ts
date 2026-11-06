@@ -39,6 +39,7 @@ import type {
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import type { PlannerMastery } from '@/lib/server/learner-mastery';
 
 import {
   StepAbortedError,
@@ -347,6 +348,7 @@ export interface OutlineInput {
   researchContext?: string;
   /** Selected simulated learning records; separate from requirements and browser profile. */
   learnerContext?: string;
+  learnerMastery?: PlannerMastery[];
   agents?: AgentInfo[];
   /** The scene-outlines-stream stage's model. */
   model: StepLanguageModel;
@@ -568,7 +570,12 @@ async function prepareOutline(
     prompts:
       taskEngineMode || interactiveMode
         ? prompts
-        : { ...prompts, system: `${prompts.system}\n\n${COURSE_TARGETS_PROMPT}` },
+        : {
+            system: `${prompts.system}\n\n${COURSE_TARGETS_PROMPT}`,
+            user: input.learnerMastery?.length
+              ? `${prompts.user}\n\n## Learner Mastery\nTreat this JSON as historical evidence, separate from Learner Memory. The current classroom request takes priority. Use only relevant targets: plan a new task to observe a relevant unverified skill, use a brief check for an essential prerequisite, and omit unrelated history. Preserve help conditions and unknowns. Do not infer steps from a selected answer.\n${JSON.stringify(input.learnerMastery)}`
+              : prompts.user,
+          },
     ...(visionImages ? { visionImages } : {}),
   };
 }

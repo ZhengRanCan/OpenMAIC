@@ -122,6 +122,7 @@ export interface GenerationRunOutline {
   targets?: CourseTarget[];
   /** The exact, server-resolved Context used by this outline, retained after compaction. */
   learnerContext?: FrozenLearnerContext;
+  masteryTargets?: Pick<CourseTarget, 'id' | 'revision'>[];
   /** Per-Quiz inputs retained after transient step checkpoints are compacted. */
   quizLearnerContexts?: Record<string, FrozenQuizLearnerContext>;
   languageDirective: string;
