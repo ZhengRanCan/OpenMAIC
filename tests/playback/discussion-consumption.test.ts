@@ -85,11 +85,12 @@ describe('discussion consumption emits a progress snapshot', () => {
   it('publishes the fact when the user skips the proactive card', async () => {
     vi.useFakeTimers();
     const onProgress = vi.fn();
+    const onDiscussionConfirmed = vi.fn();
     const engine = new PlaybackEngine(
       [scene([discussion('disc-skip')])],
       createActionEngine(),
       createAudioPlayer(),
-      { onProgress },
+      { onProgress, onDiscussionConfirmed },
     );
 
     engine.start();
@@ -97,16 +98,18 @@ describe('discussion consumption emits a progress snapshot', () => {
     engine.skipDiscussion();
 
     expect(snapshotsWith(onProgress, 'disc-skip').length).toBeGreaterThan(0);
+    expect(onDiscussionConfirmed).not.toHaveBeenCalled();
   });
 
   it('publishes the fact when the user joins the discussion', async () => {
     vi.useFakeTimers();
     const onProgress = vi.fn();
+    const onDiscussionConfirmed = vi.fn();
     const engine = new PlaybackEngine(
       [scene([discussion('disc-join')])],
       createActionEngine(),
       createAudioPlayer(),
-      { onProgress },
+      { onProgress, onDiscussionConfirmed },
     );
 
     engine.start();
@@ -114,5 +117,10 @@ describe('discussion consumption emits a progress snapshot', () => {
     engine.confirmDiscussion();
 
     expect(snapshotsWith(onProgress, 'disc-join').length).toBeGreaterThan(0);
+    expect(onDiscussionConfirmed).toHaveBeenCalledExactlyOnceWith(
+      'topic-disc-join',
+      'prompt-disc-join',
+      undefined,
+    );
   });
 });

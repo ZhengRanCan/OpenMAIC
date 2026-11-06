@@ -1,6 +1,43 @@
 // Behavior-parity golden guard for prompt construction in lib/generation/outline-generator.ts.
 import { describe, expect, test, vi } from 'vitest';
-import { buildOutlinePrompt, generateSceneOutlinesFromRequirements } from '@openmaic/generation';
+import {
+  buildOutlinePrompt,
+  generateSceneActions,
+  generateSceneOutlinesFromRequirements,
+} from '@openmaic/generation';
+
+test('passes an independent process check to the existing Discussion action generator', async () => {
+  const topic = '质量为 1.2 kg、体积为 400 cm³，求密度。';
+  const prompt = '请提交换算、列式、结果和单位。先等待学生作答。';
+  const planner = buildOutlinePrompt({ requirement: '检查学生能否独立完成密度计算。' });
+  expect(planner.system).toContain('Independent process checks');
+
+  const aiCall = vi.fn(async (system: string, user: string) => {
+    expect(system).toContain('Independent process check');
+    expect(user).toContain(topic);
+    expect(user).toContain(prompt);
+    return JSON.stringify([
+      { type: 'text', content: '请先独立完成新题。' },
+      { type: 'action', name: 'discussion', params: { topic, prompt, agentId: 'teacher' } },
+    ]);
+  });
+  const actions = await generateSceneActions(
+    {
+      id: 'density',
+      type: 'slide',
+      title: '独立验证',
+      description: topic,
+      keyPoints: [prompt],
+      order: 5,
+    },
+    { elements: [] },
+    aiCall,
+    { agents: [{ id: 'teacher', name: 'Teacher', role: 'teacher', persona: 'Physics teacher' }] },
+  );
+  expect(aiCall).toHaveBeenCalledOnce();
+  expect(actions.map((action) => action.type)).toEqual(['speech', 'discussion']);
+  expect(actions.at(-1)).toMatchObject({ type: 'discussion', topic, prompt, agentId: 'teacher' });
+});
 
 describe('buildOutlinePrompt golden output', () => {
   test('pins every conditional off', () => {

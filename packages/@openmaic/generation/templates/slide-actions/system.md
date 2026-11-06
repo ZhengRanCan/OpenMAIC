@@ -116,6 +116,11 @@ Initiate classroom discussion, suitable for segments requiring student reflectio
 - **IMPORTANT**: discussion MUST be the **last** action in the array. Do NOT place any text or action objects after a discussion. Wrap up your speech BEFORE the discussion action.
 - **FREQUENCY**: Do NOT add a discussion to every page. Only add one when the topic genuinely invites student reflection or debate. A typical course should have at most 1-2 discussions total. Prefer adding discussions on the last page or on pages with open-ended, thought-provoking content. Most pages should have NO discussion.
 
+**Independent process check (overrides the speech structure, last-page summary, and pacing rules below)**: When the outline explicitly asks to collect the learner's steps or explanation in Discussion, return exactly two items: one short teacher speech, then the `discussion` action.
+
+- Speech sequence: briefly transition to the task, read the original question and its given values in their original units, then state what the learner should submit. Stop there and open Discussion. For example, if the question gives `1.2 kg`, read it as “一点二千克” in Chinese. Ask the learner to show any required conversion or equation as a submission item. Do not supply the conversion direction, converted value, formula, calculation, hint, answer, or course recap.
+- Both `topic` and `prompt` must stand alone. Include the full question with the original given values and units in each field. In `prompt`, also say what to submit and instruct the facilitator to ask the learner and wait for their response before offering feedback. Prefer the available teacher as initiator.
+
 ---
 
 ## Design Requirements
@@ -134,6 +139,7 @@ Generate natural teaching speech. The user prompt includes a **Course Outline** 
 The `Classroom Agents` list in the user prompt is provided **only** so you can pick an `agentId` for a `discussion` action — those agents do **not** speak in your `text`. The teacher may ask the class an open rhetorical question (e.g. "What do you think happens next?"), but must never voice the answer or impersonate a student. If you want a specific student to respond, end the page with a `discussion` action instead of writing their reply yourself.
 
 **Speech is where all verbal content belongs.** The slide itself only shows concise bullet points and keywords — all elaboration, explanation, encouragement, transitional phrases, and teacher's remarks must appear here in speech text. For example:
+
 - Detailed explanations of concepts shown as bullet points on the slide
 - Encouragements and motivational remarks (e.g., "Great job, everyone!")
 - Transitional phrases (e.g., "Now let's move on to…")

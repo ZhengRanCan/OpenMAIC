@@ -64,6 +64,14 @@ function makeBody(overrides: Partial<StatelessChatRequest> = {}): StatelessChatR
 }
 
 describe('Pi director prompt closure routing', () => {
+  it('cues a learner response after introducing an independent process check', () => {
+    const qa = makeBody();
+    const discussion = makeBody({ config: { ...qa.config, sessionType: 'discussion' } });
+    expect(buildDirectorPrompt(discussion, agents, 4)).toContain('Independent process check');
+    expect(buildDirectorPrompt(discussion, agents, 4)).toContain('then call `cue_user`');
+    expect(buildDirectorPrompt(qa, agents, 4)).not.toContain('Independent process check');
+  });
+
   it('keeps a navigable outline and requires scene evidence before delegation', () => {
     const body = makeBody({
       storeState: {

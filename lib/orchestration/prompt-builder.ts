@@ -110,7 +110,9 @@ You are JOINING an ongoing discussion — do NOT re-introduce the topic or greet
 You are initiating a discussion on the following topic: "${discussionContext.topic}"
 ${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
 
-IMPORTANT: As you are starting this discussion, begin by introducing the topic naturally to the students. Engage them and invite their thoughts. Do not wait for user input - you speak first.`;
+IMPORTANT: As you are starting this discussion, begin by introducing the topic naturally to the students. Engage them and invite their thoughts. Do not wait for user input - you speak first.
+
+If this is a planned independent process check, your opening should only state the task and what the learner should submit. Ask the learner directly and stop. Hold back hints, worked steps, and answers until the learner responds or asks for help.`;
 }
 
 // ==================== System Prompt ====================

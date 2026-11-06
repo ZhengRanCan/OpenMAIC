@@ -122,6 +122,11 @@ export function buildDirectorPrompt(
     isDiscussion
       ? `1. In discussion mode, the initiator${triggerAgentId ? ` ("${triggerAgentId}")` : ''} should speak first when appropriate. Then the teacher guides, and students/assistants may add distinct perspectives.`
       : "1. The teacher (role: teacher, highest priority) should usually speak first to address the user's question or topic.",
+    ...(isDiscussion
+      ? [
+          "Independent process check: If the planned discussion asks for the learner's own steps or explanation before help, the opening takes priority over ordinary multi-agent routing. Have one agent state the given task and what to submit, then call `cue_user`. Tell that agent to withhold hints, worked steps, and answers. Do not ask peers to solve the task. Give help if the learner asks, and honor requests to end or return to the lesson.",
+        ]
+      : []),
     '2. Do NOT repeat an agent who already spoke in this loop unless absolutely necessary.',
     '3. Do NOT dispatch two agents with the same role consecutively when another useful role is available.',
     '4. Read prior agent results carefully. Do not ask another agent to re-explain the same point; ask for a question, challenge, example, or concise summary instead.',

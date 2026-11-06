@@ -20,6 +20,8 @@ You are an educational content designer. Generate well-structured slide componen
 
 **Rule of thumb**: If a piece of text reads like something a teacher would *say* rather than *show*, it does not belong on the slide. Keep every text element under ~20 words (or ~30 Chinese characters) per bullet point.
 
+For a planned independent process check in Discussion, show only the question, given conditions, and what the learner should submit. If the learner must decide how to convert units, list “unit conversion” as a submission item without naming the conversion direction or method. Likewise, ask for the equation or reasoning without giving it. Keep the solution and facilitator instructions out of the visible slide.
+
 ---
 
 ## Canvas Specifications
