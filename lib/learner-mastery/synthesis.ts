@@ -57,6 +57,13 @@ summary 保留旧表现和帮助条件，描述新表现如何改变当前判断
 
 export const MASTERY_QUIZ_RULES = `Quiz 中 submitted 是学生实际提交，answerKey 是参考答案。只有选项提交时，assistance 为 unknown；选择题只支持已选结果。若目标要求写出过程，仅凭选项至多判为 partial，不能推断学生做过哪一步、错误原因或清除仍待观察的过程要求。`;
 
+function hasOnlySelections(source: MasteryEvidence): boolean {
+  return (
+    source.type === 'quiz_performance' &&
+    source.questions.every(({ type, submitted }) => type !== 'short_answer' || !submitted)
+  );
+}
+
 export function synthesizeMastery(
   raw: string,
   target: CourseTarget,
@@ -75,9 +82,7 @@ export function synthesizeMastery(
       !source ||
       assessments.has(item.evidenceRef) ||
       (source.type === 'question_help' && !contextOnly) ||
-      (source.type === 'quiz_performance' &&
-        source.questions.every(({ type, submitted }) => type !== 'short_answer' || !submitted) &&
-        item.assistance !== 'unknown') ||
+      (hasOnlySelections(source) && item.assistance !== 'unknown') ||
       (contextOnly && item.result !== 'ungraded') ||
       ((contextOnly || item.result === 'ungraded') && item.assistance !== 'unknown')
     )
@@ -96,10 +101,14 @@ export function synthesizeMastery(
     return { ...fields, text: observation };
   });
   const observations = [...(previous?.state.observations ?? []), ...adopted];
-  if (
-    candidate.unverified.length === 0 &&
-    observations.every(({ result }) => result === 'ungraded')
-  )
+  const closesGap = adopted.some(
+    (item) =>
+      item.result === 'correct' &&
+      (hasOnlySelections(byRef.get(item.evidenceRef)!)
+        ? item.coverage === 'direct'
+        : item.assistance === 'independent'),
+  );
+  if (candidate.unverified.length === 0 && previous?.state.unverified.length !== 0 && !closesGap)
     throw new Error('MASTERY_UNVERIFIED_REQUIRED');
   return {
     schemaVersion: 'mastery-state.v0.1',

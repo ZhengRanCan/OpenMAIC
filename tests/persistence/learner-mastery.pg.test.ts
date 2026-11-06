@@ -86,7 +86,7 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
   });
 
   async function saveEvidence(independent = false, question = false) {
-    const chatSessionId = independent ? 'new-problem' : 'assisted-problem';
+    const chatSessionId = question ? 'question' : independent ? 'new-problem' : 'assisted-problem';
     const student = question
       ? '为什么先把千克换成克？'
       : independent
@@ -278,7 +278,7 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     const discussion = await saveEvidence();
     const before = await service.maintain(locator, [discussion], synthesis('assisted'));
     const source = await saveQuizEvidence();
-    const generate = (assistance: 'independent' | 'unknown') =>
+    const generate = (assistance: 'independent' | 'unknown', gaps = unverified) =>
       vi.fn(async (system: string, user: string) => {
         const { evidence, previous } = JSON.parse(user);
         expect(system).toContain('仅凭选项至多判为 partial');
@@ -302,13 +302,17 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
           ],
           candidateState: {
             summary: '在教师给出换算值后算对，之后综合选择题选错，未提交过程。',
-            unverified,
+            unverified: gaps,
             adoptedEvidenceRefs: [evidenceRef],
           },
         });
       });
     await expect(service.maintain(locator, [source], generate('independent'))).rejects.toThrow(
       'MASTERY_INVALID_ASSESSMENT',
+    );
+    expect(await service.read(locator)).toEqual(before);
+    await expect(service.maintain(locator, [source], generate('unknown', []))).rejects.toThrow(
+      'MASTERY_UNVERIFIED_REQUIRED',
     );
     expect(await service.read(locator)).toEqual(before);
     const invoke = generate('unknown');
@@ -789,5 +793,33 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
         observations: [{ coverage: 'context', result: 'ungraded', assistance: 'unknown' }],
       },
     });
+  });
+
+  it('rejects a context-only update that clears a previous gap', async () => {
+    const first = await saveEvidence();
+    const before = await service.maintain(locator, [first], synthesis('assisted'));
+    const question = await saveEvidence(false, true);
+    await expect(
+      service.maintain(locator, [question], async (_system, user) => {
+        const evidenceRef = JSON.parse(user).evidence[0].evidenceRef;
+        return JSON.stringify({
+          assessments: [
+            {
+              evidenceRef,
+              coverage: 'context',
+              result: 'ungraded',
+              assistance: 'unknown',
+              observation: '学生询问换算原因。',
+            },
+          ],
+          candidateState: {
+            summary: '学生已验证全部目标。',
+            unverified: [],
+            adoptedEvidenceRefs: [evidenceRef],
+          },
+        });
+      }),
+    ).rejects.toThrow('MASTERY_UNVERIFIED_REQUIRED');
+    expect(await service.read(locator)).toEqual(before);
   });
 });
