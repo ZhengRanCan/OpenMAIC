@@ -121,6 +121,19 @@ export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
     { version: 2, name: 'media_pending', up: MEDIA_PENDING },
     { version: 3, name: 'run_report', up: RUN_REPORT },
     { version: 4, name: 'outline_auto_confirm', up: OUTLINE_AUTO_CONFIRM },
+    {
+      version: 5,
+      name: 'course_target_mastery',
+      transaction: true,
+      up: `CREATE TABLE generation_target_mastery (
+        run_id TEXT NOT NULL REFERENCES generation_runs(id) ON DELETE CASCADE,
+        environment_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        target_revision INTEGER NOT NULL,
+        data JSONB NOT NULL,
+        PRIMARY KEY (run_id, environment_id, target_id, target_revision)
+      )`,
+    },
   ],
 };
 
