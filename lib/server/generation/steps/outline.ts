@@ -5,8 +5,8 @@
  * the step's events to the browser.
  *
  * Interactive mode and the server-enabled task engine mode keep their own
- * prompt templates; standard generation is byte-identical to the generation
- * package's outline prompt. The stream is retried on the same model, then
+ * prompt templates. Standard server generation adds course-target instructions.
+ * The stream is retried on the same model, then
  * once on the stage's fallback model, and every retry is reported as an event.
  */
 import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
@@ -54,6 +54,8 @@ const MAX_STREAM_RETRIES = 2;
 // small (tens of KB); anything past this is a runaway/degenerate generation
 // and must not be allowed to grow the heap unbounded.
 const MAX_OUTLINE_STREAM_BYTES = 512 * 1024;
+const COURSE_TARGETS_PROMPT = `## Course targets
+In the same top-level JSON object, add "targetStatements" before "outlines". Return an array of 1 to 3 strings, in the course language, based on the current course request and relevant planning context. Each string is one sentence that states the task conditions and what the student must do in observable terms. For example: "Given a mass in kg and volume in cm³, calculate density in g/cm³ and show the conversion and equation." Return only statement strings in this field. IDs, revisions and scene links are not part of the model output.`;
 
 /**
  * Extract the languageDirective from the streamed wrapper JSON.
@@ -115,6 +117,42 @@ function extractCourseTitleFromComplete(buffer: string): string | null {
   return match ? normalizeStreamedTitle(match[1]) : null;
 }
 
+function readOutlineHeader(buffer: string, start: number) {
+  for (const match of buffer.matchAll(/"outlines"\s*:\s*\[/g)) {
+    try {
+      // Closing the prefix is possible only for a top-level outlines key.
+      const fields = JSON.parse(`${buffer.slice(start, match.index)}"outlines":[]}`) as {
+        targetStatements?: unknown;
+      };
+      return { arrayContentStart: match.index + match[0].length, fields };
+    } catch {
+      // An invalid target object or another nested field may also contain this key.
+    }
+  }
+  return undefined;
+}
+
+function extractTargetStatements(buffer: string): string[] {
+  const start = buffer.search(/[\[{]/);
+  if (start < 0 || buffer[start] !== '{') return [];
+  let values: unknown;
+  try {
+    values = JSON.parse(buffer.slice(start, buffer.lastIndexOf('}') + 1)).targetStatements;
+  } catch {
+    // The scene limit can stop the stream before the wrapper closes.
+    values = readOutlineHeader(buffer, start)?.fields.targetStatements;
+  }
+  if (!Array.isArray(values)) return [];
+  const statements = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const statement = value.trim();
+    if (statement && statement.length <= 500) statements.add(statement);
+    if (statements.size === 3) break;
+  }
+  return [...statements];
+}
+
 /**
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array,
@@ -137,12 +175,15 @@ function extractNewOutlines(
     // so not inside a string and at brace depth 0).
     i = scanFrom;
   } else {
-    // Locate the outlines array opening once.
-    const outlinesKeyIdx = buffer.indexOf('"outlines"');
-    const arrayStart =
-      outlinesKeyIdx >= 0 ? buffer.indexOf('[', outlinesKeyIdx) : buffer.indexOf('[');
-    if (arrayStart === -1) return { outlines: results, scanFrom: 0 };
-    i = arrayStart + 1;
+    const start = buffer.search(/[\[{]/);
+    if (start === -1) return { outlines: results, scanFrom: 0 };
+    if (buffer[start] === '[') {
+      i = start + 1;
+    } else {
+      const header = readOutlineHeader(buffer, start);
+      if (!header) return { outlines: results, scanFrom: 0 };
+      i = header.arrayContentStart;
+    }
   }
 
   let depth = 0;
@@ -168,6 +209,9 @@ function extractNewOutlines(
     }
     if (inString) continue;
 
+    if (char === ']' && depth === 0) {
+      return { outlines: results, scanFrom: i };
+    }
     if (char === '{') {
       if (depth === 0) objectStart = i;
       depth++;
@@ -335,6 +379,7 @@ export type OutlineEvent =
 
 export interface OutlineResult {
   outlines: SceneOutline[];
+  targetStatements?: string[];
   languageDirective: string;
   courseTitle: string | undefined;
   taskEngineMode: boolean;
@@ -473,8 +518,8 @@ async function prepareOutline(
   // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
   const interactiveMode = requirements.interactiveMode ?? false;
   const taskEngineMode = resolveVocationalActive(requirements);
-  // Standard outline generation is byte-identical to the package path. The
-  // two app-only modes retain their own templates but share the same inputs.
+  // Standard outline generation starts with the package prompt. The two
+  // app-only modes retain their own templates but share the same inputs.
   // The standard branch receives the N3 RESOLVED slice (unresolvable vision
   // images removed, mapping naming only resolved ids) so its placeholder
   // text never promises an image this step will not attach.
@@ -520,7 +565,10 @@ async function prepareOutline(
     model,
     requirement: requirements.requirement,
     taskEngineMode,
-    prompts,
+    prompts:
+      taskEngineMode || interactiveMode
+        ? prompts
+        : { ...prompts, system: `${prompts.system}\n\n${COURSE_TARGETS_PROMPT}` },
     ...(visionImages ? { visionImages } : {}),
   };
 }
@@ -607,6 +655,7 @@ async function streamOutlines(
   let parsedOutlines: SceneOutline[] = [];
   let languageDirective: string | null = null;
   let courseTitle: string | null = null;
+  let targetStatements: string[] = [];
   let lastError: string | undefined;
 
   for (
@@ -705,6 +754,7 @@ async function streamOutlines(
 
       // Validate: got outlines?
       if (parsedOutlines.length > 0) {
+        targetStatements = extractTargetStatements(fullText);
         if (!courseTitle) {
           // The head-bound streaming scan can miss a title the model
           // placed after the outlines array or past the 8KB head window;
@@ -796,6 +846,7 @@ async function streamOutlines(
   return {
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
     outlines: uniquifyMediaElementIds(parsedOutlines),
+    ...(targetStatements.length ? { targetStatements } : {}),
     languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
     courseTitle: courseTitle || undefined,
     taskEngineMode,

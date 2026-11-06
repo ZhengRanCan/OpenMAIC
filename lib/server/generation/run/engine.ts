@@ -959,8 +959,14 @@ export async function executeGenerationRun(
     const normalized = normalizeSceneOutlines(result.outlines);
     if (!normalized.ok) throw new Error(`The generated outline is unusable: ${normalized.message}`);
     result = { ...result, outlines: normalized.value };
+    const targets = result.targetStatements?.map((statement, index) => ({
+      id: `${run.id}:target:${index + 1}`,
+      revision: 1,
+      statement,
+    }));
     const confirmed: GenerationRunOutline = {
       outlines: result.outlines,
+      ...(targets?.length ? { targets } : {}),
       languageDirective: result.languageDirective,
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
       taskEngineMode: result.taskEngineMode,

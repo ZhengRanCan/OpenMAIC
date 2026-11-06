@@ -110,9 +110,16 @@ export interface GenerationRunInput {
   releaseMaterials?: boolean;
 }
 
+export interface CourseTarget {
+  id: string;
+  revision: number;
+  statement: string;
+}
+
 /** The outline a run generated, as last confirmed or edited. */
 export interface GenerationRunOutline {
   outlines: SceneOutline[];
+  targets?: CourseTarget[];
   /** The exact, server-resolved Context used by this outline, retained after compaction. */
   learnerContext?: FrozenLearnerContext;
   /** Per-Quiz inputs retained after transient step checkpoints are compacted. */

@@ -381,6 +381,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       outlines: OUTLINES,
       courseTitle: 'Plants',
     });
+    expect(stored.outline).not.toHaveProperty('targets');
     expect(await claim(run.id)).toBeNull();
 
     // The outline step got the browser's requirements, with the research decision.
@@ -2393,6 +2394,50 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       /wait for an outline confirmation/,
     );
   });
+
+  it.each(['wait', 'auto'] as const)(
+    'keeps course target identity and wording after %s confirmation and generation',
+    async (outlineReview) => {
+      const statement =
+        'Given two plants under different light, explain the effect on photosynthesis.';
+      const base = fakeServices();
+      const services: RunStepServices = {
+        ...base.services,
+        outline: async (...args) => ({
+          ...(await base.services.outline(...args)),
+          targetStatements: [statement],
+        }),
+      };
+      const run = await start(runInput({ outlineReview }));
+      const targets = [{ id: `${run.id}:target:1`, revision: 1, statement }];
+
+      if (outlineReview === 'wait') {
+        expect(await drive(run.id, services)).toBe('waiting');
+        expect((await readGenerationRun(run.id, OWNER))!.outline?.targets).toEqual(targets);
+        await expect(
+          confirm(run.id, OWNER, {
+            commandId: 'confirm-targets',
+            outlineRevision: 1,
+            outlines: [{ ...OUTLINES[0]!, title: 'Edited introduction' }, ...OUTLINES.slice(1)],
+          }),
+        ).resolves.toMatchObject({ outlineRevision: 2 });
+      }
+      expect(await drive(run.id, services)).toBe('completed');
+
+      const { GET } = await import('@/app/api/generation-runs/[id]/route');
+      const result = await GET(
+        new NextRequest(`http://localhost/api/generation-runs/${run.id}`, {
+          headers: cookie(OWNER_COOKIE),
+        }),
+        { params: Promise.resolve({ id: run.id }) },
+      );
+      expect(result.status).toBe(200);
+      expect(await result.json()).toMatchObject({
+        run: { state: 'completed', outline: { targets } },
+      });
+      expect(await readGenerationRun(run.id, OTHER)).toBeNull();
+    },
+  );
 
   it('a generated outline with model-style nulls and extras confirms unchanged', async () => {
     const loose = [

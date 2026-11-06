@@ -41,7 +41,7 @@ const OUTLINE_TEXT = JSON.stringify({
 });
 
 /** Each stream call answers the next text in turn (the last one repeats). */
-function streams(...texts: string[]) {
+function streams(...texts: Array<string | string[]>) {
   let call = 0;
   mocks.streamLLM.mockImplementation(() => {
     const text = texts[Math.min(call++, texts.length - 1)]!;
@@ -49,7 +49,8 @@ function streams(...texts: string[]) {
       fullStream: (async function* () {
         // Split the answer so the outlines are parsed incrementally.
         const middle = Math.floor(text.length / 2);
-        for (const chunk of [text.slice(0, middle), text.slice(middle)]) {
+        const chunks = Array.isArray(text) ? text : [text.slice(0, middle), text.slice(middle)];
+        for (const chunk of chunks) {
           if (chunk) yield { type: 'text-delta', text: chunk };
         }
         yield { type: 'finish', finishReason: 'stop' };
@@ -106,15 +107,72 @@ describe('outline step', () => {
     expect(mocks.capabilities).toHaveBeenCalledWith(null);
   });
 
-  it('keeps requests without Learner Context identical to the package prompt', async () => {
+  it('extends the package system prompt with course targets and keeps the original user request', async () => {
     streams(OUTLINE_TEXT);
     await generateOutlines({ ...body, model }, stepContext([]));
     const original = buildOutlinePrompt(body.requirements);
     expect(mocks.streamLLM.mock.calls[0]![0]).toMatchObject({
-      system: original.system,
+      system: expect.stringContaining(original.system),
       prompt: original.user,
     });
     expect(original.user).not.toContain('## Learner Context');
+    expect(mocks.streamLLM.mock.calls[0]![0].system).toContain('"targetStatements"');
+  });
+
+  it('returns course targets from the same stream without interpreting target entries as scenes', async () => {
+    const statement = 'Given two unlike fractions, add them and show the common denominator.';
+    const first = JSON.stringify({
+      targetStatements: [
+        { id: 'model-id', revision: 10, outlines: [{ id: 'not-a-scene' }] },
+        ' ',
+        ` ${statement} `,
+        statement,
+        'Explain why the denominators must match.',
+        'Simplify the resulting fraction.',
+        'Discard a fourth target.',
+      ],
+    }).slice(0, -1);
+    streams([first, `,${OUTLINE_TEXT.slice(1)}`]);
+    const events: OutlineEvent[] = [];
+    const result = await generateOutlines({ ...body, model }, stepContext(events));
+
+    expect(result.targetStatements).toEqual([
+      statement,
+      'Explain why the denominators must match.',
+      'Simplify the resulting fraction.',
+    ]);
+    expect(result.outlines.map(({ id }) => id)).toEqual(['o1', 'o2']);
+    expect(events.filter(({ type }) => type === 'outline')).toHaveLength(2);
+    expect(mocks.streamLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads a fenced wrapper with targets after the scene array', async () => {
+    const statement = 'Explain why a singular subject takes a singular verb.';
+    streams([
+      '```json\n',
+      OUTLINE_TEXT.slice(0, -1),
+      `,"targetStatements":[${JSON.stringify(statement)}]}\n\`\`\``,
+    ]);
+    const result = await generateOutlines({ ...body, model }, stepContext([]));
+    expect(result.outlines).toHaveLength(2);
+    expect(result.targetStatements).toEqual([statement]);
+  });
+
+  it('preserves targets when the scene array has not finished', async () => {
+    const statement = 'Write a fraction that represents one half.';
+    streams(
+      `{"targetStatements":[${JSON.stringify(statement)}],"outlines":[{"id":"o1","type":"slide","title":"Halves"},`,
+    );
+    const result = await generateOutlines({ ...body, model }, stepContext([]));
+    expect(result.outlines).toHaveLength(1);
+    expect(result.targetStatements).toEqual([statement]);
+  });
+
+  it('accepts a legacy array without adding a target field', async () => {
+    streams(JSON.stringify(JSON.parse(OUTLINE_TEXT).outlines));
+    const result = await generateOutlines({ ...body, model }, stepContext([]));
+    expect(result.outlines).toHaveLength(2);
+    expect(result).not.toHaveProperty('targetStatements');
   });
 
   it('sends the original selected record and conditions in the classic model request', async () => {
