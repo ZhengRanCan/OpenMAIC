@@ -3,7 +3,7 @@ import {
   nodePostgresTransaction,
   type ConnectableQueryable,
 } from '@openmaic/storage/server/reference';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
@@ -61,7 +61,9 @@ const message = (id: string, role: 'user' | 'assistant', text: string) => ({
   parts: [{ type: 'text' as const, text }],
 });
 
-it.skipIf(mode !== 'preflight' && mode !== 'live')(
+const replay = mode === 'replay';
+
+it.skipIf(mode !== 'preflight' && mode !== 'live' && !replay)(
   'F81 runs four actual profile contexts and completes the joint classroom',
   async () => {
     const appUrl = process.env.DATABASE_URL ?? '';
@@ -79,10 +81,12 @@ it.skipIf(mode !== 'preflight' && mode !== 'live')(
     }
     const output = process.env.F81_ARTIFACT_DIR;
     const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (mode === 'live' && (!output || !apiKey)) throw new Error('Missing F81 live configuration');
-    if (mode === 'live') await mkdir(output!);
+    const replayClassroom = process.env.F81_REPLAY_CLASSROOM;
+    if ((mode === 'live' && (!output || !apiKey)) || (replay && (!output || !replayClassroom)))
+      throw new Error('Missing F81 validation configuration');
+    if (output && mode !== 'preflight') await mkdir(output);
     const save = async (name: string, data: unknown) => {
-      if (mode === 'live')
+      if (output && mode !== 'preflight')
         await writeFile(join(output!, `${name}.json`), JSON.stringify(data, null, 2) + '\n', {
           flag: 'wx',
         });
@@ -344,6 +348,92 @@ it.skipIf(mode !== 'preflight' && mode !== 'live')(
         memory: seed.snapshot,
       });
 
+      async function quizAttempt(
+        doc: NonNullable<Awaited<ReturnType<typeof docStore.loadDocument>>>,
+      ) {
+        const quiz = doc.scenes[0];
+        if (quiz?.type !== 'quiz') throw new Error('F81 expected a Quiz');
+        const question = quiz.content.questions[0];
+        if (
+          quiz.content.questions.length !== 1 ||
+          question?.type !== 'single' ||
+          !question.answer?.length
+        )
+          throw new Error('F81 expected one keyed choice');
+        const choice = question.options?.find(
+          ({ value }) => Boolean(question.answer?.includes(value)) === replay,
+        );
+        if (!choice) throw new Error('F81 missing option for this comparison');
+        const attemptResponse = await writeQuiz(
+          request('/api/quiz-trace/prepare', {
+            operationId: 'f81-start',
+            mode: 'start',
+            stageId: doc.stage.id,
+            sceneId: quiz.id,
+            scene: quiz,
+          }),
+        );
+        expect(attemptResponse.status).toBe(200);
+        const attempt = await attemptResponse.json();
+        const submitted = await writeQuiz(
+          request(`/api/quiz-trace/attempts/${attempt.attemptId}/submission`, {
+            operationId: 'f81-submit',
+            submissionId: 'f81-answer',
+            answers: { [question.id]: choice.value },
+          }),
+        );
+        expect(submitted.status).toBe(200);
+        const gradeResponse = await grade(
+          request('/api/quiz-grade', {
+            attemptId: attempt.attemptId,
+            operationId: 'f81-grade',
+            submissionId: 'f81-answer',
+            language: 'zh-CN',
+          }),
+        );
+        expect(gradeResponse.status).toBe(200);
+        const graded = await gradeResponse.json();
+        const trace = await readQuiz(request(`/api/quiz-trace/attempts/${attempt.attemptId}`));
+        expect(trace.status).toBe(200);
+        const saved = await trace.json();
+        expect(saved.submission.answers).toEqual({ [question.id]: choice.value });
+        expect(saved.review.summary).toMatchObject({
+          usableEarned: replay ? 1 : 0,
+          usablePossible: 1,
+        });
+        expect(graded.results[0].correct).toBe(replay);
+        return { selected: choice, grade: graded, trace: saved };
+      }
+
+      if (replay) {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(() => {
+            throw new Error('F81 replay network blocked');
+          }),
+        );
+        const beforeMemory = (await readSimulatedLearnerMemory(student)).usable;
+        const historical = beforeMemory.pieces.find(({ id }) => id === 'm-density');
+        expect(historical?.text).toContain('直接写成2.7kg/m³');
+        const beforeMastery = await readPlannerMastery(owner, student);
+        const savedDoc = JSON.parse(await readFile(replayClassroom!, 'utf8'));
+        await docStore.createDocument(savedDoc);
+        const doc = await docStore.loadDocument(savedDoc.stage.id);
+        if (!doc) throw new Error('Missing F81 replay classroom');
+        const attempt = await quizAttempt(doc);
+        expect(attempt.selected.label).toContain('2700 kg/m³');
+        expect((await readSimulatedLearnerMemory(student)).usable).toEqual(beforeMemory);
+        expect(await readPlannerMastery(owner, student)).toEqual(beforeMastery);
+        expect(fetch).not.toHaveBeenCalled();
+        await save('profile-conflict', {
+          historicalMemory: historical,
+          masteryBeforeAndAfter: beforeMastery,
+          currentAttempt: attempt,
+          modelCalls: 0,
+        });
+        return;
+      }
+
       let arm = 'empty';
       vi.spyOn(resolver, 'resolveModel').mockImplementation(async ({ stage }) => {
         if (
@@ -432,52 +522,7 @@ it.skipIf(mode !== 'preflight' && mode !== 'live')(
       const discussion = slide.actions?.find((action) => action.type === 'discussion');
       if (discussion?.type !== 'discussion') throw new Error('F81 Discussion was not generated');
 
-      const attemptResponse = await writeQuiz(
-        request('/api/quiz-trace/prepare', {
-          operationId: 'f81-start',
-          mode: 'start',
-          stageId: doc.stage.id,
-          sceneId: quiz.id,
-          scene: quiz,
-        }),
-      );
-      expect(attemptResponse.status).toBe(200);
-      const attempt = await attemptResponse.json();
-      const question = quiz.content.questions[0];
-      if (
-        quiz.content.questions.length !== 1 ||
-        question?.type !== 'single' ||
-        !question.answer?.length
-      )
-        throw new Error('F81 expected one keyed choice');
-      const choice = question.options?.find(({ value }) => !question.answer?.includes(value));
-      if (!choice) throw new Error('F81 missing distractor');
-      const submitted = await writeQuiz(
-        request(`/api/quiz-trace/attempts/${attempt.attemptId}/submission`, {
-          operationId: 'f81-submit',
-          submissionId: 'f81-answer',
-          answers: { [question.id]: choice.value },
-        }),
-      );
-      expect(submitted.status).toBe(200);
-      const gradeResponse = await grade(
-        request('/api/quiz-grade', {
-          attemptId: attempt.attemptId,
-          operationId: 'f81-grade',
-          submissionId: 'f81-answer',
-          language: 'zh-CN',
-        }),
-      );
-      expect(gradeResponse.status).toBe(200);
-      const graded = await gradeResponse.json();
-      const trace = await readQuiz(request(`/api/quiz-trace/attempts/${attempt.attemptId}`));
-      expect(trace.status).toBe(200);
-      await save('quiz.interaction', {
-        selected: choice,
-        grade: graded,
-        trace: await trace.json(),
-      });
-      expect(graded.results[0].correct).toBe(false);
+      await save('quiz.interaction', await quizAttempt(doc));
 
       const agent = getBuiltInAgent('default-1');
       if (!agent) throw new Error('Missing teacher');
