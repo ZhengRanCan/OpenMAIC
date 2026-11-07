@@ -1007,6 +1007,147 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       return run;
     }
 
+    it.each([
+      { arm: 'empty', memory: false, mastery: false },
+      { arm: 'Memory only', memory: true, mastery: false },
+      { arm: 'Mastery only', memory: false, mastery: true },
+      { arm: 'both', memory: true, mastery: true },
+    ])(
+      'F81 keeps profile boundaries through classroom confirmation and readback ($arm)',
+      async ({ memory, mastery }) => {
+        const requirement = '用一堂短课复习密度计算，并安排一次测验与讨论。';
+        const memoryText = '学生偏好用质量与体积表格比较题面数据。';
+        const discussionTask = '独立提交换算、密度列式、结果和单位。';
+        const target = { id: 'previous-density-target', revision: 1, statement: discussionTask };
+        const historic = {
+          target,
+          summary: '教师给出换算值后，学生算对密度。',
+          unverified: ['独立换算并列式'],
+        };
+        const quiz = quizOutlines[0]!;
+        const discussion = {
+          ...OUTLINES[0]!,
+          order: 2,
+          title: '密度讨论',
+          description: mastery ? discussionTask : '讨论密度公式的含义。',
+        };
+        const { services, calls } = quizServices({
+          learnerMastery: async (owner, student) => {
+            expect([owner, student]).toEqual([OWNER, 'B']);
+            return mastery ? [historic] : [];
+          },
+          narrationTarget: async () => null,
+          outline: async (_owner, input) => {
+            expect(input.requirements.requirement).toBe(requirement);
+            if (memory) expect(input.learnerContext).toContain(memoryText);
+            else expect(input.learnerContext).toBeUndefined();
+            expect(input.learnerMastery).toEqual(mastery ? [historic] : undefined);
+            return {
+              outlines: [quiz, discussion],
+              languageDirective: '用中文教学',
+              courseTitle: '密度',
+              taskEngineMode: false,
+            };
+          },
+          quizLearnerContext: async (_owner, input) => {
+            const context = frozenQuiz(input);
+            return memory
+              ? {
+                  ...context,
+                  selected: context.selected.map((piece) => ({ ...piece, text: memoryText })),
+                }
+              : { ...context, memoryRevision: 0, status: 'empty', selected: [] };
+          },
+          sceneActions: async (_owner, input) => {
+            const scene = {
+              ...slideScene(input.stageId, input.outline),
+              outlineId: input.outline.id,
+            };
+            if (input.outline.type === 'quiz') {
+              return {
+                scene: {
+                  ...scene,
+                  type: 'quiz',
+                  actions: [],
+                  content: {
+                    type: 'quiz',
+                    questions: [
+                      {
+                        id: 'density',
+                        type: 'single',
+                        question: '质量 60 g、体积 20 cm³，密度是多少？',
+                        options: [
+                          { value: 'A', label: '3 g/cm³' },
+                          { value: 'B', label: '30 g/cm³' },
+                        ],
+                        answer: ['A'],
+                      },
+                    ],
+                  },
+                },
+                previousSpeeches: [],
+              };
+            }
+            return {
+              scene: {
+                ...scene,
+                actions: [
+                  {
+                    id: 'density-discussion',
+                    type: 'discussion',
+                    topic: input.outline.description,
+                  },
+                ],
+              },
+              previousSpeeches: [],
+            };
+          },
+        });
+        const emptyMemory = services.learnerContext!;
+        services.learnerContext = async (owner, input, ctx) => {
+          const context = await emptyMemory(owner, input, ctx);
+          if (!memory) return context;
+          const selected = frozenQuiz({
+            student: input.student,
+            sceneIndex: 0,
+            task: { requirement, outline: quiz },
+          }).selected;
+          return {
+            ...context,
+            memoryRevision: 3,
+            status: 'ready',
+            selected: selected.map((piece) => ({ ...piece, text: memoryText })),
+          };
+        };
+        const run = await confirmedQuizRun(
+          services,
+          runInput({ simulatedLearner: 'B', requirement }),
+        );
+        expect(await drive(run.id, services)).toBe('completed');
+        const completed = (await readGenerationRun(run.id, OWNER))!;
+        expect(completed.outline?.masteryTargets).toEqual(
+          mastery ? [{ id: target.id, revision: 1 }] : undefined,
+        );
+        expect(completed.outline?.learnerContext?.memoryRevision).toBe(memory ? 3 : 0);
+        expect(completed.outline?.quizLearnerContexts?.['scene:0']?.memoryRevision).toBe(
+          memory ? 3 : 0,
+        );
+        expect(calls.sceneContent).toHaveLength(2);
+        const quizInput = calls.sceneContent.find(({ outline }) => outline.type === 'quiz');
+        if (memory)
+          expect(quizInput?.quizLearnerContext).toMatchObject({
+            learner: expect.stringContaining(memoryText),
+          });
+        else expect(quizInput?.quizLearnerContext).toBeUndefined();
+        for (const input of calls.sceneContent) expect(input).not.toHaveProperty('learnerMastery');
+        const document = await documentStore(OWNER).loadDocument(completed.stageId!);
+        expect(document?.scenes.map(({ type }) => type)).toEqual(['quiz', 'slide']);
+        expect(document?.scenes[1]?.actions).toMatchObject([
+          { type: 'discussion', topic: `${discussion.description}!` },
+        ]);
+      },
+    );
+
     it(
       'atomically merges two concurrent prewarm selections and retains both after compaction',
       async () => {
