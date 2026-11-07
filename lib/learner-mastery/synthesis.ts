@@ -51,7 +51,7 @@ export const MASTERY_SYSTEM = `评估新 Evidence 对一个课级目标的覆盖
 对每条新 Evidence 返回一次 assessment。coverage 取 direct、partial、context、unrelated；result 取 correct、partial、incorrect、ungraded；assistance 取 independent、assisted、unknown。
 区分学生实际作答、教师给出的步骤和求助背景。assistance 按当前 target 要求的任务判断。若教师提示解法、代做目标要求的步骤或直接给出其中间结果，学生继续完成的表现标为 assisted，即使后续步骤由学生自己完成。比如目标要求先换算质量单位，教师直接给出换算值，学生独自完成后续除法时仍应标为 assisted；在 observation 中分别写明换算由教师提供、除法由学生完成。题目给出的原始质量和体积属于题面条件；有证据显示学生自行换算并完成列式和计算时，可标为 independent。帮助条件不明确时用 unknown。
 无实际作答、coverage 为 context 或 unrelated、或 result 为 ungraded 时，assistance 必须为 unknown；求助只记为背景。选择题只支持已选结果。
-summary 保留旧表现和帮助条件，描述新表现如何改变当前判断。unverified 只写目标内仍待观察的能力，最多两项；保留完整任务要求，不能拼接不同作答来认定一次完整独立表现。仅有求助背景时，目标仍待验证。错因未知可写进 observation 或 summary。
+summary 保留旧表现和帮助条件，描述新表现如何改变当前判断。unverified 只写目标内仍待观察的能力，最多两项。对于尚未完整验证的目标，只有一条新依据记录了完整、正确、独立的非选择题作答，才可清空待验证项。不能拼接不同作答来认定一次完整独立表现。仅有求助背景时，目标仍待验证。错因未知可写进 observation 或 summary。
 仅采用与更新有关的新 Evidence；没有可采用的新依据时 candidateState 为 null。保留所有引用原值，只返回 JSON。
 格式：{"assessments":[{"evidenceRef":"原引用","coverage":"partial","result":"correct","assistance":"assisted","observation":"有条件的表现"}],"candidateState":{"summary":"当前判断","unverified":["待验证要求"],"adoptedEvidenceRefs":["原引用"]}}`;
 
@@ -103,10 +103,10 @@ export function synthesizeMastery(
   const observations = [...(previous?.state.observations ?? []), ...adopted];
   const closesGap = adopted.some(
     (item) =>
+      item.coverage === 'direct' &&
       item.result === 'correct' &&
-      (hasOnlySelections(byRef.get(item.evidenceRef)!)
-        ? item.coverage === 'direct'
-        : item.assistance === 'independent'),
+      item.assistance === 'independent' &&
+      !hasOnlySelections(byRef.get(item.evidenceRef)!),
   );
   if (candidate.unverified.length === 0 && previous?.state.unverified.length !== 0 && !closesGap)
     throw new Error('MASTERY_UNVERIFIED_REQUIRED');

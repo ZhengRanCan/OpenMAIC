@@ -278,7 +278,11 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     const discussion = await saveEvidence();
     const before = await service.maintain(locator, [discussion], synthesis('assisted'));
     const source = await saveQuizEvidence();
-    const generate = (assistance: 'independent' | 'unknown', gaps = unverified) =>
+    const generate = (
+      assistance: 'independent' | 'unknown',
+      gaps = unverified,
+      claimsFullCoverage = false,
+    ) =>
       vi.fn(async (system: string, user: string) => {
         const { evidence, previous } = JSON.parse(user);
         expect(system).toContain('仅凭选项至多判为 partial');
@@ -294,8 +298,8 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
           assessments: [
             {
               evidenceRef,
-              coverage: 'partial',
-              result: 'incorrect',
+              coverage: claimsFullCoverage ? 'direct' : 'partial',
+              result: claimsFullCoverage ? 'correct' : 'incorrect',
               assistance,
               observation: '选错答案，具体过程未知。',
             },
@@ -314,6 +318,9 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     await expect(service.maintain(locator, [source], generate('unknown', []))).rejects.toThrow(
       'MASTERY_UNVERIFIED_REQUIRED',
     );
+    await expect(
+      service.maintain(locator, [source], generate('unknown', [], true)),
+    ).rejects.toThrow('MASTERY_UNVERIFIED_REQUIRED');
     expect(await service.read(locator)).toEqual(before);
     const invoke = generate('unknown');
     const after = await service.maintain(locator, [discussion, source], invoke);
@@ -818,6 +825,21 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
             adoptedEvidenceRefs: [evidenceRef],
           },
         });
+      }),
+    ).rejects.toThrow('MASTERY_UNVERIFIED_REQUIRED');
+    expect(await service.read(locator)).toEqual(before);
+  });
+
+  it('rejects a partial independent observation that clears every prior gap', async () => {
+    const first = await saveEvidence();
+    const before = await service.maintain(locator, [first], synthesis('assisted'));
+    const second = await saveEvidence(true);
+    const independent = synthesis('independent');
+    await expect(
+      service.maintain(locator, [second], async (system, user) => {
+        const reply = JSON.parse(await independent(system, user));
+        reply.assessments[0].coverage = 'partial';
+        return JSON.stringify(reply);
       }),
     ).rejects.toThrow('MASTERY_UNVERIFIED_REQUIRED');
     expect(await service.read(locator)).toEqual(before);
