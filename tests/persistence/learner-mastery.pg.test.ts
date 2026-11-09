@@ -563,50 +563,165 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     expect((await f.jobs.read('owner', later.id)).memoryState).toBe('completed');
   });
 
-  it('F82 reconciles a late reply after claim takeover without sending the model request again', async () => {
+  it.each(['valid', 'invalid'])(
+    'F82 settles a late %s reply after claim takeover without resending',
+    async (kind) => {
+      const loop = automatic();
+      await loop.activate();
+      await saveAutomaticDialogue('late');
+      await loop.discover();
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release!: () => void;
+      const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const original = vi.fn(async (owner: string, system: string, input: string) => {
+        entered();
+        await wait;
+        return kind === 'valid' ? respond(owner, system, input) : '{}';
+      });
+      let captured!: () => void;
+      const capturing = new Promise<void>((resolve) => {
+        captured = resolve;
+      });
+      let commit!: () => void;
+      const captureGate = new Promise<void>((resolve) => {
+        commit = resolve;
+      });
+      let phase = 0;
+      const originalWorker = automatic((body) =>
+        f.provider.withTransaction(async (tx) => {
+          const current = ++phase;
+          const value = await body(tx);
+          if (kind === 'valid' && current === 3) {
+            captured();
+            await captureGate;
+          }
+          return value;
+        }),
+      );
+      const first = originalWorker.processOne(original);
+      await Promise.race([
+        started,
+        first.then(() => {
+          throw new Error('Missing model request');
+        }),
+      ]);
+      const noCall = vi.fn(respond);
+      const [job] = await loop.status('owner', 'run');
+      try {
+        await f.db.query(
+          "UPDATE mastery_loop_jobs SET claimed_at=now()-interval '11 minutes' WHERE id=$1",
+          [job.id],
+        );
+        await loop.processOne(noCall);
+        expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'unknown' }]);
+        if (kind === 'valid') {
+          release();
+          await Promise.race([
+            capturing,
+            first.then(() => {
+              throw new Error('Missing captured reply');
+            }),
+          ]);
+          let identify!: (pid: number) => void;
+          const identified = new Promise<number>((resolve) => {
+            identify = resolve;
+          });
+          const recovery = automatic((body) =>
+            f.provider.withTransaction(async (tx) => {
+              const { rows } = await tx.query('SELECT pg_backend_pid() AS pid');
+              identify(rows[0].pid as number);
+              return body(tx);
+            }),
+          );
+          const discard = recovery.recover('owner', 'run', job.id, 'discard_unknown');
+          const rejected = expect(discard).rejects.toThrow(
+            /MASTERY_REPLY_CAPTURED|MASTERY_RECOVERY_CONFLICT/,
+          );
+          try {
+            const pid = await identified;
+            await vi.waitFor(async () => {
+              const { rows } = await f.db.query(
+                'SELECT cardinality(pg_blocking_pids($1)) AS blockers',
+                [pid],
+              );
+              expect(rows[0].blockers).toBeGreaterThan(0);
+            });
+          } finally {
+            commit();
+            await rejected;
+          }
+        }
+      } finally {
+        release();
+        commit();
+        await first;
+      }
+      if (kind === 'valid') {
+        expect(await service.read(locator)).toMatchObject({ state: { unverified } });
+        expect(await loop.recover('owner', 'run', job.id, 'reconcile')).toBe(true);
+        await loop.processOne(noCall);
+        expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'completed' }]);
+      } else {
+        expect(await service.read(locator)).toBeNull();
+        expect(await loop.status('owner', 'run')).toMatchObject([
+          { state: 'failed', reason: 'MASTERY_REPLY_INVALID' },
+        ]);
+        expect(await loop.recover('owner', 'run', job.id, 'reconcile')).toBe(false);
+        expect(await loop.processOne(noCall)).toBe(false);
+      }
+      expect(original).toHaveBeenCalledTimes(1);
+      expect(noCall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('F82 stops a worker that lost its claim after preparation and before dispatch', async () => {
     const loop = automatic();
     await loop.activate();
-    await saveAutomaticDialogue('late');
+    await saveAutomaticDialogue('before-dispatch');
     await loop.discover();
-    let entered!: () => void;
-    const started = new Promise<void>((resolve) => {
-      entered = resolve;
+    let persisted!: () => void;
+    const prepared = new Promise<void>((resolve) => {
+      persisted = resolve;
     });
     let release!: () => void;
-    const wait = new Promise<void>((resolve) => {
+    const pause = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = vi.fn(async (owner: string, system: string, input: string) => {
-      entered();
-      await wait;
-      return respond(owner, system, input);
+    let phase = 0;
+    const worker = automatic(async (body) => {
+      const current = ++phase;
+      const value = await f.provider.withTransaction(body);
+      if (current === 2) {
+        persisted();
+        await pause;
+      }
+      return value;
     });
-    const first = loop.processOne(original);
+    const generate = vi.fn(respond);
+    const running = worker.processOne(generate);
     await Promise.race([
-      started,
-      first.then(() => {
-        throw new Error('Missing model request');
+      prepared,
+      running.then(() => {
+        throw new Error('Missing prepared request');
       }),
     ]);
-    const noCall = vi.fn(respond);
-    const [job] = await loop.status('owner', 'run');
     try {
-      await f.db.query(
-        "UPDATE mastery_loop_jobs SET claimed_at=now()-interval '11 minutes' WHERE id=$1",
-        [job.id],
-      );
-      await loop.processOne(noCall);
-      expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'unknown' }]);
+      await f.db.query("UPDATE mastery_loop_jobs SET claimed_at=now()-interval '11 minutes'");
+      await loop.processOne(generate);
+      const [job] = await loop.status('owner', 'run');
+      expect(job.state).toBe('unknown');
+      expect(await loop.recover('owner', 'run', job.id, 'discard_unknown')).toBe(true);
     } finally {
       release();
-      await first;
+      await running;
     }
-    expect(await service.read(locator)).toMatchObject({ state: { unverified } });
-    expect(await loop.recover('owner', 'run', job.id, 'reconcile')).toBe(true);
-    await loop.processOne(noCall);
-    expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'completed' }]);
-    expect(original).toHaveBeenCalledTimes(1);
-    expect(noCall).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'skipped' }]);
   });
 
   it('F82 ignores old, empty and unattributed activities and stops before model calls on withdrawal', async () => {

@@ -60,6 +60,7 @@ interface SourceRef {
   runId: string;
   evidenceRef: string;
   key: string;
+  operationId?: string;
 }
 export type MasterySource = string | { kind: 'quiz'; runId: string };
 type SourceEntry = { ref: SourceRef; evidence: MasteryEvidence };
@@ -393,14 +394,20 @@ export class LearnerMastery {
     locator: MasteryLocator,
     sources: readonly MasterySource[],
     generate: (system: string, user: string) => Promise<string>,
-    operation?: { id: string; guard: (tx: Queryable) => Promise<void>; active: () => boolean },
+    operation?: {
+      id: string;
+      guard: (tx: Queryable) => Promise<void>;
+      beforeInvoke: () => Promise<void>;
+      active: () => boolean;
+      invalidReply: (tx: Queryable) => Promise<void>;
+    },
   ): Promise<MasteryState | null> {
     const sourceList = [...distinctSources(sources)];
     if (sourceList.length > 12) throw new Error('MASTERY_INPUT_LIMIT');
     const prepared = await this.provider.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, locator.ownerId);
-      await operation?.guard(tx);
       const course = await readCourse(tx, locator, true);
+      await operation?.guard(tx);
       let row = await this.readRow(tx, locator);
       await this.verifyRefs(tx, locator, course, this.adopted(row));
       if (row.pending) {
@@ -441,6 +448,7 @@ export class LearnerMastery {
     const system = prepared.evidence.some(({ type }) => type === 'quiz_performance')
       ? `${MASTERY_SYSTEM}\n${MASTERY_QUIZ_RULES}`
       : MASTERY_SYSTEM;
+    await operation?.beforeInvoke();
     if (operation && !operation.active()) {
       await this.recordReply(locator, prepared.token);
       throw new Error('MASTERY_DISABLED');
@@ -462,7 +470,7 @@ export class LearnerMastery {
         prepared.evidence,
       );
     } catch (error) {
-      await this.recordReply(locator, prepared.token);
+      await this.recordReply(locator, prepared.token, undefined, operation?.invalidReply);
       if (operation) throw new Error('MASTERY_REPLY_INVALID', { cause: error });
       throw error;
     }
@@ -472,9 +480,9 @@ export class LearnerMastery {
 
   async automaticInvocation(locator: MasteryLocator, operationId: string) {
     return this.provider.withTransaction(async (tx) => {
-      const { pending } = await this.readRow(tx, locator);
-      if (!pending || pending.operationId !== operationId) return null;
-      return pending.captured ? 'captured' : 'unknown';
+      const { pending, sources } = await this.readRow(tx, locator);
+      if (pending?.operationId === operationId) return pending.captured ? 'captured' : 'unknown';
+      return sources.some((source) => source.operationId === operationId) ? 'committed' : null;
     });
   }
 
@@ -487,10 +495,19 @@ export class LearnerMastery {
   ) {
     await this.provider.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, locator.ownerId);
+      // Match maintain/capture/finalize's stage lock, including a soft-deleted stage.
+      await tx.query(
+        `SELECT s.stage_id FROM generation_runs r JOIN stage_meta s
+           ON s.stage_id=r.stage_id AND s.owner_id=r.owner_id
+         WHERE r.id=$1 AND r.owner_id=$2 FOR UPDATE OF s`,
+        [locator.runId, locator.ownerId],
+      );
       const row = await this.readRow(tx, locator);
       if (row.pending?.operationId === operationId) {
         if (row.pending.captured && !discardCaptured) throw new Error('MASTERY_REPLY_CAPTURED');
         await this.writeRow(tx, locator, { state: row.state, sources: row.sources });
+      } else if (!discardCaptured) {
+        throw new Error('MASTERY_RECOVERY_CONFLICT');
       }
       await action(tx);
     });
@@ -500,6 +517,7 @@ export class LearnerMastery {
     locator: MasteryLocator,
     token: string,
     captured?: { state: MasteryState | null },
+    onRecorded?: (tx: Queryable) => Promise<void>,
   ) {
     await this.provider.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, locator.ownerId);
@@ -511,6 +529,7 @@ export class LearnerMastery {
         sources: row.sources,
         ...(captured ? { pending: { ...row.pending, captured } } : {}),
       });
+      await onRecorded?.(tx);
     });
   }
 
@@ -537,7 +556,12 @@ export class LearnerMastery {
     await this.verifyRefs(tx, locator, course, pending.sources);
     const updated = {
       state: pending.captured.state,
-      sources: [...row.sources, ...pending.sources],
+      sources: [
+        ...row.sources,
+        ...pending.sources.map((source) =>
+          pending.operationId ? { ...source, operationId: pending.operationId } : source,
+        ),
+      ],
     };
     await this.writeRow(tx, locator, updated);
     return updated;

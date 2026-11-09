@@ -169,6 +169,14 @@ export class MasteryLearningLoop {
     const target = locator(job);
     const finish = (state: State, reason: string | null = null) =>
       this.finish(this.app.pool, job, state, reason);
+    const checkClaim = async (db: Queryable, lock = false) => {
+      const result = await db.query(
+        "SELECT id FROM mastery_loop_jobs WHERE id=$1 AND claim_id=$2 AND state='running'" +
+          (lock ? ' FOR UPDATE' : ''),
+        [job.id, job.claim_id],
+      );
+      if (!result.rows.length) throw new Error('MASTERY_CLAIM_CHANGED');
+    };
     try {
       if ((await this.mastery.automaticInvocation(target, job.id)) === null)
         await prepare?.(job.owner_id);
@@ -183,12 +191,18 @@ export class MasteryLearningLoop {
         {
           id: job.id,
           active,
-          guard: async (tx) => {
-            const result = await tx.query(
-              "SELECT id FROM mastery_loop_jobs WHERE id=$1 AND claim_id=$2 AND state='running' FOR UPDATE",
-              [job.id, job.claim_id],
+          beforeInvoke: () => checkClaim(this.app.pool),
+          invalidReply: async (tx) => {
+            // The pending token and stage lock prove this receipt belongs to this job,
+            // even when the original worker's outer claim has expired.
+            await tx.query(
+              `UPDATE mastery_loop_jobs SET state='failed',reason='MASTERY_REPLY_INVALID',
+                 claim_id=NULL,claimed_at=NULL WHERE id=$1 AND state IN ('running','unknown')`,
+              [job.id],
             );
-            if (!result.rows.length) throw new Error('MASTERY_CLAIM_CHANGED');
+          },
+          guard: async (tx) => {
+            await checkClaim(tx, true);
             if (!active()) throw new Error('MASTERY_DISABLED');
           },
         },
@@ -270,7 +284,8 @@ export class MasteryLearningLoop {
     if (action === 'retry') return requeue('failed');
     if (job.state !== 'unknown') return false;
     if (action === 'reconcile') {
-      if ((await this.mastery.automaticInvocation(target, id)) === 'unknown') return false;
+      const invocation = await this.mastery.automaticInvocation(target, id);
+      if (invocation !== 'captured' && invocation !== 'committed') return false;
       return requeue('unknown');
     }
     await this.mastery.discardAutomaticInvocation(target, id, false, async (tx) => {
