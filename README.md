@@ -356,6 +356,12 @@ Running OpenMAIC for other people, or embedding it in your own product? [Hosting
 - [owner identity](packages/docs/content/docs/hosting.mdx#owner-identity): [single-user mode](packages/docs/content/docs/hosting.mdx#single-user-mode), [registering auth methods](packages/docs/content/docs/hosting.mdx#registering-owner-auth-methods), a [signed-JWT gateway recipe](packages/docs/content/docs/hosting.mdx#recipe-accounts-through-an-identity-gateway-signed-jwt) and [claiming anonymous work](packages/docs/content/docs/hosting.mdx#claiming-anonymous-work);
 - [host extension hooks](packages/docs/content/docs/hosting.mdx#host-extension-hooks) for course creation, the library, uploads and asset byte stores.
 
+### Optional: automatic Mastery in an isolated simulation
+
+Set `OPENMAIC_AUTOMATIC_MASTERY=true` with an existing `OPENMAIC_SIMULATED_LEARNING_LOOP` configured for synthetic learners and a matching initialized `MEMORY_DATABASE_URL`. Enable the existing Dialogue loop to include QA and Discussion. The worker evaluates saved evidence from automatic learning-loop jobs created after first activation for that environment. It uses the server's `quiz-evidence` model route. Course targets are evaluated individually.
+
+Course owners can inspect job states at `GET /api/mastery-learning-loop/{runId}`. Recover with a same-origin JSON `POST` to that URL with `job` and `action` query parameters. Use `retry` for a known failure or `reconcile` for an unknown job once its reply is recoverable. Use `discard_unknown` to release a target by abandoning the unconfirmed request. A captured reply is finalized from storage. Turn off the flag to pause discovery and new work.
+
 ### Optional: ACCESS_CODE (Shared Deployments)
 
 Protect a deployment with a site-level password in `.env.local`:

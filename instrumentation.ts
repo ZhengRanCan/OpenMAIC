@@ -90,6 +90,15 @@ export async function register(): Promise<void> {
     | undefined;
   let quizLearningLoop: { stop: () => Promise<void> } | undefined;
   let dialogueLearningLoop: { stop: () => Promise<void> } | undefined;
+  let masteryLearningLoop: { stop: () => Promise<void> } | undefined;
+  try {
+    if (process.env.OPENMAIC_AUTOMATIC_MASTERY === 'true') {
+      const { startMasteryLearningLoop } = await import('@/lib/server/mastery-learning-loop');
+      masteryLearningLoop = await startMasteryLearningLoop();
+    }
+  } catch {
+    console.error('[instrumentation] Mastery learning loop configuration is invalid');
+  }
   try {
     const { startDialogueLearningLoop } =
       await import('@/lib/server/dialogue-learning-loop/runner');
@@ -161,6 +170,11 @@ export async function register(): Promise<void> {
         await dialogueLearningLoop?.stop();
       } catch {
         console.error('[instrumentation] Dialogue learning loop drain failed');
+      }
+      try {
+        await masteryLearningLoop?.stop();
+      } catch {
+        console.error('[instrumentation] Mastery learning loop drain failed');
       }
       try {
         await extractionRunner?.stop();

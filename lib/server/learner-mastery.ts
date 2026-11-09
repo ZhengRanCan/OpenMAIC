@@ -75,6 +75,7 @@ function distinctSources(sources: readonly MasterySource[]) {
 interface Pending {
   token: string;
   sources: SourceRef[];
+  operationId?: string;
   captured?: { state: MasteryState | null };
 }
 interface Row {
@@ -392,16 +393,20 @@ export class LearnerMastery {
     locator: MasteryLocator,
     sources: readonly MasterySource[],
     generate: (system: string, user: string) => Promise<string>,
+    operation?: { id: string; guard: (tx: Queryable) => Promise<void>; active: () => boolean },
   ): Promise<MasteryState | null> {
     const sourceList = [...distinctSources(sources)];
     if (sourceList.length > 12) throw new Error('MASTERY_INPUT_LIMIT');
     const prepared = await this.provider.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, locator.ownerId);
+      await operation?.guard(tx);
       const course = await readCourse(tx, locator, true);
       let row = await this.readRow(tx, locator);
       await this.verifyRefs(tx, locator, course, this.adopted(row));
       if (row.pending) {
         if (!row.pending.captured) throw new Error('MASTERY_INVOCATION_PENDING_OR_UNKNOWN');
+        if (operation && row.pending.operationId !== operation.id)
+          throw new Error('MASTERY_INVOCATION_PENDING_OR_UNKNOWN');
         row = await this.commitCaptured(tx, locator, course, row, row.pending);
       }
       const entries = await readSources(tx, locator, course, this.settings, sourceList);
@@ -423,7 +428,11 @@ export class LearnerMastery {
       const token = randomUUID();
       await this.writeRow(tx, locator, {
         ...row,
-        pending: { token, sources: next.map((entry) => entry.ref) },
+        pending: {
+          token,
+          sources: next.map((entry) => entry.ref),
+          ...(operation && { operationId: operation.id }),
+        },
       });
       return { course, evidence, previous: row.state, token, user };
     });
@@ -432,7 +441,17 @@ export class LearnerMastery {
     const system = prepared.evidence.some(({ type }) => type === 'quiz_performance')
       ? `${MASTERY_SYSTEM}\n${MASTERY_QUIZ_RULES}`
       : MASTERY_SYSTEM;
-    const raw = await generate(system, prepared.user);
+    if (operation && !operation.active()) {
+      await this.recordReply(locator, prepared.token);
+      throw new Error('MASTERY_DISABLED');
+    }
+    let raw: string;
+    try {
+      raw = await generate(system, prepared.user);
+    } catch (error) {
+      if (operation) throw new Error('MASTERY_MODEL_RESULT_UNKNOWN', { cause: error });
+      throw error;
+    }
     let state: MasteryState | null;
     try {
       state = synthesizeMastery(
@@ -444,10 +463,37 @@ export class LearnerMastery {
       );
     } catch (error) {
       await this.recordReply(locator, prepared.token);
+      if (operation) throw new Error('MASTERY_REPLY_INVALID', { cause: error });
       throw error;
     }
     await this.recordReply(locator, prepared.token, { state });
     return this.finish(locator, prepared.token);
+  }
+
+  async automaticInvocation(locator: MasteryLocator, operationId: string) {
+    return this.provider.withTransaction(async (tx) => {
+      const { pending } = await this.readRow(tx, locator);
+      if (!pending || pending.operationId !== operationId) return null;
+      return pending.captured ? 'captured' : 'unknown';
+    });
+  }
+
+  /** Acknowledge the loss of one request without authorizing another one. */
+  async discardAutomaticInvocation(
+    locator: MasteryLocator,
+    operationId: string,
+    discardCaptured: boolean,
+    action: (tx: Queryable) => Promise<void>,
+  ) {
+    await this.provider.withTransaction(async (tx) => {
+      await fenceOwnerWrite(tx, locator.ownerId);
+      const row = await this.readRow(tx, locator);
+      if (row.pending?.operationId === operationId) {
+        if (row.pending.captured && !discardCaptured) throw new Error('MASTERY_REPLY_CAPTURED');
+        await this.writeRow(tx, locator, { state: row.state, sources: row.sources });
+      }
+      await action(tx);
+    });
   }
 
   private async recordReply(

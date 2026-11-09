@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createOpenAI } from '@ai-sdk/openai';
+import { NextRequest } from 'next/server';
 import { ensureAssetSchema, PgAssetStore } from '@openmaic/storage/asset/pg';
 import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
@@ -23,7 +24,26 @@ import {
 import { generateOutlines } from '@/lib/server/generation/steps/outline';
 import { ensureShortFactsSchema, QuizShortFactsService } from '@/lib/server/quiz-short-facts';
 import type { Scene } from '@/lib/types/stage';
-import { dialogueEvidenceFixture, model, reply } from './dialogue-evidence-fixture';
+import { model, reply } from './dialogue-evidence-fixture';
+import { dialogueLoopFixture } from './dialogue-learning-loop-fixture';
+import { controlledMemoryReply, memoryModel } from './dialogue-memory-fixture';
+import { readDialogueEvidenceRun } from '@/lib/persistence/dialogue-evidence-read';
+import { processDialogueJob } from '@/lib/server/dialogue-learning-loop/process';
+import { enqueueClosedDialogueIn } from '@/lib/server/dialogue-learning-loop/enqueue';
+import { noteDialogueSessionCreatedIn } from '@/lib/server/dialogue-learning-loop/registration';
+import { MasteryLearningLoop, startMasteryLearningLoop } from '@/lib/server/mastery-learning-loop';
+import { enqueueReviewedQuiz } from '@/lib/server/quiz-learning-loop/enqueue-reviewed';
+import { claimLearningLoop, ensureLearningLoopSchema } from '@/lib/server/quiz-learning-loop/store';
+import { requestFromStoredAttribution } from '@/lib/server/quiz-learning-loop/attribution';
+import { createLearningLoopAdapter } from '@/lib/server/quiz-learning-loop/adapter';
+import { processLearningLoop } from '@/lib/server/quiz-learning-loop/process';
+import * as ownerAuth from '@/lib/server/identity/with-owner';
+import {
+  GET as readMasteryJobs,
+  POST as recoverMasteryJob,
+} from '@/app/api/mastery-learning-loop/[runId]/route';
+import * as modelResolver from '@/lib/server/resolve-model';
+import * as llm from '@/lib/ai/llm';
 
 const url = process.env.PG_CONTRACT_URL;
 const target = {
@@ -33,7 +53,7 @@ const target = {
 };
 const locator = { ownerId: 'owner', runId: 'run', targetId: target.id, targetRevision: 1 };
 const unverified = ['独立完成 kg 到 g 的换算并列式求密度'];
-type Fixture = Awaited<ReturnType<typeof dialogueEvidenceFixture>>;
+type Fixture = Awaited<ReturnType<typeof dialogueLoopFixture>>;
 
 function synthesis(assistance: 'assisted' | 'independent') {
   return vi.fn(async (_system: string, user: string) => {
@@ -72,7 +92,7 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
       if (database.hostname !== '127.0.0.1' || database.pathname !== '/f80_live')
         throw new Error('F80 live tests require a dedicated local database');
     }
-    f = await dialogueEvidenceFixture(url!);
+    f = await dialogueLoopFixture(url!);
     await f.db.query("UPDATE generation_runs SET outline=$1, outline_revision=1 WHERE id='run'", [
       JSON.stringify({ outlines: [{ id: 'scene', type: 'slide' }], targets: [target] }),
     ]);
@@ -124,7 +144,7 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     });
     const run = await f.store.prepare(
       'owner',
-      { ...f.request(), chatSessionId },
+      { operationId: randomUUID(), stageId: 'stage', chatSessionId },
       f.settings,
       model,
     );
@@ -184,7 +204,7 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
   });
 
-  async function saveQuizEvidence() {
+  async function saveQuizEvidence(automatic?: 'empty' | 'memory-fails') {
     await ensureAssetSchema(f.db);
     await f.db.query('CREATE TABLE document_scenes(stage_id TEXT,id TEXT,data JSONB)');
     await ensureQuizTraceSchema(f.db);
@@ -246,33 +266,522 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
       answers: { density: 'B' },
     });
     const facts = new QuizShortFactsService(f.provider.withTransaction);
-    const prepared = await facts.prepare({
+    const source = {
       owner: 'owner',
       generationRunId: 'run',
       attemptId: attempt.attemptId,
       submissionId: 'quiz-submission',
-      student: 'A',
+      student: 'A' as const,
       conditions: ['authored synthetic fixture'],
-      sourceNature: 'synthetic',
+      sourceNature: 'synthetic' as const,
       memoryEnvironmentId: f.settings.memoryEnvironmentId,
-    });
-    const quiz = await facts.extract('owner', prepared.id, async () => ({
+    };
+    const invoke = (refs: string[]) => ({
       text: JSON.stringify({
-        facts: [
-          {
-            type: 'error_performance',
-            evidence: '学生选择 0.006 g/cm³，答案错误，未提交计算过程。',
-            refs: Object.keys(prepared.context.refs),
-          },
-        ],
+        facts:
+          automatic === 'empty'
+            ? []
+            : [
+                {
+                  type: 'error_performance',
+                  evidence: '学生选择 0.006 g/cm³，答案错误，未提交计算过程。',
+                  refs,
+                },
+              ],
       }),
       finishReason: 'stop',
       model: 'synthetic-test',
       usage: null,
-    }));
+    });
+    if (automatic) {
+      await ensureLearningLoopSchema(f.db);
+      const review = await trace.beginReview('owner', attempt.attemptId, {
+        operationId: 'quiz-review',
+        submissionId: source.submissionId,
+        language: 'zh-CN',
+      });
+      await trace.finishReview('owner', review, {
+        results: [
+          {
+            questionId: 'density',
+            correct: false,
+            status: 'incorrect',
+            earned: 0,
+            evaluation: { state: 'normal', method: 'exact-key' },
+          },
+        ],
+        summary: {
+          status: 'complete',
+          usableEarned: 0,
+          usablePossible: 1,
+          quizPossible: 1,
+          unusableQuestionCount: 0,
+        },
+      });
+      expect(
+        await enqueueReviewedQuiz(f.provider.withTransaction, 'owner', attempt.attemptId, f.config),
+      ).toBe('queued');
+      const job = await f.provider.withTransaction((tx) => claimLearningLoop(tx, 'quiz-claim'));
+      const updateMemory = vi.fn(async () => {
+        throw new Error('simulated Memory transport loss');
+      });
+      await processLearningLoop(
+        f.db,
+        job!,
+        createLearningLoopAdapter({
+          service: facts,
+          memory: f.memory,
+          resolveRequest: requestFromStoredAttribution,
+          extract: async () =>
+            invoke(
+              Object.keys((await facts.preview({ ...source, promptVersion: 'selection-v2' })).refs),
+            ),
+          updateMemory,
+        }),
+      );
+      const { rows } = await f.db.query(
+        'SELECT state,evidence_run_id,error_code FROM quiz_learning_loop_jobs',
+      );
+      expect(rows[0]?.state, rows[0]?.error_code ?? undefined).toBe(
+        automatic === 'empty' ? 'completed' : 'failed',
+      );
+      expect(updateMemory).toHaveBeenCalledTimes(automatic === 'empty' ? 0 : 1);
+      expect(rows[0]?.evidence_run_id).toBeTruthy();
+      return { kind: 'quiz', runId: rows[0].evidence_run_id as string } as const;
+    }
+    const prepared = await facts.prepare(source);
+    const quiz = await facts.extract('owner', prepared.id, async () =>
+      invoke(Object.keys(prepared.context.refs)),
+    );
     expect(quiz.state).toBe('completed');
     return { kind: 'quiz', runId: quiz.id } as const;
   }
+
+  async function saveAutomaticDialogue(id: string, empty = false, trusted = true) {
+    const qa = id.startsWith('qa-');
+    const chat = {
+      ...f.chat,
+      id,
+      type: qa ? ('qa' as const) : ('discussion' as const),
+      learningRunId: trusted ? 'run' : undefined,
+      learningClosure: { id: 'close-auto', source: 'manual_stop' as const },
+      messages: [
+        {
+          id: 't',
+          role: 'assistant' as const,
+          parts: [{ type: 'text' as const, text: '质量已换算为 480 g，体积 40 cm³，求密度。' }],
+        },
+        {
+          id: 's',
+          role: 'user' as const,
+          parts: [{ type: 'text' as const, text: qa ? '为什么要换算成克？' : '480÷40=12 g/cm³。' }],
+        },
+      ],
+    };
+    await f.provider.withTransaction((tx) =>
+      noteDialogueSessionCreatedIn(tx, 'owner', 'stage', id, f.config),
+    );
+    await f.save(chat);
+    const job = (await f.provider.withTransaction((tx) =>
+      enqueueClosedDialogueIn(tx, 'owner', { stageId: 'stage', chatSessionId: id }, f.config),
+    ))!;
+    if (!trusted) return job;
+    const claimed = await f.jobs.claim();
+    expect(claimed?.id).toBe(job.id);
+    await processDialogueJob(claimed!, {
+      jobs: f.jobs,
+      evidence: f.store,
+      memory: f.service,
+      config: f.config,
+      settings: async () => f.settings,
+      evidenceModel: { ...model, promptVersion: job.evidencePromptVersion! },
+      memoryModel,
+      readEvidence: (owner, runId) => readDialogueEvidenceRun(f.provider, owner, runId),
+      invokeEvidence: async () => ({
+        ...reply,
+        text: JSON.stringify({
+          facts: empty
+            ? []
+            : [
+                {
+                  type: qa ? 'question_help' : 'learning_performance',
+                  evidence: chat.messages[1]!.parts[0]!.text,
+                  refs: ['t', 's'],
+                },
+              ],
+        }),
+      }),
+      invokeMemory: async (run) => controlledMemoryReply(run),
+      checkEvidence: () => {},
+      checkMemory: () => {},
+    });
+    return f.jobs.read('owner', job.id);
+  }
+
+  const automatic = (withTransaction = f.provider.withTransaction) =>
+    new MasteryLearningLoop({ pool: f.db, withTransaction }, f.settings);
+  const ready = () =>
+    f.db.query("UPDATE mastery_loop_jobs SET ready_at=now() WHERE state='queued'");
+  const respond = async (_owner: string, _system: string, input: string) => {
+    const {
+      evidence: [item],
+    } = JSON.parse(input);
+    const quiz = item.type === 'quiz_performance';
+    return JSON.stringify({
+      assessments: [
+        {
+          evidenceRef: item.evidenceRef,
+          coverage: 'partial',
+          result: quiz ? 'incorrect' : 'correct',
+          assistance: quiz ? 'unknown' : 'assisted',
+          observation: quiz ? '选错答案，过程未知。' : '教师给出换算后，学生算得 12 g/cm³。',
+        },
+      ],
+      candidateState: {
+        summary: '记录本次作答，独立完成目标仍待验证。',
+        unverified,
+        adoptedEvidenceRefs: [item.evidenceRef],
+      },
+    });
+  };
+
+  it('F82 discovers completed sources from both automatic loops and serializes a target independently of Memory', async () => {
+    const loop = automatic();
+    await loop.activate();
+    const dialogue = await saveAutomaticDialogue('discussion-auto');
+    expect(dialogue.memoryState).toBe('completed');
+    const quiz = await saveQuizEvidence('memory-fails');
+    await Promise.all([loop.discover(), loop.discover()]);
+    expect(await loop.status('other', 'run')).toEqual([]);
+    expect(await loop.status('owner', 'run')).toHaveLength(2);
+    let allow!: () => void;
+    const pause = new Promise<void>((resolve) => {
+      allow = resolve;
+    });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const replyOnce = vi.fn(async (owner: string, system: string, input: string) => {
+      entered();
+      await pause;
+      return respond(owner, system, input);
+    });
+    const first = loop.processOne(replyOnce);
+    await Promise.race([
+      started,
+      first.then(() => {
+        throw new Error('Missing first model request');
+      }),
+    ]);
+    const other = vi.fn(respond);
+    try {
+      await loop.processOne(other);
+      expect(other).not.toHaveBeenCalled();
+      expect(await loop.status('owner', 'run')).toContainEqual(
+        expect.objectContaining({ state: 'queued', reason: 'TARGET_PENDING' }),
+      );
+    } finally {
+      allow();
+      await first;
+    }
+    await ready();
+    await loop.processOne(other);
+    expect(replyOnce).toHaveBeenCalledTimes(1);
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(
+      (await service.read(locator))?.state.observations.map((item) => item.evidenceRef),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(dialogue.evidenceRunId!),
+        `quiz:${quiz.runId}/0`,
+      ]),
+    );
+    await loop.discover();
+    expect(await loop.processOne(other)).toBe(false);
+    expect((await f.jobs.read('owner', dialogue.id)).memoryState).toBe('completed');
+    expect(
+      (await f.db.query('SELECT state,error_code FROM quiz_learning_loop_jobs')).rows[0],
+    ).toMatchObject({
+      state: 'failed',
+      error_code: 'MEMORY_NOT_COMPLETED',
+    });
+  });
+
+  it('F82 distinguishes invalid replies, unknown calls and captured commit recovery', async () => {
+    const loop = automatic();
+    await loop.activate();
+    await saveAutomaticDialogue('recover-auto');
+    await loop.discover();
+    const [job] = await loop.status('owner', 'run');
+    await loop.processOne(async () => '{}');
+    expect(await loop.status('owner', 'run')).toMatchObject([
+      { state: 'failed', reason: 'MASTERY_REPLY_INVALID' },
+    ]);
+    expect(await loop.recover('other', 'run', job.id, 'retry')).toBe(false);
+    expect(await loop.recover('owner', 'run', job.id, 'retry')).toBe(true);
+    let transactions = 0;
+    const faulty = automatic((body) =>
+      f.provider.withTransaction(async (tx) => {
+        const phase = ++transactions;
+        const value = await body(tx);
+        if (phase === 4) throw new Error('simulated final commit failure');
+        return value;
+      }),
+    );
+    await faulty.processOne(respond);
+    expect(await loop.status('owner', 'run')).toMatchObject([
+      { state: 'queued', reason: 'REPLY_CAPTURED' },
+    ]);
+    expect(await service.read(locator)).toBeNull();
+    await ready();
+    const mustNotCall = vi.fn(async () => {
+      throw new Error('unexpected invocation');
+    });
+    await loop.processOne(mustNotCall);
+    expect(mustNotCall).not.toHaveBeenCalled();
+    expect(await service.read(locator)).not.toBeNull();
+
+    const later = await saveAutomaticDialogue('qa-unknown-auto');
+    await loop.discover();
+    const lost = vi.fn(async () => {
+      throw new Error('simulated model transport loss');
+    });
+    await loop.processOne(lost);
+    const unknown = (await loop.status('owner', 'run')).find(
+      (item) => item.source_id === later.evidenceRunId,
+    )!;
+    expect(unknown).toMatchObject({ state: 'unknown', reason: 'MODEL_RESULT_UNKNOWN' });
+    expect(await loop.processOne(lost)).toBe(false);
+    expect(lost).toHaveBeenCalledTimes(1);
+    expect(await loop.recover('owner', 'run', unknown.id, 'retry')).toBe(false);
+    expect(await loop.recover('owner', 'run', unknown.id, 'reconcile')).toBe(false);
+    expect(await loop.recover('owner', 'run', unknown.id, 'discard_unknown')).toBe(true);
+    expect(await loop.status('owner', 'run')).toContainEqual(
+      expect.objectContaining({ state: 'skipped', reason: 'UNKNOWN_DISCARDED' }),
+    );
+    expect((await f.jobs.read('owner', later.id)).memoryState).toBe('completed');
+  });
+
+  it('F82 reconciles a late reply after claim takeover without sending the model request again', async () => {
+    const loop = automatic();
+    await loop.activate();
+    await saveAutomaticDialogue('late');
+    await loop.discover();
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = vi.fn(async (owner: string, system: string, input: string) => {
+      entered();
+      await wait;
+      return respond(owner, system, input);
+    });
+    const first = loop.processOne(original);
+    await Promise.race([
+      started,
+      first.then(() => {
+        throw new Error('Missing model request');
+      }),
+    ]);
+    const noCall = vi.fn(respond);
+    const [job] = await loop.status('owner', 'run');
+    try {
+      await f.db.query(
+        "UPDATE mastery_loop_jobs SET claimed_at=now()-interval '11 minutes' WHERE id=$1",
+        [job.id],
+      );
+      await loop.processOne(noCall);
+      expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'unknown' }]);
+    } finally {
+      release();
+      await first;
+    }
+    expect(await service.read(locator)).toMatchObject({ state: { unverified } });
+    expect(await loop.recover('owner', 'run', job.id, 'reconcile')).toBe(true);
+    await loop.processOne(noCall);
+    expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'completed' }]);
+    expect(original).toHaveBeenCalledTimes(1);
+    expect(noCall).not.toHaveBeenCalled();
+  });
+
+  it('F82 ignores old, empty and unattributed activities and stops before model calls on withdrawal', async () => {
+    const loop = automatic();
+    await saveAutomaticDialogue('historical');
+    await loop.activate();
+    await saveAutomaticDialogue('empty', true);
+    await saveQuizEvidence('empty');
+    expect((await saveAutomaticDialogue('unbound', false, false)).state).toBe('not_eligible');
+    const valid = await saveAutomaticDialogue('valid');
+    await f.db.query("UPDATE generation_runs SET outline=outline-'targets' WHERE id='run'");
+    await loop.discover();
+    expect(await loop.status('owner', 'run')).toEqual([]);
+    await f.db.query(
+      "UPDATE generation_runs SET outline=jsonb_set(outline,'{targets}',$1::jsonb) WHERE id='run'",
+      [JSON.stringify([target])],
+    );
+    await loop.discover();
+    expect(await loop.status('owner', 'run')).toMatchObject([{ source_id: valid.evidenceRunId }]);
+    await f.store.delete('owner', valid.evidenceRunId!);
+    const mustNotCall = vi.fn(async () => {
+      throw new Error('unexpected invocation');
+    });
+    await loop.processOne(mustNotCall);
+    expect(mustNotCall).not.toHaveBeenCalled();
+    expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'skipped' }]);
+    expect(await service.read(locator)).toBeNull();
+  });
+
+  it('F82 lets the assessment reject unrelated targets without creating a Mastery state', async () => {
+    const loop = automatic();
+    const unrelated = {
+      id: 'run:target:2',
+      revision: 1,
+      statement: '独立说明英语第三人称单数的规则。',
+    };
+    await f.db.query(
+      "UPDATE generation_runs SET outline=jsonb_set(outline,'{targets}',$1::jsonb) WHERE id='run'",
+      [JSON.stringify([target, unrelated])],
+    );
+    await loop.activate();
+    const qa = await saveAutomaticDialogue('qa-context');
+    expect(qa.memoryState).toBe('completed');
+    await loop.discover();
+    const judge = vi.fn(async (owner: string, system: string, input: string) => {
+      expect(owner).toBe('owner');
+      expect(system).toContain('unrelated');
+      const data = JSON.parse(input);
+      expect(data.evidence[0].type).toBe('question_help');
+      const related = data.target.id === target.id;
+      const evidenceRef = data.evidence[0].evidenceRef;
+      return JSON.stringify({
+        assessments: [
+          {
+            evidenceRef,
+            coverage: related ? 'context' : 'unrelated',
+            result: 'ungraded',
+            assistance: 'unknown',
+            observation: related ? '学生询问为何要换算成克。' : '求助与英语目标无关。',
+          },
+        ],
+        candidateState: related
+          ? {
+              summary: '学生询问单位换算，实际能力待验证。',
+              unverified,
+              adoptedEvidenceRefs: [evidenceRef],
+            }
+          : null,
+      });
+    });
+    await loop.processOne(judge);
+    await loop.processOne(judge);
+    expect(judge).toHaveBeenCalledTimes(2);
+    expect((await service.read(locator))?.state.observations[0]).toMatchObject({
+      coverage: 'context',
+    });
+    expect(await service.read({ ...locator, targetId: unrelated.id })).toBeNull();
+    expect(await loop.status('owner', 'run')).toMatchObject([
+      { state: 'completed' },
+      { state: 'completed' },
+    ]);
+  });
+
+  it('F82 exposes only owner-scoped status and same-origin recovery for an opted-in deployment', async () => {
+    const loop = automatic();
+    await loop.activate();
+    await saveAutomaticDialogue('api');
+    await loop.discover();
+    await loop.processOne(async () => '{}');
+    vi.spyOn(persistence, 'getServerPersistenceProvider').mockResolvedValue({
+      ...f.provider,
+      pool: f.db,
+    } as Awaited<ReturnType<typeof persistence.getServerPersistenceProvider>>);
+    let requestOwner = 'owner';
+    vi.spyOn(ownerAuth, 'withRequestOwner').mockImplementation(async (_req, handle) =>
+      handle(
+        { ownerId: requestOwner, kind: 'user', roles: new Set(), assurance: 'verified' },
+        new Headers(),
+      ),
+    );
+    const url = 'http://localhost/api/mastery-learning-loop/run';
+    const context = { params: Promise.resolve({ runId: 'run' }) };
+    vi.stubEnv('OPENMAIC_AUTOMATIC_MASTERY', '');
+    expect((await readMasteryJobs(new NextRequest(url), context)).status).toBe(404);
+    vi.stubEnv('OPENMAIC_AUTOMATIC_MASTERY', 'true');
+    vi.stubEnv('OPENMAIC_SIMULATED_LEARNING_LOOP', JSON.stringify(f.config));
+    vi.stubEnv('OPENMAIC_DIALOGUE_EVIDENCE_ENABLED', 'false');
+    const response = await readMasteryJobs(new NextRequest(url), context);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const {
+      jobs: [job],
+    } = await response.json();
+    expect(job).toMatchObject({ state: 'failed', reason: 'MASTERY_REPLY_INVALID' });
+    expect(job).not.toHaveProperty('claim_id');
+    const recovery = (site: string) =>
+      new NextRequest(`${url}?job=${job.id}&action=retry`, {
+        method: 'POST',
+        headers: { 'sec-fetch-site': site, 'content-type': 'application/json' },
+      });
+    expect((await recoverMasteryJob(recovery('cross-site'), context)).status).toBe(403);
+    requestOwner = 'other';
+    expect(await (await readMasteryJobs(new NextRequest(url), context)).json()).toEqual({
+      jobs: [],
+    });
+    expect((await recoverMasteryJob(recovery('same-origin'), context)).status).toBe(409);
+    requestOwner = 'owner';
+    expect(await (await recoverMasteryJob(recovery('same-origin'), context)).json()).toMatchObject({
+      jobs: [{ id: job.id, state: 'queued' }],
+    });
+  });
+
+  it('F82 starts the installed worker and hands the eligible source to the server model adapter', async () => {
+    const loop = automatic();
+    await loop.activate();
+    await saveAutomaticDialogue('worker');
+    vi.spyOn(persistence, 'getServerPersistenceProvider').mockResolvedValue({
+      ...f.provider,
+      pool: f.db,
+    } as Awaited<ReturnType<typeof persistence.getServerPersistenceProvider>>);
+    vi.stubEnv('OPENMAIC_AUTOMATIC_MASTERY', 'true');
+    vi.stubEnv('OPENMAIC_SIMULATED_LEARNING_LOOP', JSON.stringify(f.config));
+    vi.stubEnv('OPENMAIC_DIALOGUE_EVIDENCE_ENABLED', 'true');
+    vi.spyOn(dialogueSettings, 'loadDialogueEvidenceSettings').mockResolvedValue(f.settings);
+    vi.spyOn(modelResolver, 'resolveModel').mockResolvedValue({
+      model: createOpenAI({ apiKey: 'fixture' }).chat('fixture'),
+      serverManaged: true,
+    } as Awaited<ReturnType<typeof modelResolver.resolveModel>>);
+    const generate = vi.spyOn(llm, 'callLLM').mockImplementation(
+      async (request) =>
+        ({
+          text: await respond('owner', String(request.system), String(request.prompt)),
+          finishReason: 'stop',
+        }) as Awaited<ReturnType<typeof llm.callLLM>>,
+    );
+    const worker = await startMasteryLearningLoop();
+    expect(worker).toBeDefined();
+    try {
+      await vi.waitFor(
+        async () => {
+          expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'completed' }]);
+        },
+        { timeout: 4000 },
+      );
+      expect(await service.read(locator)).toMatchObject({ state: { unverified } });
+      expect(generate).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ maxRetries: 0, maxOutputTokens: 4096 }),
+        'mastery-maintenance',
+        { retries: 0 },
+        undefined,
+        { enabled: false },
+      );
+    } finally {
+      await worker?.stop();
+    }
+  });
 
   it('uses verified Quiz short facts on the same target while preserving the process gap', async () => {
     const discussion = await saveEvidence();

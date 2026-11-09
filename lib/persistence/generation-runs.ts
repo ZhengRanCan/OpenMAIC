@@ -134,6 +134,35 @@ export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
         PRIMARY KEY (run_id, environment_id, target_id, target_revision)
       )`,
     },
+    {
+      version: 6,
+      name: 'automatic_target_mastery',
+      transaction: true,
+      up: `CREATE TABLE mastery_loop_activation (
+        environment_id TEXT PRIMARY KEY,
+        since TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE mastery_loop_jobs (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        run_id TEXT NOT NULL REFERENCES generation_runs(id) ON DELETE CASCADE,
+        environment_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        target_revision INTEGER NOT NULL,
+        source_kind TEXT NOT NULL CHECK(source_kind IN ('quiz','dialogue')),
+        source_id TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'queued'
+          CHECK(state IN ('queued','running','completed','skipped','failed','unknown')),
+        reason TEXT,
+        claim_id TEXT,
+        claimed_at TIMESTAMPTZ,
+        ready_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(run_id,environment_id,target_id,target_revision,source_kind,source_id)
+      );
+      CREATE INDEX mastery_loop_ready ON mastery_loop_jobs(environment_id,ready_at)
+        WHERE state IN ('queued','running');
+      CREATE INDEX mastery_loop_course ON mastery_loop_jobs(run_id,environment_id);`,
+    },
   ],
 };
 
