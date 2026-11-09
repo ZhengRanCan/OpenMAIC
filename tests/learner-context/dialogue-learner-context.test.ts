@@ -4,12 +4,19 @@ import { DSL_VERSION } from '@openmaic/dsl';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { nodePostgresTransaction } from '@openmaic/storage/server/reference';
 import { Pool } from 'pg';
-import { emptySnapshot, versionSource, type MemoryPiece } from '@/lib/learner-memory/contracts';
+import {
+  digest,
+  emptySnapshot,
+  versionSource,
+  type MemoryPiece,
+} from '@/lib/learner-memory/contracts';
+import { simulatedSeed } from '@/lib/learner-memory/simulated-seeds';
 import { projectMemory } from '@/lib/learner-memory/read';
 import { buildChildTurnPrompt, buildNativeChildTurnPrompt } from '@/lib/chat/pi/prompts';
 import { resolveDialogueLearnerContext } from '@/lib/server/dialogue-learner-context';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { ensureMemorySchema } from '@/lib/persistence/learner-memory-schema';
+import { ensureDialogueMemorySchema } from '@/lib/persistence/dialogue-memory-schema';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { SimulatedMemoryEnvironment } from '@/lib/learner-memory/simulated-environment';
@@ -34,17 +41,17 @@ function view() {
     kind: 'confirmed_experience',
     text: memoryText,
     refs: ['private-message-id'],
-    conditions: ['教师给出换算值'],
+    conditions: ['教师给出换算值', '只观察到一次', '{"refs":["private-source-ref"]}'],
     sourceNature: 'synthetic',
     occurredAt: null,
     provenance: { file: 'private.json', sha256: 'a'.repeat(64), pointer: '/1' },
   });
   const piece: MemoryPiece = {
     id: 'piece-density',
-    text: memoryText,
+    text: 'PRIVATE SYNTHESIS',
     formation: 'confirmed_experience',
     supports: [support],
-    conditions: ['只观察到一次'],
+    conditions: ['PRIVATE SYNTHESIS CONDITION'],
     restrictions: [],
   };
   const snapshot = emptySnapshot();
@@ -84,6 +91,9 @@ function fixture(mode: 'qa' | 'discussion' = 'qa') {
       actions: [{ type: 'discussion', topic: problem, prompt: '请先等学生独立作答。' }],
     }),
     readMemory: vi.fn<Deps['readMemory']>().mockResolvedValue(data),
+    authorizeMemory: vi.fn<Deps['authorizeMemory']>(
+      async (_owner, _student, _environment, sources) => new Set(sources.map(digest)),
+    ),
     readMastery: vi.fn<Deps['readMastery']>().mockResolvedValue([
       {
         target: { id: 'private-target', revision: 1, statement: '独立计算密度并提交过程。' },
@@ -168,7 +178,7 @@ describe('F84 optional dialogue learner context', () => {
     expect(result.text).toContain(gap);
     expect(result.text).toContain('只观察到一次');
     expect(result.text).toContain('教师给出换算值');
-    expect(result.text).not.toMatch(/private-|PRIVATE AUDIT/);
+    expect(result.text).not.toMatch(/private-|PRIVATE AUDIT|PRIVATE SYNTHESIS/);
     expect(deps.resolveScope).toHaveBeenCalledTimes(2);
     expect(deps.readMemory).toHaveBeenCalledWith(student, environment);
     expect(deps.readMastery).toHaveBeenCalledWith('owner-authoritative', student);
@@ -185,6 +195,79 @@ describe('F84 optional dialogue learner context', () => {
         memoryText,
       );
     }
+  });
+
+  it('keeps the exact bundled profile used by the live comparison', async () => {
+    const {
+      input,
+      deps: { resolveScope, readMemory, readMastery, select },
+      data,
+    } = fixture();
+    const { snapshot, sources } = simulatedSeed(student);
+    const piece = snapshot.pieces.find(({ id }) => id === 'm-density')!;
+    expect(piece).toBeDefined();
+    const { version: originalVersion, ...rawSource } = piece.supports[0]!;
+    const forged = versionSource({
+      ...rawSource,
+      text: 'FORGED SEED',
+    });
+    expect(forged.version).not.toBe(originalVersion);
+    const proxy = versionSource({
+      ...rawSource,
+      id: 'proxy-source',
+      sourceNature: 'proxy',
+      text: 'PROXY HISTORY',
+    });
+    const pieces = [
+      piece,
+      { ...piece, id: 'fake', text: forged.text, supports: [forged] },
+      { ...piece, id: 'proxy', text: proxy.text, supports: [proxy] },
+    ];
+    readMemory.mockResolvedValue({
+      ...data,
+      snapshot,
+      sections: { ...data.sections, learning_experiences: pieces },
+      coverage: [
+        ...sources.filter(({ id }) => id !== forged.id),
+        forged,
+        ...piece.supports,
+        proxy,
+      ].map((source) => ({
+        source_id: source.id,
+        version: source.version,
+        current: true,
+        valid: true,
+        processed: true,
+      })),
+    });
+    const result = await resolveDialogueLearnerContext(input, {
+      resolveScope,
+      readMemory,
+      readMastery,
+      select,
+    });
+    const [selected] = JSON.parse(result.text!);
+    expect(selected).toEqual({
+      kind: 'memory',
+      data: {
+        text: '密度题已给公式和换算提示时，54÷20算出2.7g/cm³正确，但直接写成2.7kg/m³，未按1000倍关系换算为2700kg/m³。',
+        conditions: [
+          '人工组合的模拟学生数据，不代表真实学习者或真实连续学习史；各身份独立使用素材。',
+          '题目已提供密度公式和单位换算关系提示。',
+        ],
+      },
+    });
+    expect(select.mock.calls[0]![0].prompt.user).not.toMatch(/FORGED SEED|PROXY HISTORY/);
+  });
+
+  it('can select Mastery when Memory ownership is unavailable', async () => {
+    const { input, deps } = fixture();
+    deps.authorizeMemory.mockRejectedValue(new Error('unavailable'));
+    deps.select.mockResolvedValue('{"selected":["T1"]}');
+    const result = await resolveDialogueLearnerContext(input, deps);
+    expect(result.status).toBe('ready');
+    expect(result.text).toContain(gap);
+    expect(deps.select.mock.calls[0]![0].prompt.user).not.toContain(memoryText);
   });
 
   it('uses the saved Discussion invitation and ignores a forged prompt', async () => {
@@ -264,9 +347,10 @@ describe('F84 optional dialogue learner context', () => {
       try {
         await ensureGenerationRunSchema(app.pool);
         await ensureLearningSceneBindings(app.pool);
+        await ensureDialogueMemorySchema(app.pool);
         const {
           input,
-          deps: { readMemory, readMastery, select },
+          deps: { readMemory, authorizeMemory, readMastery, select },
         } = fixture('discussion');
         const stageId = 'f84-stage-' + randomUUID();
         const sceneId = 'f84-scene-' + randomUUID();
@@ -311,7 +395,7 @@ describe('F84 optional dialogue learner context', () => {
         });
         input.body.storeState.stage = stage;
         input.body.storeState.currentSceneId = sceneId;
-        const overrides = { readMemory, readMastery, select };
+        const overrides = { readMemory, authorizeMemory, readMastery, select };
         expect((await resolveDialogueLearnerContext(input, overrides)).status).toBe('empty');
         await app.pool.query(
           "INSERT INTO generation_runs(id,owner_id,stage_id,input,state) VALUES($1,$2,$3,$4::jsonb,'completed')",
@@ -329,12 +413,79 @@ describe('F84 optional dialogue learner context', () => {
         expect(select).not.toHaveBeenCalled();
         expect((await resolveDialogueLearnerContext(input, overrides)).status).toBe('ready');
         expect(select.mock.calls[0]![0].prompt.user).toContain('先等学生独立提交');
+        const shared = view();
+        const base = shared.sections.learning_experiences[0]!;
+        const { version: baseVersion, ...raw } = base.supports[0]!;
+        const ownRaw = {
+          ...raw,
+          id: randomUUID(),
+          kind: 'dialogue_evidence',
+        };
+        const own = versionSource(ownRaw);
+        expect(own.version).not.toBe(baseVersion);
+        const foreign = versionSource({ ...ownRaw, id: randomUUID(), text: 'FOREIGN OWNER' });
+        const wrongEnvironment = versionSource({
+          ...ownRaw,
+          id: randomUUID(),
+          text: 'WRONG ENVIRONMENT',
+        });
+        const proxy = versionSource({
+          ...ownRaw,
+          id: randomUUID(),
+          text: 'PROXY OWNER',
+          sourceNature: 'proxy',
+        });
+        const changed = versionSource({ ...ownRaw, text: 'CHANGED SOURCE' });
+        for (const [source, owner, scope] of [
+          [own, input.owner, environment],
+          [foreign, 'foreign', environment],
+          [wrongEnvironment, input.owner, randomUUID()],
+          [proxy, input.owner, environment],
+        ] as const) {
+          await app.pool.query(
+            'INSERT INTO dialogue_memory_sources(id,owner_id,stage_id,environment_id,student,data) VALUES($1,$2,$3,$4,$5,$6)',
+            [source.id, owner, stageId, scope, student, { source }],
+          );
+        }
+        const pieces = [
+          { ...base, supports: [own] },
+          { ...base, id: 'mixed', supports: [own, foreign] },
+          { ...base, id: 'foreign', supports: [foreign] },
+          { ...base, id: 'wrong-environment', supports: [wrongEnvironment] },
+          { ...base, id: 'proxy', supports: [proxy] },
+          { ...base, id: 'changed', supports: [changed] },
+        ];
+        shared.sections.learning_experiences = pieces;
+        shared.coverage = [own, foreign, wrongEnvironment, proxy, changed].map((source) => ({
+          source_id: source.id,
+          version: source.version,
+          current: true,
+          valid: true,
+          processed: true,
+        }));
+        readMemory.mockResolvedValue(shared);
+        const isolated = await resolveDialogueLearnerContext(input, {
+          readMemory,
+          readMastery,
+          select,
+        });
+        expect(isolated.status).toBe('ready');
+        expect(isolated.text).toContain(memoryText);
+        const selectInput = select.mock.lastCall![0].prompt.user;
+        expect(
+          JSON.parse(selectInput).candidates.filter(
+            ({ kind }: { kind: string }) => kind === 'memory',
+          ),
+        ).toHaveLength(1);
+        expect(selectInput).not.toMatch(
+          /FOREIGN OWNER|WRONG ENVIRONMENT|PROXY OWNER|CHANGED SOURCE|PRIVATE SYNTHESIS/,
+        );
         await retainLearningSceneBindings(app.pool, [runId]);
         await app.pool.query('DELETE FROM generation_run_steps WHERE run_id=$1', [runId]);
         expect((await resolveDialogueLearnerContext(input, overrides)).status).toBe('ready');
         await app.pool.query('UPDATE stage_meta SET deleted_at=now() WHERE stage_id=$1', [stageId]);
         expect((await resolveDialogueLearnerContext(input, overrides)).status).toBe('empty');
-        expect(select).toHaveBeenCalledTimes(2);
+        expect(select).toHaveBeenCalledTimes(3);
       } finally {
         await app.pool.end();
       }

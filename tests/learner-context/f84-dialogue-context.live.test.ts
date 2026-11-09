@@ -45,6 +45,7 @@ function checkComparison(value: Comparison, enabled: boolean) {
   expect(value.firstSpeechMs).toBeGreaterThan(0);
   expect(value.events.some((event) => event.type === 'error')).toBe(false);
   expect(value.events.some((event) => event.type === 'cue_user')).toBe(true);
+  expect(value.events.some((event) => event.type === 'done')).toBe(true);
   expect(value.modelInputs.filter(({ phase }) => phase === 'teacher')).toMatchObject([
     { attached: enabled },
   ]);

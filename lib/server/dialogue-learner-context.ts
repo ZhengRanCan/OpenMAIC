@@ -3,6 +3,8 @@ import type { SimulatedLearnerId } from '@/lib/learner-context/contracts';
 import { digest, type MemoryPiece } from '@/lib/learner-memory/contracts';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
+import { simulatedSeed } from '@/lib/learner-memory/simulated-seeds';
+import { authorizeDialogueMemorySupports } from './dialogue-memory-context-authority';
 import { readPlannerMastery, type PlannerMastery } from './learner-mastery';
 import { assertMemorySelectionCurrent } from './learner-memory-selection';
 import { invokeMemorySelectionModel } from './learner-memory-selection-model';
@@ -105,14 +107,24 @@ function taskFor(body: Body, scope: Scope) {
   };
 }
 
-function memoryCandidate(piece: MemoryPiece): Candidate {
+function memoryCandidate(piece: MemoryPiece, bundled: boolean): Candidate {
   const conditions = [
-    ...new Set([...piece.conditions, ...piece.supports.flatMap((s) => s.conditions)]),
+    ...new Set([
+      ...(bundled ? piece.conditions : []),
+      ...piece.supports.flatMap((s) =>
+        s.conditions.filter((condition) => !condition.trimStart().startsWith('{')),
+      ),
+    ]),
   ];
+  // The shared maintenance prompt may have read other owners' history. Only
+  // bundled prose or the verified, owner-local support text can leave here.
+  const text = bundled
+    ? piece.text
+    : [...new Set(piece.supports.map((support) => support.text))].join('\n');
   return {
     key: piece.id,
     kind: 'memory',
-    text: JSON.stringify({ text: piece.text, conditions }),
+    text: JSON.stringify({ text, conditions }),
     fingerprint: digest(piece),
   };
 }
@@ -133,6 +145,7 @@ function masteryCandidate(item: PlannerMastery): Candidate {
 const defaultDeps = {
   resolveScope,
   readMemory: readSimulatedLearnerMemory,
+  authorizeMemory: authorizeDialogueMemorySupports,
   readMastery: readPlannerMastery,
   select: invokeMemorySelectionModel,
 };
@@ -149,6 +162,7 @@ async function readCandidates(
     kinds.mastery ? deps.readMastery(owner, student) : undefined,
   ]);
   const result: Candidate[] = [];
+  let memoryUnavailable = memory.status === 'rejected';
   if (memory.status === 'fulfilled' && memory.value) {
     const view = memory.value;
     const pieces = [
@@ -158,18 +172,36 @@ async function readCandidates(
           .map((piece) => [piece.id, piece]),
       ).values(),
     ];
-    for (const piece of pieces) {
+    const available = pieces.filter((piece) => {
       try {
         assertMemorySelectionCurrent(view, [piece]);
-        result.push(memoryCandidate(piece));
+        return piece.supports.every(({ sourceNature }) => sourceNature === 'synthetic');
       } catch {
         // Restricted or stale Memory cannot become dialogue context.
+        return false;
+      }
+    });
+    if (available.length) {
+      const bundled = new Set(simulatedSeed(student).snapshot.pieces.map(digest));
+      try {
+        const allowed = await deps.authorizeMemory(
+          owner,
+          student,
+          environment,
+          available.flatMap(({ supports }) => supports),
+        );
+        for (const piece of available) {
+          if (piece.supports.every((source) => allowed.has(digest(source))))
+            result.push(memoryCandidate(piece, bundled.has(digest(piece))));
+        }
+      } catch {
+        memoryUnavailable = true;
       }
     }
   }
   if (mastery.status === 'fulfilled' && mastery.value)
     result.push(...mastery.value.map(masteryCandidate));
-  if (!result.length && (memory.status === 'rejected' || mastery.status === 'rejected'))
+  if (!result.length && (memoryUnavailable || mastery.status === 'rejected'))
     throw new Error('DIALOGUE_PROFILE_UNAVAILABLE');
   return result;
 }
