@@ -28,6 +28,7 @@ function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[
 
 export async function runPiDirectorLoop(opts: {
   body: StatelessChatRequest;
+  learnerContext?: string;
   elementReference?: ResolvedElementReference;
   /** Area state for the current Scene when it travels without a component reference. */
   interactiveStateNote?: string;
@@ -144,6 +145,7 @@ export async function runPiDirectorLoop(opts: {
     }),
     buildCallAgentTool({
       body: opts.body,
+      learnerContext: opts.learnerContext,
       agentConfigs: opts.agentConfigs,
       send: opts.send,
       languageModel: opts.languageModel,

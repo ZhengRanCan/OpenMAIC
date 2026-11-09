@@ -13,6 +13,7 @@ export type LearnerMemoryReader = (student: SimulatedLearnerId) => Promise<Learn
 
 export async function readSimulatedLearnerMemory(
   student: SimulatedLearnerId,
+  expectedEnvironment?: string,
 ): Promise<LearnerMemoryRead> {
   if (!['A', 'B', 'C'].includes(student))
     throw new PreclassLearnerContextError('UNKNOWN_SIMULATED_STUDENT');
@@ -41,6 +42,13 @@ export async function readSimulatedLearnerMemory(
       ).createDialogueMemoryAuthority(),
       withTransaction: (body) =>
         withTransaction(async (tx) => {
+          if (expectedEnvironment !== undefined) {
+            const environment = await tx.query(
+              'SELECT id FROM f68_memory_environment WHERE singleton=true',
+            );
+            if (environment.rows[0]?.id !== expectedEnvironment)
+              throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+          }
           // The formal store normally creates an empty state when absent. Consumers
           // require initialized simulated identities, so hold the existing row
           // throughout the formal read and never turn missing setup into empty Memory.

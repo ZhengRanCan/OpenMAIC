@@ -530,6 +530,7 @@ async function processParseResult(opts: {
 
 export function buildCallAgentTool(opts: {
   body: StatelessChatRequest;
+  learnerContext?: string;
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
@@ -794,6 +795,7 @@ export function buildCallAgentTool(opts: {
               scene: sceneEvidence?.content,
               element: elementReferenceEvidence?.content,
               spotlightElementIds,
+              learner: opts.learnerContext,
             }),
             tools: nativeTools,
             allowedToolNames: new Set(availableToolNames),
@@ -922,6 +924,7 @@ export function buildCallAgentTool(opts: {
           buildChildTurnPrompt(params.instruction, agent.role, {
             scene: sceneEvidence?.content,
             element: elementReferenceEvidence?.content,
+            learner: opts.learnerContext,
           }),
         );
         await child.waitForIdle();

@@ -25,6 +25,7 @@ import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import type { SendEvent } from '@/lib/chat/pi/types';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { resolveDialogueLearnerContext } from '@/lib/server/dialogue-learner-context';
 import { parseUserStageRoutes } from '@/lib/server/model-routes';
 import { apiError } from '@/lib/server/api-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
@@ -143,13 +144,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       );
     }
 
-    const {
-      model: languageModel,
-      apiKey: resolvedApiKey,
-      providerId,
-      modelInfo,
-      thinkingConfig: resolvedThinkingConfig,
-    } = await resolveModel({
+    const resolvedModel = await resolveModel({
       modelString: body.model,
       stage: 'chat-adapter',
       workspaceId: await requestWorkspaceId(req),
@@ -163,6 +158,13 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       // wins, an unrouted one honors this client thinking (see resolve-model.ts).
       thinkingConfig: body.thinkingConfig ?? body.thinking,
     });
+    const {
+      model: languageModel,
+      apiKey: resolvedApiKey,
+      providerId,
+      modelInfo,
+      thinkingConfig: resolvedThinkingConfig,
+    } = resolvedModel;
 
     if (isProviderKeyRequired(providerId) && !resolvedApiKey) {
       return apiError('MISSING_API_KEY', 401, 'API Key is required');
@@ -189,6 +191,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
     const signal = req.signal;
     const abortController = new AbortController();
     signal.addEventListener('abort', () => abortController.abort(), { once: true });
+    if (signal.aborted) abortController.abort();
 
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
@@ -280,8 +283,17 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       try {
         startHeartbeat();
 
+        const learnerContext = await resolveDialogueLearnerContext({
+          owner: principal.ownerId,
+          body,
+          model: resolvedModel,
+          signal: abortController.signal,
+        });
+        if (learnerContext.status === 'unavailable')
+          log.debug('Dialogue learner context unavailable; continuing the current turn');
         await runPiDirectorLoop({
           body,
+          learnerContext: learnerContext.text,
           elementReference,
           interactiveStateNote,
           agentConfigs,

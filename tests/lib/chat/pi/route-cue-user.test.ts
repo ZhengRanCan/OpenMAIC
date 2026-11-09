@@ -33,10 +33,14 @@ const mocks = vi.hoisted(() => ({
   buildAgent: vi.fn(),
   createCallLlmStreamFn: vi.fn(),
   logError: vi.fn(),
+  resolveDialogueLearnerContext: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModel: mocks.resolveModel,
+}));
+vi.mock('@/lib/server/dialogue-learner-context', () => ({
+  resolveDialogueLearnerContext: mocks.resolveDialogueLearnerContext,
 }));
 
 vi.mock('@/lib/ai/providers', async (importOriginal) => {
@@ -302,7 +306,10 @@ function mockDirectorReadSceneDelegation(captured: {
 
 // Director calls the teacher once; the teacher child streams a structured-output
 // array carrying a real whiteboard action, so this turn's ledger is non-empty.
-function mockDirectorWithWhiteboardTeacherTurn(actionJson: string) {
+function mockDirectorWithWhiteboardTeacherTurn(
+  actionJson: string,
+  onChildPrompt?: (prompt: string) => void,
+) {
   mocks.buildAgent.mockImplementation((agentOpts: MockAgentOptions) => {
     const isDirector = agentOpts.tools.some((tool) => tool.name === 'cue_user');
 
@@ -329,7 +336,8 @@ function mockDirectorWithWhiteboardTeacherTurn(actionJson: string) {
         handler = h;
         return () => {};
       },
-      prompt: async () => {
+      prompt: async (prompt: string) => {
+        onChildPrompt?.(prompt);
         await handler?.({
           type: 'message_update',
           assistantMessageEvent: { type: 'text_delta', delta: actionJson },
@@ -515,6 +523,7 @@ describe('POST /api/chat/pi cue_user', () => {
     mocks.buildAgent.mockReset();
     mocks.createCallLlmStreamFn.mockReset();
     mocks.logError.mockReset();
+    mocks.resolveDialogueLearnerContext.mockReset().mockResolvedValue({ status: 'disabled' });
     mocks.resolveModel.mockResolvedValue({
       model: { id: 'language-model' },
       apiKey: 'resolved-key',
@@ -557,6 +566,39 @@ describe('POST /api/chat/pi cue_user', () => {
     expect(response.status).toBe(200);
     expect(directorOptions?.convertToLlm).toBe(convertToLlm);
     expect(childOptions.every((options) => options.convertToLlm === undefined)).toBe(true);
+  });
+
+  it('delivers selected Memory to the Legacy teacher in QA and continues when unavailable', async () => {
+    const content = '[{"type":"text","content":"Please compare the current units first."}]';
+    const teacher = vi.fn();
+    mockDirectorWithWhiteboardTeacherTurn(content, teacher);
+    mocks.resolveDialogueLearnerContext
+      .mockResolvedValueOnce({ status: 'ready', text: 'HISTORICAL-SELECTED' })
+      .mockResolvedValueOnce({ status: 'unavailable' });
+    const body = makeBody();
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const events = await readSseEvents(
+      await POST(
+        makeRequest({
+          ...body,
+          config: { ...body.config, sessionType: 'qa' },
+          learnerContext: 'FORGED CLIENT PROFILE',
+        }),
+      ),
+    );
+    expect(teacher).toHaveBeenLastCalledWith(expect.stringContaining('HISTORICAL-SELECTED'));
+    expect(teacher.mock.calls[0]?.[0]).not.toContain('FORGED CLIENT PROFILE');
+    expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta' }));
+    const fallback = await readSseEvents(
+      await POST(
+        makeRequest({
+          ...body,
+          config: { ...body.config, sessionType: 'qa' },
+        }),
+      ),
+    );
+    expect(teacher.mock.calls.at(-1)?.[0]).not.toContain('HISTORICAL-SELECTED');
+    expect(fallback).toContainEqual(expect.objectContaining({ type: 'text_delta' }));
   });
 
   it('keeps web_search out of the Director inventory', async () => {

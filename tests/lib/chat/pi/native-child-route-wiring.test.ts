@@ -14,9 +14,13 @@ const mocks = vi.hoisted(() => ({
   searchWeb: vi.fn(),
   getServerPersistenceProvider: vi.fn(),
   stageMetaQuery: vi.fn(),
+  resolveDialogueLearnerContext: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
+vi.mock('@/lib/server/dialogue-learner-context', () => ({
+  resolveDialogueLearnerContext: mocks.resolveDialogueLearnerContext,
+}));
 // Model settings are the resolver's business (tests/server/model-config); the
 // persistence assertions below are about the whiteboard inventory alone.
 vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
@@ -181,6 +185,7 @@ describe('PR2 Native Child route production wiring', () => {
     mocks.searchWeb.mockReset();
     mocks.getServerPersistenceProvider.mockReset();
     mocks.stageMetaQuery.mockReset();
+    mocks.resolveDialogueLearnerContext.mockReset().mockResolvedValue({ status: 'disabled' });
     // No stage_meta row: a course this server never stored, never tombstoned.
     mocks.stageMetaQuery.mockResolvedValue({ rows: [] });
     mocks.getServerPersistenceProvider.mockResolvedValue({
@@ -285,6 +290,58 @@ describe('PR2 Native Child route production wiring', () => {
       data: { totalAgents: 1, totalActions: 1, agentHadContent: true },
     });
   }, 15_000);
+
+  it('attaches selected history to the actual Native teacher for an opening Discussion', async () => {
+    const history = '[{"kind":"mastery","data":{"unverified":["独立列式"]}}]';
+    mocks.resolveDialogueLearnerContext.mockResolvedValue({ status: 'ready', text: history });
+    const director = [
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'default-1',
+          instruction: 'Invite independent work.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Your turn?' }), finish('tool-calls')],
+    ];
+    const calls: Array<{ source: string; messages: string }> = [];
+    mocks.streamLLM.mockImplementation((options, source) => {
+      calls.push({ source, messages: JSON.stringify(options.messages) });
+      return resultFrom(
+        source === 'pi-chat-native-child'
+          ? [{ type: 'text-delta', text: '请先独立写出列式，我等你作答。' }, finish('stop')]
+          : (director.shift() ?? [finish('stop')]),
+      );
+    });
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const events = await readSseEvents(
+      await POST(
+        makeRequest({
+          messages: [],
+          config: {
+            agentIds: ['default-1'],
+            sessionType: 'discussion',
+            discussionTopic: '求密度',
+            triggerAgentId: 'default-1',
+          },
+          learnerContext: 'FORGED CLIENT PROFILE',
+        }),
+      ),
+    );
+    expect(mocks.resolveDialogueLearnerContext).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: LEARNER_KEY }),
+    );
+    expect(calls.find((call) => call.source === 'pi-chat-native-child')?.messages).toContain(
+      '独立列式',
+    );
+    expect(
+      calls
+        .filter((call) => call.source === 'pi-chat-director')
+        .every((call) => !call.messages.includes('独立列式')),
+    ).toBe(true);
+    expect(JSON.stringify(calls)).not.toContain('FORGED CLIENT PROFILE');
+    expect(events).toContainEqual(expect.objectContaining({ type: 'cue_user' }));
+  });
 
   it('wires RuntimeStore WB inventory through the real route and completes an action-only Child', async () => {
     process.env.DATABASE_URL = 'postgres://shared-provider-test';
