@@ -192,13 +192,18 @@ export class MasteryLearningLoop {
           id: job.id,
           active,
           beforeInvoke: () => checkClaim(this.app.pool),
-          invalidReply: async (tx) => {
+          knownOutcome: async (tx, outcome) => {
             // The pending token and stage lock prove this receipt belongs to this job,
             // even when the original worker's outer claim has expired.
             await tx.query(
-              `UPDATE mastery_loop_jobs SET state='failed',reason='MASTERY_REPLY_INVALID',
-                 claim_id=NULL,claimed_at=NULL WHERE id=$1 AND state IN ('running','unknown')`,
-              [job.id],
+              `UPDATE mastery_loop_jobs SET state=$2,reason=$3,claim_id=NULL,claimed_at=NULL,
+                 ready_at=CASE WHEN $2='queued' THEN now() + interval '10 seconds' ELSE ready_at END
+                 WHERE id=$1 AND state IN ('running','unknown')`,
+              [
+                job.id,
+                outcome === 'paused' ? 'queued' : 'failed',
+                outcome === 'paused' ? 'MASTERY_DISABLED' : 'MASTERY_REPLY_INVALID',
+              ],
             );
           },
           guard: async (tx) => {
@@ -221,6 +226,8 @@ export class MasteryLearningLoop {
         await finish('unknown', 'MODEL_RESULT_UNKNOWN');
       } else if (invocation === 'captured') {
         await finish('queued', 'REPLY_CAPTURED');
+      } else if (invocation === 'committed') {
+        await finish('completed');
       } else if (
         reason === 'MASTERY_INVOCATION_PENDING_OR_UNKNOWN' ||
         reason === 'MASTERY_DISABLED'
@@ -252,7 +259,8 @@ export class MasteryLearningLoop {
        FROM mastery_loop_jobs j JOIN generation_runs r ON r.id=j.run_id AND r.owner_id=j.owner_id
        JOIN stage_meta s ON s.stage_id=r.stage_id AND s.owner_id=r.owner_id AND s.deleted_at IS NULL
        WHERE j.owner_id=$1 AND j.run_id=$2 AND j.environment_id=$3
-       ORDER BY j.ready_at DESC,j.id LIMIT 100`,
+       ORDER BY CASE WHEN j.state='unknown' THEN 0 WHEN j.reason='REPLY_CAPTURED' THEN 1
+         WHEN j.state='failed' THEN 2 ELSE 3 END, j.ready_at DESC,j.id LIMIT 100`,
       [owner, runId, this.environmentId],
     );
     return rows;

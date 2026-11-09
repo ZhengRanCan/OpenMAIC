@@ -556,10 +556,23 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     expect(lost).toHaveBeenCalledTimes(1);
     expect(await loop.recover('owner', 'run', unknown.id, 'retry')).toBe(false);
     expect(await loop.recover('owner', 'run', unknown.id, 'reconcile')).toBe(false);
-    expect(await loop.recover('owner', 'run', unknown.id, 'discard_unknown')).toBe(true);
-    expect(await loop.status('owner', 'run')).toContainEqual(
-      expect.objectContaining({ state: 'skipped', reason: 'UNKNOWN_DISCARDED' }),
+    await f.db.query(
+      `INSERT INTO mastery_loop_jobs(id,owner_id,run_id,environment_id,target_id,target_revision,
+         source_kind,source_id,state)
+       SELECT 'history-'||n,owner_id,run_id,environment_id,target_id,target_revision,
+         source_kind,'history-'||n,'completed'
+       FROM mastery_loop_jobs CROSS JOIN generate_series(1, 100) AS n WHERE id=$1`,
+      [unknown.id],
     );
+    expect((await loop.status('owner', 'run'))[0]).toMatchObject({
+      id: unknown.id,
+      state: 'unknown',
+    });
+    expect(await loop.recover('owner', 'run', unknown.id, 'discard_unknown')).toBe(true);
+    expect(
+      (await f.db.query('SELECT state,reason FROM mastery_loop_jobs WHERE id=$1', [unknown.id]))
+        .rows,
+    ).toMatchObject([{ state: 'skipped', reason: 'UNKNOWN_DISCARDED' }]);
     expect((await f.jobs.read('owner', later.id)).memoryState).toBe('completed');
   });
 
@@ -722,6 +735,54 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     }
     expect(generate).not.toHaveBeenCalled();
     expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'skipped' }]);
+  });
+
+  it('F82 requeues a stopped worker’s never-sent request even after claim takeover', async () => {
+    const loop = automatic();
+    await loop.activate();
+    await saveAutomaticDialogue('stopping');
+    await loop.discover();
+    let aboutToClear!: () => void;
+    const clearing = new Promise<void>((resolve) => {
+      aboutToClear = resolve;
+    });
+    let release!: () => void;
+    const pause = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let phase = 0;
+    const worker = automatic(async (body) => {
+      if (++phase === 3) {
+        aboutToClear();
+        await pause;
+      }
+      return f.provider.withTransaction(body);
+    });
+    const generate = vi.fn(respond);
+    const active = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const running = worker.processOne(generate, active);
+    await Promise.race([
+      clearing,
+      running.then(() => {
+        throw new Error('Missing shutdown cleanup');
+      }),
+    ]);
+    try {
+      await f.db.query("UPDATE mastery_loop_jobs SET claimed_at=now()-interval '11 minutes'");
+      await loop.processOne(generate);
+      expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'unknown' }]);
+    } finally {
+      release();
+      await running;
+    }
+    expect(generate).not.toHaveBeenCalled();
+    expect(await loop.status('owner', 'run')).toMatchObject([
+      { state: 'queued', reason: 'MASTERY_DISABLED' },
+    ]);
+    await ready();
+    await loop.processOne(generate);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(await loop.status('owner', 'run')).toMatchObject([{ state: 'completed' }]);
   });
 
   it('F82 ignores old, empty and unattributed activities and stops before model calls on withdrawal', async () => {

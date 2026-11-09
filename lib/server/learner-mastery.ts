@@ -399,7 +399,7 @@ export class LearnerMastery {
       guard: (tx: Queryable) => Promise<void>;
       beforeInvoke: () => Promise<void>;
       active: () => boolean;
-      invalidReply: (tx: Queryable) => Promise<void>;
+      knownOutcome: (tx: Queryable, outcome: 'invalid' | 'paused') => Promise<void>;
     },
   ): Promise<MasteryState | null> {
     const sourceList = [...distinctSources(sources)];
@@ -450,7 +450,9 @@ export class LearnerMastery {
       : MASTERY_SYSTEM;
     await operation?.beforeInvoke();
     if (operation && !operation.active()) {
-      await this.recordReply(locator, prepared.token);
+      await this.recordReply(locator, prepared.token, undefined, (tx) =>
+        operation.knownOutcome(tx, 'paused'),
+      );
       throw new Error('MASTERY_DISABLED');
     }
     let raw: string;
@@ -470,7 +472,12 @@ export class LearnerMastery {
         prepared.evidence,
       );
     } catch (error) {
-      await this.recordReply(locator, prepared.token, undefined, operation?.invalidReply);
+      await this.recordReply(
+        locator,
+        prepared.token,
+        undefined,
+        operation && ((tx) => operation.knownOutcome(tx, 'invalid')),
+      );
       if (operation) throw new Error('MASTERY_REPLY_INVALID', { cause: error });
       throw error;
     }
