@@ -38,7 +38,7 @@ type Candidate = {
 type Body = Pick<StatelessChatRequest, 'messages' | 'config' | 'storeState'>;
 type Input = { owner: string; body: Body; model: ResolvedModel; signal: AbortSignal };
 
-async function resolveScope(
+export async function resolveSimulatedSceneScope(
   owner: string,
   stageId: string,
   sceneId: string,
@@ -143,7 +143,7 @@ function masteryCandidate(item: PlannerMastery): Candidate {
 }
 
 const defaultDeps = {
-  resolveScope,
+  resolveScope: resolveSimulatedSceneScope,
   readMemory: readSimulatedLearnerMemory,
   authorizeMemory: authorizeDialogueMemorySupports,
   readMastery: readPlannerMastery,
@@ -223,7 +223,71 @@ async function selectContext(input: Input, environment: string, deps: typeof def
   if (!scope || signal.aborted) return;
   const task = taskFor(body, scope);
   if (!task) return;
-  const candidates = await readCandidates(deps, owner, scope.student, environment, {
+  const selected = await selectScopedLearnerContext(
+    {
+      owner,
+      student: scope.student,
+      environment,
+      model,
+      signal,
+      task,
+      system: SELECT_SYSTEM,
+      usageLabel: 'dialogue-learner-context',
+      stillCurrent: async () => {
+        const current = await deps.resolveScope(owner, stageId, sceneId);
+        return (
+          current?.runId === scope.runId &&
+          current.student === scope.student &&
+          digest(taskFor(body, current)) === digest(task)
+        );
+      },
+    },
+    deps,
+  );
+  return selected?.text;
+}
+
+function candidateFingerprint(item: Candidate): string {
+  return digest({ kind: item.kind, key: item.key, fingerprint: item.fingerprint });
+}
+
+export async function checkScopedLearnerContext(
+  owner: string,
+  student: SimulatedLearnerId,
+  environment: string,
+  fingerprints: readonly string[],
+): Promise<boolean> {
+  if (!fingerprints.length) return true;
+  try {
+    const fresh = await readCandidates(defaultDeps, owner, student, environment, {
+      memory: true,
+      mastery: true,
+    });
+    const present = new Set(fresh.map(candidateFingerprint));
+    return fingerprints.every((key) => present.has(key));
+  } catch {
+    return false;
+  }
+}
+
+/** Task-specific callers share the same authority, projection and selection limits. */
+export async function selectScopedLearnerContext(
+  input: {
+    owner: string;
+    student: SimulatedLearnerId;
+    environment: string;
+    model: ResolvedModel;
+    signal: AbortSignal;
+    task: unknown;
+    system: string;
+    usageLabel: string;
+    stillCurrent?: () => Promise<boolean>;
+  },
+  deps = defaultDeps,
+) {
+  const { owner, student, environment, model, signal, task, system, usageLabel } = input;
+  if (!model.serverManaged || signal.aborted) return;
+  const candidates = await readCandidates(deps, owner, student, environment, {
     memory: true,
     mastery: true,
   });
@@ -245,13 +309,13 @@ async function selectContext(input: Input, environment: string, deps: typeof def
     })),
   });
   const prompt = {
-    system: SELECT_SYSTEM,
+    system,
     user,
-    inputBytes: Buffer.byteLength(SELECT_SYSTEM + user),
+    inputBytes: Buffer.byteLength(system + user),
   };
   const reply = await deps.select({
     resolvedModel: model,
-    usageLabel: 'dialogue-learner-context',
+    usageLabel,
     prompt,
     beforeSelect: async () => signal.throwIfAborted(),
     signal,
@@ -267,20 +331,13 @@ async function selectContext(input: Input, environment: string, deps: typeof def
   };
   if (counts.memory > MAX_MEMORY || counts.mastery > MAX_MASTERY || !chosen.length) return;
   const [fresh, current] = await Promise.all([
-    readCandidates(deps, owner, scope.student, environment, {
+    readCandidates(deps, owner, student, environment, {
       memory: counts.memory > 0,
       mastery: counts.mastery > 0,
     }),
-    deps.resolveScope(owner, stageId, sceneId),
+    input.stillCurrent?.() ?? true,
   ]);
-  if (
-    signal.aborted ||
-    !current ||
-    current.runId !== scope.runId ||
-    current.student !== scope.student ||
-    digest(taskFor(body, current)) !== digest(task)
-  )
-    return;
+  if (signal.aborted || !current) return;
   const trusted = chosen.filter((item) =>
     fresh.some(
       (candidate) =>
@@ -290,7 +347,12 @@ async function selectContext(input: Input, environment: string, deps: typeof def
     ),
   );
   return trusted.length
-    ? JSON.stringify(trusted.map((item) => ({ kind: item.kind, data: JSON.parse(item.text) })))
+    ? {
+        text: JSON.stringify(
+          trusted.map((item) => ({ kind: item.kind, data: JSON.parse(item.text) })),
+        ),
+        fingerprints: trusted.map(candidateFingerprint),
+      }
     : undefined;
 }
 

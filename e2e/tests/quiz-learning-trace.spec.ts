@@ -32,7 +32,7 @@ const choices: QuizQuestion[] = [
   },
 ];
 
-async function seed(page: Page, questions: QuizQuestion[]) {
+async function seed(page: Page, questions: QuizQuestion[], nextScene = false) {
   await page.addInitScript(
     (settings) => {
       localStorage.setItem('maic:account:settings-storage', settings);
@@ -63,6 +63,20 @@ async function seed(page: Page, questions: QuizQuestion[]) {
         createdAt: now,
         updatedAt: now,
       },
+      ...(nextScene
+        ? [
+            {
+              id: 'next-scene',
+              stageId,
+              type: 'quiz' as const,
+              title: 'Next classroom activity',
+              order: 1,
+              content: { type: 'quiz' as const, questions },
+              createdAt: now,
+              updatedAt: now,
+            },
+          ]
+        : []),
     ],
     outline: { outlines: [], createdAt: now, updatedAt: now },
   });
@@ -81,6 +95,55 @@ async function answerChoices(page: Page) {
 }
 
 test.describe('Quiz Learning Trace', () => {
+  test('F85 feedback is optional, retryable by keyboard and reopens without regeneration', async ({
+    page,
+  }) => {
+    const retryToken = '00000000-0000-4000-8000-000000000085';
+    const ready = {
+      status: 'ready',
+      feedback: {
+        summary: 'You correctly chose four and both even numbers.',
+        practiceDirection: null,
+      },
+      partial: false,
+    };
+    let posts = 0;
+    let state: unknown = { status: 'idle' };
+    await page.route('**/api/quiz-feedback*', async (route) => {
+      if (route.request().method() === 'POST') {
+        posts++;
+        if (posts === 1) {
+          state = { status: 'pending' };
+        } else {
+          expect(route.request().postDataJSON().retryToken).toBe(retryToken);
+          state = ready;
+        }
+      }
+      await route.fulfill({ json: state });
+    });
+    await seed(page, choices, true);
+    await answerChoices(page);
+    await page.getByRole('button', { name: 'Submit Answers', exact: true }).click();
+    const card = page.getByRole('region', { name: 'AI learning feedback' });
+    await expect(card.getByRole('status')).toContainText('Preparing feedback');
+    await expect(page.getByTestId('quiz-trace-score')).toContainText('Usable score: 4 / 4');
+    const classroom = new ClassroomPage(page);
+    await classroom.clickScene(1);
+    await expect(page.getByRole('button', { name: 'Start Quiz', exact: true })).toBeVisible();
+    await expect(card).toHaveCount(0);
+    state = { status: 'failed', retryToken };
+    await classroom.clickScene(0);
+    await expect(card.getByRole('status')).toContainText('could not be prepared');
+    const retry = card.getByRole('button', { name: 'Retry feedback' });
+    await retry.focus();
+    await page.keyboard.press('Enter');
+    await expect(card).toContainText(ready.feedback.summary);
+    await page.reload();
+    await expect(card).toContainText(ready.feedback.summary);
+    await expect(page.getByTestId('quiz-trace-score')).toContainText('Usable score: 4 / 4');
+    expect(posts).toBe(2);
+  });
+
   test('real Provider: synthetic short-answer grading with saved execution metadata (opt-in)', async ({
     page,
   }, testInfo) => {

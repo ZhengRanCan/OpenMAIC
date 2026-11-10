@@ -35,6 +35,7 @@ import type { QuestionResult } from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
 import type { QuizAnswers } from '@/lib/quiz/persistence';
 import { QuizLearningStatus } from './quiz-learning-status';
+import { QuizFeedbackCard } from './quiz-feedback';
 import type {
   PreparedQuiz,
   PrepareQuizInput,
@@ -1482,6 +1483,18 @@ export function QuizView({ scene, planning }: QuizViewProps) {
                   </p>
                 )}
                 {prepared.review && <TraceScore review={prepared.review} />}
+                {prepared.review &&
+                  prepared.submission &&
+                  !historical &&
+                  prepared.review.summary.status !== 'unavailable' && (
+                    <QuizFeedbackCard
+                      key={prepared.review.id}
+                      attemptId={prepared.attemptId}
+                      versionId={prepared.version.id}
+                      submissionId={prepared.submission.id}
+                      reviewId={prepared.review.id}
+                    />
+                  )}
                 {prepared.review && !historical && (
                   <QuizLearningStatus attemptId={prepared.attemptId} />
                 )}
