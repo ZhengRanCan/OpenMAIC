@@ -49,7 +49,9 @@ export function QuizFeedbackCard({
         if (!controller.signal.aborted) setResult({ status: 'unknown' });
       }
     };
-    void load(action.revision === 0, action.retryToken);
+    // A status check can confirm that the first request never claimed a job.
+    // In that case the ordinary POST is safe and deduplicated by the server.
+    void load(true, action.retryToken);
     return () => {
       controller.abort();
       clearTimeout(timer);

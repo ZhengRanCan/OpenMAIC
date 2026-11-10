@@ -95,6 +95,49 @@ async function answerChoices(page: Page) {
 }
 
 test.describe('Quiz Learning Trace', () => {
+  test('F85 feedback recovers an unclaimed request and hides a denied result', async ({ page }) => {
+    let posts = 0;
+    let unavailable = true;
+    let deny = false;
+    const summary = 'You correctly chose four and both even numbers.';
+    await page.route('**/api/quiz-feedback*', async (route) => {
+      if (route.request().method() === 'POST') {
+        posts++;
+        expect(route.request().postDataJSON().retryToken).toBeUndefined();
+        await route.fulfill({
+          json: {
+            status: 'ready',
+            feedback: { summary, practiceDirection: null },
+            partial: false,
+          },
+        });
+        return;
+      }
+      if (deny) await route.fulfill({ status: 404 });
+      else if (unavailable) await route.fulfill({ status: 503 });
+      else await route.fulfill({ json: { status: 'idle' } });
+    });
+    await seed(page, choices);
+    await answerChoices(page);
+    await page.getByRole('button', { name: 'Submit Answers', exact: true }).click();
+    const card = page.getByRole('region', { name: 'AI learning feedback' });
+    await expect(card.getByRole('status')).toContainText('Feedback status is uncertain');
+    expect(posts).toBe(0);
+    unavailable = false;
+    await card.getByRole('button', { name: 'Check feedback status' }).click();
+    await expect(card).toContainText(summary);
+    expect(posts).toBe(1);
+    deny = true;
+    const denied = page.waitForResponse(
+      (response) => response.url().includes('/api/quiz-feedback?') && response.status() === 404,
+    );
+    await page.reload();
+    await denied;
+    await expect(card).toHaveCount(0);
+    await expect(page.getByTestId('quiz-trace-score')).toContainText('Usable score: 4 / 4');
+    expect(posts).toBe(1);
+  });
+
   test('F85 feedback is optional, retryable by keyboard and reopens without regeneration', async ({
     page,
   }) => {
