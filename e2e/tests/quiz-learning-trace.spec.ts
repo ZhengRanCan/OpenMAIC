@@ -112,6 +112,7 @@ test.describe('Quiz Learning Trace', () => {
     let accepts = 0;
     let practiceState: Record<string, unknown> = { status: 'idle' };
     let stageId = '';
+    let sourceReviewId = '';
     const helpLink = {
       id: '00000000-0000-4000-8000-000000000086',
       attemptId: 'practice-attempt',
@@ -130,6 +131,14 @@ test.describe('Quiz Learning Trace', () => {
       }),
     );
     await page.route('**/api/quiz-practice*', async (route) => {
+      if (route.request().method() === 'GET') {
+        const id = new URL(route.request().url()).searchParams.get('reviewId') ?? '';
+        sourceReviewId ||= id;
+        if (id !== sourceReviewId) {
+          await route.fulfill({ json: { status: 'disabled' } });
+          return;
+        }
+      }
       if (route.request().method() === 'POST') {
         const body = route.request().postDataJSON();
         if (body.action === 'accept') {
@@ -237,6 +246,46 @@ test.describe('Quiz Learning Trace', () => {
     await expect(page.getByTestId('quiz-trace-score')).toContainText('Usable score: 4 / 4');
     await page.reload();
     await expect(practice.getByTestId('quiz-trace-score')).toContainText('Usable score: 1 / 1');
+    await page.route('**/api/quiz-trace/history?*', async (route) => {
+      const original = await route.fetch();
+      const history = await original.json();
+      history.attempts.push({
+        ...history.attempts[0],
+        attemptId: helpLink.attemptId,
+        sceneId: 'separate-practice-scene',
+        practiceSourceReviewId: sourceReviewId,
+        practiceHelpRequested: true,
+        version: {
+          ...history.attempts[0].version,
+          id: helpLink.versionId,
+          scene: { type: 'quiz', content: { type: 'quiz', questions: [practiceState.question] } },
+        },
+        submission: { answers: { [question.id]: 'B' } },
+        review: practiceState.review,
+      });
+      await route.fulfill({ response: original, json: history });
+    });
+    const rescoped = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === '/api/quiz-practice' &&
+        url.searchParams.has('reviewId') &&
+        url.searchParams.get('reviewId') !== sourceReviewId
+      );
+    });
+    await page.getByRole('button', { name: 'Re-evaluate this submission', exact: true }).click();
+    await rescoped;
+    await expect(practice).toHaveCount(0);
+    await page.getByRole('button', { name: 'Quiz history', exact: true }).click();
+    const history = page.getByTestId('quiz-trace-history');
+    await expect(history).toContainText('Submitted attempts read: 1');
+    await history.getByText('Submission 1', { exact: false }).first().click();
+    await history.getByText('Saved optional practice', { exact: true }).click();
+    const savedPractice = history.getByTestId('quiz-practice-history');
+    await expect(savedPractice.getByTestId('quiz-trace-score')).toContainText(
+      'Usable score: 1 / 1',
+    );
+    await expect(savedPractice).toContainText('Help was requested');
     expect(accepts).toBe(1);
   });
 

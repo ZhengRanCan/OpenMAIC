@@ -940,6 +940,39 @@ function TraceHistory({
                   ))}
                 </div>
               </details>
+              {history.attempts
+                .filter(
+                  (practice) =>
+                    practice.submission &&
+                    attempt.reviews.some(({ id }) => id === practice.practiceSourceReviewId),
+                )
+                .map(
+                  (practice) =>
+                    practice.version.scene.content.type === 'quiz' && (
+                      <details
+                        key={practice.attemptId}
+                        className="rounded-lg border p-3"
+                        data-testid="quiz-practice-history"
+                      >
+                        <summary className="cursor-pointer font-medium">
+                          {t('quiz.practiceHistory')}
+                        </summary>
+                        <div className="space-y-2 pt-2">
+                          <QuizQuestions
+                            questions={practice.version.scene.content.questions}
+                            answers={practice.submission!.answers}
+                            review={practice.review}
+                            locked
+                            onChange={() => {}}
+                          />
+                          {practice.review && <TraceScore review={practice.review} />}
+                          {practice.practiceHelpRequested && (
+                            <p>{t('quiz.practiceHelpRequested')}</p>
+                          )}
+                        </div>
+                      </details>
+                    ),
+                )}
               <button type="button" className="text-sm underline" onClick={() => onSelect(attempt)}>
                 {t('quiz.traceViewAttempt')}
               </button>

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QuizPracticeService } from '@/lib/server/quiz-practice';
 import { QuizFeedbackService } from '@/lib/server/quiz-feedback';
-import { readQuizAttempt, loadQuizForPlay } from '@/lib/persistence/quiz-trace-read';
+import {
+  readQuizAttempt,
+  loadQuizForPlay,
+  readQuizHistory,
+} from '@/lib/persistence/quiz-trace-read';
 import { deleteQuizTraceIn } from '@/lib/persistence/quiz-trace-lifecycle';
 import { maskUnreviewedQuizPractice } from '@/lib/quiz/practice';
 import { traceFixture } from './quiz-trace-fixture';
@@ -153,6 +157,23 @@ describe('F86 supplemental practice', () => {
     expect(
       (await readQuizAttempt(f.provider, options.owner, practice.attemptId)).reviews,
     ).toHaveLength(1);
+    await f.service.finishReview(
+      options.owner,
+      await f.service.beginReview(options.owner, options.locator.attemptId, {
+        operationId: 'original-regrade',
+        submissionId: options.locator.submissionId,
+        language: 'en-US',
+      }),
+      { results: review.results, summary: review.summary },
+    );
+    await expect(service.read(options)).rejects.toMatchObject({ status: 409 });
+    const history = await readQuizHistory(f.provider, options.owner, 'stage');
+    const prior = history.attempts.find(({ attemptId }) => attemptId === practice.attemptId);
+    expect(prior).toMatchObject({
+      practiceSourceReviewId: review.id,
+      practiceHelpRequested: true,
+      review: { summary: { usableEarned: 1, usablePossible: 1 } },
+    });
     await f.provider.withTransaction((tx) =>
       deleteQuizTraceIn(tx, options.owner, { stageId: 'stage' }),
     );

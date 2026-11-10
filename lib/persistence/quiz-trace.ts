@@ -34,6 +34,7 @@ export interface AttemptRow extends Record<string, unknown> {
   submission: QuizSubmission | null;
   current_review_id: string | null;
   practice_source_review_id?: string | null;
+  practice_help_requested?: boolean;
 }
 export const runtimeIn = (tx: Queryable) =>
   new PgRuntimeStore(tx, {
@@ -81,7 +82,9 @@ export async function readPreparedIn(
   id: string,
 ): Promise<PreparedQuiz> {
   const r = await tx.query<AttemptRow>(
-    `SELECT a.*,p.review_id AS practice_source_review_id FROM quiz_trace_attempts a
+    `SELECT a.*,p.review_id AS practice_source_review_id,
+        EXISTS (SELECT 1 FROM quiz_practice_help h WHERE h.attempt_id=p.attempt_id) AS practice_help_requested
+      FROM quiz_trace_attempts a
       JOIN stage_meta m ON m.stage_id=a.stage_id
       LEFT JOIN quiz_optional_practice p ON p.attempt_id=a.id
       WHERE a.id=$1 AND a.owner_id=$2 AND m.deleted_at IS NULL`,
@@ -110,7 +113,10 @@ export async function readPreparedIn(
   return {
     attemptId: id,
     ...(row.practice_source_review_id
-      ? { practiceSourceReviewId: row.practice_source_review_id }
+      ? {
+          practiceSourceReviewId: row.practice_source_review_id,
+          practiceHelpRequested: row.practice_help_requested,
+        }
       : {}),
     stageId: row.stage_id,
     sceneId: row.scene_id,

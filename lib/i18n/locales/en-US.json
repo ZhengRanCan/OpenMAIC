@@ -819,6 +819,7 @@
     "practiceFinishReview": "Recover practice result",
     "practiceAsk": "Ask for help on this question",
     "practiceHelpRequested": "Help was requested for this practice question.",
+    "practiceHistory": "Saved optional practice",
     "practiceHelpMessage": "Please give me one hint for this optional practice question and save the answer for later.",
     "traceEvaluationFailed": "The evaluation response could not be confirmed. Check saved evaluation before choosing to re-evaluate.",
     "traceGrade": "Grade this submission",

@@ -139,9 +139,6 @@ export class QuizPracticeService {
       if (row.state === 'failed') return { status: 'failed', retryToken: row.claim_id };
       const attempt = await readPreparedIn(tx, options.owner, row.attempt_id!);
       const question = questionFor(attempt);
-      const help = await tx.query('SELECT 1 FROM quiz_practice_help WHERE attempt_id=$1 LIMIT 1', [
-        attempt.attemptId,
-      ]);
       const choice = attempt.answers[question.id];
       return {
         status: 'ready',
@@ -151,7 +148,7 @@ export class QuizPracticeService {
         choice: typeof choice === 'string' ? choice : undefined,
         submitted: Boolean(attempt.submission),
         review: attempt.review,
-        helpRequested: help.rows.length > 0,
+        helpRequested: Boolean(attempt.practiceHelpRequested),
       };
     });
   }

@@ -819,6 +819,7 @@
     "practiceFinishReview": "恢复练习结果",
     "practiceAsk": "就这道题求助",
     "practiceHelpRequested": "已记录对这道练习题的求助请求。",
+    "practiceHistory": "已保存的补充练习",
     "practiceHelpMessage": "请给我一个关于这道补充练习题的提示，答案先留到之后。",
     "traceEvaluationFailed": "尚未确认评价响应，请先核查已保存评价，再决定是否重新评价。",
     "traceGrade": "评价这份提交",

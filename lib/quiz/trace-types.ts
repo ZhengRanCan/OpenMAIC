@@ -78,6 +78,7 @@ export interface QuizReview extends QuizEvaluation {
 export interface PreparedQuiz {
   attemptId: string;
   practiceSourceReviewId?: string;
+  practiceHelpRequested?: boolean;
   stageId: string;
   sceneId: string;
   version: SceneHistoryVersion;
