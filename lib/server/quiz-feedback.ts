@@ -43,12 +43,13 @@ type Row = Record<string, unknown> & {
   expired: boolean;
   result: Saved | null;
 };
-type Options = {
+export type QuizFeedbackOptions = {
   owner: string;
   locator: QuizFeedbackLocator;
   environment: string;
   language: string;
 };
+type Options = QuizFeedbackOptions;
 
 export function projectQuizFeedbackTask(quiz: PreparedQuiz) {
   const { review, submission } = quiz;
@@ -88,7 +89,11 @@ export function projectQuizFeedbackTask(quiz: PreparedQuiz) {
   if (Buffer.byteLength(JSON.stringify(task)) <= 12_000) return task;
 }
 
-async function current(tx: Queryable, { owner, locator }: Options, lock = false) {
+export async function readCurrentQuizFeedbackReviewIn(
+  tx: Queryable,
+  { owner, locator }: Pick<Options, 'owner' | 'locator'>,
+  lock = false,
+) {
   const authorized = await tx.query(
     `SELECT m.stage_id FROM quiz_trace_attempts a
        JOIN stage_meta m ON m.stage_id=a.stage_id AND m.owner_id=a.owner_id
@@ -116,6 +121,7 @@ async function current(tx: Queryable, { owner, locator }: Options, lock = false)
   if (newer.rows.length) throw new QuizTraceError('STALE_QUIZ_FEEDBACK', 409);
   return quiz;
 }
+const current = readCurrentQuizFeedbackReviewIn;
 
 async function readRow(tx: Queryable, { owner, locator }: Options) {
   const { rows } = await tx.query<Row>(

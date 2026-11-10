@@ -165,6 +165,7 @@ export type ChatRequestTemplate = {
 
 export interface ChatMessageSendOptions {
   elementReference?: ElementReference;
+  quizPracticeHelp?: ChatMessageMetadata['quizPracticeHelp'];
   onResponseAccepted?: (response: Response) => void;
 }
 
@@ -174,12 +175,16 @@ export interface ChatMessageSendOptions {
  * them when a scene transition raced the read (a stale scene's results must
  * not leak into the next scene's request).
  */
-async function buildFreshAgentLoopStoreState(): Promise<AgentLoopStoreState> {
+async function buildFreshAgentLoopStoreState(
+  includeQuizResults = true,
+): Promise<AgentLoopStoreState> {
   const stateBeforeQuizRead = useStageStore.getState();
-  const quizResults = await buildQuizResultsForStoreState(
-    stateBeforeQuizRead.scenes,
-    stateBeforeQuizRead.currentSceneId,
-  );
+  const quizResults = includeQuizResults
+    ? await buildQuizResultsForStoreState(
+        stateBeforeQuizRead.scenes,
+        stateBeforeQuizRead.currentSceneId,
+      )
+    : undefined;
   const freshState = useStageStore.getState();
   return {
     stage: freshState.stage,
@@ -1329,6 +1334,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     ): Promise<void> => {
       const requestScope = captureSessionScope();
       if (!scopeIsCurrent(requestScope)) return;
+      const includeQuizResults = !requestTemplate.messages.some(
+        ({ metadata }) => metadata?.quizPracticeHelp,
+      );
       // Attach full configs for generated (non-default) agents so the server can use them.
       // The server-side registry only has default agents; generated agents exist only client-side.
       const generatedConfigs = requestTemplate.config.agentIds
@@ -1344,7 +1352,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         // Pi bypasses runAgentLoop's per-iteration getStoreState, so its single
         // request needs the snapshot built here — /api/chat/pi rejects bodies
         // without storeState.
-        const storeState = await buildFreshAgentLoopStoreState();
+        const storeState = await buildFreshAgentLoopStoreState(includeQuizResults);
         if (!scopeIsCurrent(requestScope) || controller.signal.aborted) return;
         const firstRequestContext = getFirstPiRequestContext(sessionId);
         const piRequestTemplate = firstRequestContext
@@ -1388,7 +1396,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         },
         {
           getStoreState: async () => {
-            const state = await buildFreshAgentLoopStoreState();
+            const state = await buildFreshAgentLoopStoreState(includeQuizResults);
             if (!scopeIsCurrent(requestScope) || controller.signal.aborted) {
               throw new DOMException('Aborted', 'AbortError');
             }
@@ -1465,7 +1473,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    * Create a new chat session
    */
   const createSession = useCallback(
-    async (type: SessionType, title: string): Promise<string> => {
+    async (type: SessionType, title: string, captureLearningRun = true): Promise<string> => {
       const scope = captureSessionScope();
       if (!scopeIsCurrent(scope)) throw new DOMException('Aborted', 'AbortError');
       const creationState = useStageStore.getState();
@@ -1486,7 +1494,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         toolCalls: [],
         pendingToolCalls: [],
         sceneId: creationState.currentSceneId ?? undefined,
-        learningRunId: learningRunCandidate(creationState),
+        learningRunId: captureLearningRun ? learningRunCandidate(creationState) : undefined,
         ...(type === 'qa' || type === 'discussion'
           ? { initialContext: captureChatSessionInitialContext(creationState) }
           : {}),
@@ -1908,7 +1916,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       // A completed session should NOT be reused — start a fresh one instead.
       const activeSession = sessionsRef.current.find((s) => s.id === sessionId);
       const needNewSession =
-        !sessionId || activeSession?.type === 'lecture' || activeSession?.status === 'completed';
+        !sessionId ||
+        activeSession?.type === 'lecture' ||
+        activeSession?.status === 'completed' ||
+        Boolean(options.quizPracticeHelp);
 
       if (needNewSession) {
         // End all active QA/Discussion sessions before creating new one
@@ -1917,7 +1928,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           await endSession(session.id);
           if (!scopeIsCurrent(scope)) return;
         }
-        sessionId = await createSession('qa', 'Q&A');
+        sessionId = await createSession('qa', 'Q&A', !options.quizPracticeHelp);
       } else if (sessionId && activeSession?.status === 'soft-closing') {
         if (claimSoftCloseRegistration(sessionId)) {
           softCloseLifecycleRef.current.set(sessionId, 'active');
@@ -1954,6 +1965,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           senderAvatar: USER_AVATAR,
           originalRole: 'user',
           createdAt: now,
+          ...(options.quizPracticeHelp ? { quizPracticeHelp: options.quizPracticeHelp } : {}),
         },
       };
 
@@ -1989,7 +2001,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             pendingToolCalls: [],
             sceneId: creationState.currentSceneId ?? undefined,
             initialContext: fallbackContext,
-            learningRunId: learningRunCandidate(creationState),
+            learningRunId: options.quizPracticeHelp
+              ? undefined
+              : learningRunCandidate(creationState),
             createdAt: now,
             updatedAt: now,
           };

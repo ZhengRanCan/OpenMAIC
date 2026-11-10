@@ -24,6 +24,7 @@ export type SessionStatus =
  * Metadata attached to chat messages
  */
 export interface ChatMessageMetadata {
+  quizPracticeHelp?: import('@/lib/quiz/practice').QuizPracticeHelp;
   senderName?: string;
   senderAvatar?: string;
   originalRole?: 'teacher' | 'agent' | 'user';

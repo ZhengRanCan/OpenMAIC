@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { QuizFeedbackLocator, QuizFeedbackStatus } from '@/lib/quiz/feedback';
 
@@ -9,7 +9,8 @@ export function QuizFeedbackCard({
   versionId,
   submissionId,
   reviewId,
-}: QuizFeedbackLocator) {
+  practice,
+}: QuizFeedbackLocator & { practice?: ReactNode }) {
   const { t, locale } = useI18n();
   const [result, setResult] = useState<QuizFeedbackStatus>({ status: 'disabled' });
   const [action, setAction] = useState<{ revision: number; retryToken?: string }>({ revision: 0 });
@@ -70,10 +71,13 @@ export function QuizFeedbackCard({
           {result.partial && <p className="text-muted-foreground">{t('quiz.feedbackPartial')}</p>}
           <p>{result.feedback.summary}</p>
           {result.feedback.practiceDirection && (
-            <p>
-              <strong>{t('quiz.feedbackPractice')} </strong>
-              {result.feedback.practiceDirection}
-            </p>
+            <>
+              <p>
+                <strong>{t('quiz.feedbackPractice')} </strong>
+                {result.feedback.practiceDirection}
+              </p>
+              {practice}
+            </>
           )}
         </div>
       ) : (

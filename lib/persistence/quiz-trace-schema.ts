@@ -51,6 +51,29 @@ CREATE TABLE quiz_review_feedback (
 );
 `,
     },
+    {
+      version: 3,
+      name: 'quiz_optional_practice',
+      transaction: true,
+      up: `
+CREATE TABLE quiz_optional_practice (
+ owner_id TEXT NOT NULL,
+ review_id TEXT NOT NULL REFERENCES quiz_trace_reviews(id) ON DELETE CASCADE,
+ claim_id TEXT NOT NULL,
+ state TEXT NOT NULL CHECK (state IN ('pending','ready','failed','unknown')),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ attempt_id TEXT UNIQUE REFERENCES quiz_trace_attempts(id) ON DELETE CASCADE,
+ direction TEXT NOT NULL,
+ PRIMARY KEY(owner_id,review_id)
+);
+CREATE TABLE quiz_practice_help (
+ id TEXT PRIMARY KEY,
+ attempt_id TEXT NOT NULL REFERENCES quiz_optional_practice(attempt_id) ON DELETE CASCADE,
+ version_id TEXT NOT NULL REFERENCES scene_history_versions(id) ON DELETE RESTRICT,
+ requested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`,
+    },
   ],
 };
 export async function ensureQuizTraceSchema(tx: Queryable) {

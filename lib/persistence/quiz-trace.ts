@@ -33,19 +33,58 @@ export interface AttemptRow extends Record<string, unknown> {
   previous_id: string | null;
   submission: QuizSubmission | null;
   current_review_id: string | null;
+  practice_source_review_id?: string | null;
 }
 export const runtimeIn = (tx: Queryable) =>
   new PgRuntimeStore(tx, {
     withTransaction: (body) => body(tx),
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
   });
+
+/** Caller holds the owner fence and stage row lock and supplies a saved version. */
+export async function createQuizAttemptIn(
+  tx: Queryable,
+  owner: string,
+  version: PreparedQuiz['version'],
+  previousId?: string,
+) {
+  const { id: sceneId, stageId } = version.scene;
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const store = runtimeIn(tx);
+  await store.createSession({
+    id,
+    kind: 'quizAttempt',
+    stageId,
+    learnerKey: owner,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  });
+  await store.appendRecord({
+    id: randomUUID(),
+    sessionId: id,
+    sceneId,
+    createdAt: now,
+    payload: { payloadVersion: 2, phase: 'draft', answers: {}, versionId: version.id },
+  });
+  await tx.query(
+    'INSERT INTO quiz_trace_attempts(id,owner_id,stage_id,scene_id,version_id,previous_id) VALUES($1,$2,$3,$4,$5,$6)',
+    [id, owner, stageId, sceneId, version.id, previousId ?? null],
+  );
+  return id;
+}
+
 export async function readPreparedIn(
   tx: Queryable,
   owner: string,
   id: string,
 ): Promise<PreparedQuiz> {
   const r = await tx.query<AttemptRow>(
-    'SELECT a.* FROM quiz_trace_attempts a JOIN stage_meta m ON m.stage_id=a.stage_id WHERE a.id=$1 AND a.owner_id=$2 AND m.deleted_at IS NULL',
+    `SELECT a.*,p.review_id AS practice_source_review_id FROM quiz_trace_attempts a
+      JOIN stage_meta m ON m.stage_id=a.stage_id
+      LEFT JOIN quiz_optional_practice p ON p.attempt_id=a.id
+      WHERE a.id=$1 AND a.owner_id=$2 AND m.deleted_at IS NULL`,
     [id, owner],
   );
   const row = r.rows[0];
@@ -70,6 +109,9 @@ export async function readPreparedIn(
       : undefined;
   return {
     attemptId: id,
+    ...(row.practice_source_review_id
+      ? { practiceSourceReviewId: row.practice_source_review_id }
+      : {}),
     stageId: row.stage_id,
     sceneId: row.scene_id,
     version,
@@ -149,6 +191,12 @@ export class QuizTraceService {
       throw new QuizTraceError('INVALID_PREVIOUS_ATTEMPT', 400);
     return this.transaction(owner, async (tx) => {
       await this.stage(tx, owner, input.stageId);
+      const practice = await tx.query(
+        `SELECT 1 FROM quiz_optional_practice p JOIN quiz_trace_attempts a ON a.id=p.attempt_id
+          WHERE a.owner_id=$1 AND a.stage_id=$2 AND a.scene_id=$3`,
+        [owner, input.stageId, input.sceneId],
+      );
+      if (practice.rows.length) throw new QuizTraceError('PRACTICE_USES_OWN_ENTRY', 409);
       const replay = await this.op(tx, owner, input.operationId, 'prepare', input);
       if (replay) return readPreparedIn(tx, owner, String(replay.attemptId));
       const latest = await tx.query<AttemptRow>(
@@ -207,29 +255,7 @@ export class QuizTraceService {
           planning = input.planning;
         version = await ensureSceneVersionIn(tx, this.provider, owner, scene, planning);
       }
-      const id = randomUUID(),
-        now = new Date().toISOString(),
-        store = runtimeIn(tx);
-      await store.createSession({
-        id,
-        kind: 'quizAttempt',
-        stageId: input.stageId,
-        learnerKey: owner,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      });
-      await store.appendRecord({
-        id: randomUUID(),
-        sessionId: id,
-        sceneId: input.sceneId,
-        createdAt: now,
-        payload: { payloadVersion: 2, phase: 'draft', answers: {}, versionId: version.id },
-      });
-      await tx.query(
-        'INSERT INTO quiz_trace_attempts(id,owner_id,stage_id,scene_id,version_id,previous_id) VALUES($1,$2,$3,$4,$5,$6)',
-        [id, owner, input.stageId, input.sceneId, version.id, input.previousAttemptId ?? null],
-      );
+      const id = await createQuizAttemptIn(tx, owner, version, input.previousAttemptId);
       await this.remember(tx, owner, input.operationId, input.stageId, 'prepare', input, {
         attemptId: id,
       });

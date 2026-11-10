@@ -36,6 +36,7 @@ import { renderQuizMathText } from '@/lib/quiz/math-text';
 import type { QuizAnswers } from '@/lib/quiz/persistence';
 import { QuizLearningStatus } from './quiz-learning-status';
 import { QuizFeedbackCard } from './quiz-feedback';
+import { QuizPracticeCard } from './quiz-practice';
 import type {
   PreparedQuiz,
   PrepareQuizInput,
@@ -1493,6 +1494,30 @@ export function QuizView({ scene, planning }: QuizViewProps) {
                       versionId={prepared.version.id}
                       submissionId={prepared.submission.id}
                       reviewId={prepared.review.id}
+                      practice={
+                        <QuizPracticeCard
+                          locator={{
+                            attemptId: prepared.attemptId,
+                            versionId: prepared.version.id,
+                            submissionId: prepared.submission.id,
+                            reviewId: prepared.review.id,
+                          }}
+                          renderQuestion={(practice, locked, onChange) => (
+                            <>
+                              {practice.review && <TraceScore review={practice.review} />}
+                              <QuizQuestions
+                                questions={[practice.question]}
+                                answers={{ [practice.question.id]: practice.choice ?? '' }}
+                                review={practice.review}
+                                locked={locked}
+                                onChange={(_id, value) => {
+                                  if (typeof value === 'string') onChange(value);
+                                }}
+                              />
+                            </>
+                          )}
+                        />
+                      }
                     />
                   )}
                 {prepared.review && !historical && (

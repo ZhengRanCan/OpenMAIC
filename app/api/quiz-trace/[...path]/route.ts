@@ -7,6 +7,7 @@ import {
   loadQuizForPlay,
 } from '@/lib/persistence/quiz-trace-read';
 import { QuizTraceError } from '@/lib/quiz/trace-validation';
+import { maskUnreviewedQuizPractice } from '@/lib/quiz/practice';
 import { isSameOriginJsonRequest } from '@/lib/persistence/owner-claim-http';
 export const runtime = 'nodejs';
 
@@ -25,17 +26,27 @@ async function handle(req: Request) {
         owner = principal.ownerId;
       let result: unknown;
       if (req.method === 'GET') {
-        if (parts[0] === 'history')
-          result = await readQuizHistory(provider, owner, url.searchParams.get('stageId') ?? '');
-        else if (parts[0] === 'restore')
-          result = await loadQuizForPlay(
+        if (parts[0] === 'history') {
+          const history = await readQuizHistory(
             provider,
             owner,
             url.searchParams.get('stageId') ?? '',
-            url.searchParams.get('sceneId') ?? '',
+          );
+          result = {
+            ...history,
+            attempts: history.attempts.map((quiz) => maskUnreviewedQuizPractice(quiz)!),
+          };
+        } else if (parts[0] === 'restore')
+          result = maskUnreviewedQuizPractice(
+            await loadQuizForPlay(
+              provider,
+              owner,
+              url.searchParams.get('stageId') ?? '',
+              url.searchParams.get('sceneId') ?? '',
+            ),
           );
         else if (parts[0] === 'attempts' && parts.length === 2)
-          result = await readQuizAttempt(provider, owner, parts[1]);
+          result = maskUnreviewedQuizPractice(await readQuizAttempt(provider, owner, parts[1]));
         else throw new QuizTraceError('NOT_FOUND', 404);
       } else {
         const text = await req.text();
@@ -51,7 +62,7 @@ async function handle(req: Request) {
         if (req.method === 'POST' && parts[0] === 'prepare')
           result = await service.prepare(owner, body);
         else if (req.method === 'PUT' && parts[0] === 'attempts' && parts[2] === 'draft')
-          result = await service.saveDraft(owner, parts[1], body);
+          result = maskUnreviewedQuizPractice(await service.saveDraft(owner, parts[1], body));
         else if (req.method === 'POST' && parts[0] === 'attempts' && parts[2] === 'submission')
           result = await service.submit(owner, parts[1], body);
         else throw new QuizTraceError('NOT_FOUND', 404);

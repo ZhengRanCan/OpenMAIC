@@ -18,6 +18,7 @@ import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { QUIZ_PRACTICE_HELP_EVENT, type QuizPracticeHelpRequest } from '@/lib/quiz/practice';
 import { SceneSidebar } from '@/components/stage/scene-sidebar';
 import { Header } from '@/components/header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
@@ -338,6 +339,25 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       },
       [setDraftElementReference],
     );
+
+    useEffect(() => {
+      function askAboutPractice(event: Event) {
+        const help = (event as CustomEvent<QuizPracticeHelpRequest>).detail;
+        const current = useStageStore.getState();
+        if (!help || current.stage?.id !== help.stageId || current.currentSceneId !== help.sceneId)
+          return;
+        const choices = help.options
+          .map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`)
+          .join('\n');
+        setChatAreaCollapsed(false);
+        void chatAreaRef.current?.sendMessage(
+          `${t('quiz.practiceHelpMessage')}\n${help.question}\n${choices}`,
+          { quizPracticeHelp: help.link },
+        );
+      }
+      window.addEventListener(QUIZ_PRACTICE_HELP_EVENT, askAboutPractice);
+      return () => window.removeEventListener(QUIZ_PRACTICE_HELP_EVENT, askAboutPractice);
+    }, [setChatAreaCollapsed, t]);
 
     const updateCurrentPlaybackActionIndex = useCallback((actionIndex: number | null) => {
       currentPlaybackActionIndexRef.current = actionIndex;

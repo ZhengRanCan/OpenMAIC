@@ -95,6 +95,151 @@ async function answerChoices(page: Page) {
 }
 
 test.describe('Quiz Learning Trace', () => {
+  test('F86 opens practice only on acceptance and returns to the original Quiz', async ({
+    page,
+  }) => {
+    const question = {
+      id: 'practice-question',
+      type: 'single',
+      question: 'Supplemental question: three plus five?',
+      options: [
+        { value: 'A', label: 'Seven' },
+        { value: 'B', label: 'Eight' },
+        { value: 'C', label: 'Nine' },
+      ],
+      points: 1,
+    };
+    let accepts = 0;
+    let practiceState: Record<string, unknown> = { status: 'idle' };
+    let stageId = '';
+    const helpLink = {
+      id: '00000000-0000-4000-8000-000000000086',
+      attemptId: 'practice-attempt',
+      versionId: 'practice-version',
+    };
+    await page.route('**/api/quiz-feedback*', (route) =>
+      route.fulfill({
+        json: {
+          status: 'ready',
+          partial: false,
+          feedback: {
+            summary: 'Original quiz result',
+            practiceDirection: 'Try a new addition example.',
+          },
+        },
+      }),
+    );
+    await page.route('**/api/quiz-practice*', async (route) => {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON();
+        if (body.action === 'accept') {
+          accepts++;
+          practiceState = {
+            status: 'ready',
+            attemptId: helpLink.attemptId,
+            lastSeq: 1,
+            submitted: false,
+            helpRequested: false,
+            question,
+          };
+        } else if (body.action === 'help') {
+          practiceState = { ...practiceState, helpRequested: true };
+          await route.fulfill({
+            json: {
+              stageId,
+              sceneId: 'trace-scene',
+              link: helpLink,
+              question: question.question,
+              options: question.options.map(({ label }) => label),
+            },
+          });
+          return;
+        } else if (body.action === 'submit') {
+          expect(body.choice).toBe('B');
+          practiceState = {
+            ...practiceState,
+            submitted: true,
+            question: { ...question, answer: ['B'] },
+            review: {
+              results: [
+                {
+                  questionId: question.id,
+                  correct: true,
+                  earned: 1,
+                  status: 'correct',
+                  evaluation: { state: 'normal', method: 'exact-key' },
+                },
+              ],
+              summary: {
+                status: 'complete',
+                usableEarned: 1,
+                usablePossible: 1,
+                quizPossible: 1,
+                unusableQuestionCount: 0,
+              },
+            },
+          };
+        }
+      }
+      await route.fulfill({ json: practiceState });
+    });
+    await page.route('**/api/quiz-trace/attempts/practice-attempt/draft', async (route) => {
+      practiceState = {
+        ...practiceState,
+        lastSeq: 2,
+        choice: route.request().postDataJSON().answers[question.id],
+      };
+      await route.fulfill({ json: {} });
+    });
+    await page.route(/\/api\/chat(?:\/pi)?$/, async (route) => {
+      const events = [
+        {
+          type: 'agent_start',
+          data: { messageId: 'hint-message', agentId: 'default-1', agentName: 'AI Teacher' },
+        },
+        {
+          type: 'text_delta',
+          data: { messageId: 'hint-message', content: 'Count five more after three.' },
+        },
+        { type: 'agent_end', data: { messageId: 'hint-message', agentId: 'default-1' } },
+        { type: 'done', data: {} },
+      ];
+      await route.fulfill({
+        contentType: 'text/event-stream',
+        body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+      });
+    });
+    stageId = await seed(page, choices, true);
+    await answerChoices(page);
+    await page.getByRole('button', { name: 'Submit Answers', exact: true }).click();
+    const practice = page.getByRole('region', { name: 'Optional practice' });
+    await practice.getByRole('button', { name: 'Not now' }).click();
+    await expect(practice).toHaveCount(0);
+    expect(accepts).toBe(0);
+    await page.getByRole('button', { name: 'Open optional practice' }).click();
+    const start = practice.getByRole('button', { name: 'Start practice', exact: true });
+    await start.focus();
+    await page.keyboard.press('Enter');
+    await expect(practice.getByText(question.question)).toBeVisible();
+    const chat = page.waitForRequest((request) => /\/api\/chat(?:\/pi)?$/.test(request.url()));
+    await practice.getByRole('button', { name: 'Ask for help on this question' }).click();
+    const request = (await chat).postDataJSON();
+    expect(request.config.sessionType).toBe('qa');
+    expect(request.messages.at(-1).metadata.quizPracticeHelp).toEqual(helpLink);
+    expect(request.messages.at(-1).parts[0].text).toContain(question.question);
+    expect(request.storeState.quizResults).toBeUndefined();
+    await expect(practice).toContainText('Help was requested');
+    await practice.getByRole('button', { name: /Eight/ }).click();
+    await practice.getByRole('button', { name: 'Submit practice answer' }).click();
+    await expect(practice.getByTestId('quiz-trace-score')).toContainText('Usable score: 1 / 1');
+    await practice.getByRole('button', { name: 'Return to lesson' }).click();
+    await expect(practice).toHaveCount(0);
+    await expect(page.getByTestId('quiz-trace-score')).toContainText('Usable score: 4 / 4');
+    await page.reload();
+    await expect(practice.getByTestId('quiz-trace-score')).toContainText('Usable score: 1 / 1');
+    expect(accepts).toBe(1);
+  });
+
   test('F85 feedback recovers an unclaimed request and hides a denied result', async ({ page }) => {
     let posts = 0;
     let unavailable = true;
