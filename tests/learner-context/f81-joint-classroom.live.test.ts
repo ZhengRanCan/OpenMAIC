@@ -474,6 +474,11 @@ it.skipIf(mode !== 'preflight' && mode !== 'live' && !replay)(
           signal: AbortSignal.timeout(240_000),
           services: {
             ...defaultRunStepServices,
+            courseObjectives: async () => ({
+              courseObjective: target.statement,
+              targetStatements: [target.statement],
+            }),
+            selectLearnerMastery: async (_owner, candidates) => candidates,
             research: async () => null,
             narrationTarget: async () => null,
           },

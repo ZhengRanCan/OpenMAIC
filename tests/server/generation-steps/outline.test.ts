@@ -169,6 +169,7 @@ describe('outline step', () => {
         target: { id: 'old-target', revision: 1, statement: 'Show common-denominator addition.' },
         summary: 'Completed one step with help.',
         unverified: ['Show the full independent process.'],
+        observations: [],
       },
     ];
     await generateOutlines(

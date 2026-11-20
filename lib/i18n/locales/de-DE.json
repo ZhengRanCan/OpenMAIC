@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "Verfügbar, sobald die Generierung abgeschlossen ist"
   },
+  "mastery": {
+    "title": "Lernstand",
+    "description": "Bewertungen und Nachweise zu den einzelnen Lernzielen ansehen.",
+    "empty": "Für diese Stunde sind keine Teilziele gespeichert.",
+    "error": "Der Lernstand konnte nicht geladen werden.",
+    "refresh": "Aktualisieren",
+    "unverified": "Noch zu prüfen",
+    "evidence": "Nachweis ansehen",
+    "conditions": "Aufgabenbedingungen",
+    "quiz": "Quiz",
+    "dialogue": "Unterrichtsgespräch",
+    "submitted": "Abgegebene Antwort",
+    "noAnswer": "Keine Antwort",
+    "card": {
+      "empty": "Noch kein Nachweis",
+      "untracked": "Für diese Stunde ist keine Lernstandserfassung verfügbar.",
+      "unavailable": "Der ursprüngliche Nachweis wurde geändert oder ist nicht verfügbar."
+    },
+    "update": {
+      "pending": "Lernstand wird aktualisiert",
+      "failed": "Die letzte Aktualisierung wurde nicht abgeschlossen"
+    },
+    "result": {
+      "correct": "Richtig",
+      "partial": "Teilweise richtig",
+      "incorrect": "Falsch",
+      "ungraded": "Nicht bewertet"
+    },
+    "assistance": {
+      "independent": "Selbstständig",
+      "assisted": "Mit Hilfe",
+      "unknown": "Hilfe unbekannt"
+    },
+    "coverage": {
+      "direct": "Direkt abgedeckt",
+      "partial": "Teilweise abgedeckt",
+      "context": "Nur Hintergrund",
+      "unrelated": "Ohne Bezug"
+    },
+    "speaker": {
+      "student": "Lernende Person",
+      "agent": "Unterrichtsagent",
+      "unknown": "Sprechende Person"
+    }
+  },
   "classroom": {
     "recentClassrooms": "Zuletzt verwendet",
     "today": "Heute",

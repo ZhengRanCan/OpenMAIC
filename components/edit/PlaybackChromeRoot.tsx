@@ -1556,7 +1556,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
       return (
         target.closest(
-          ['input', 'textarea', 'select', '[role="slider"]', 'input[type="range"]'].join(', '),
+          [
+            'input',
+            'textarea',
+            'select',
+            '[role="slider"]',
+            'input[type="range"]',
+            '[data-mastery-controls]',
+          ].join(', '),
         ) !== null
       );
     }, []);
@@ -1736,6 +1743,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               hideBackControl={hideHeaderBackControl}
               hideGlobalControls={hideHeaderGlobalControls}
               hideCourseActions={hideHeaderCourseActions}
+              masteryStageId={stage?.id}
             />
           )}
 

@@ -440,6 +440,7 @@ it.skipIf(mode !== 'preflight' && !live)(
         ]);
         const next = await generate('next', requirement, {
           ...(live ? {} : fixed),
+          selectLearnerMastery: async (_owner, candidates) => candidates,
           outline: async (ownerId, input, context) => {
             await save('next.planner-input', {
               requirement: input.requirements.requirement,

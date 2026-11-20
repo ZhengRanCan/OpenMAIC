@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "Disponible cuando termine la generación"
   },
+  "mastery": {
+    "title": "Dominio",
+    "description": "Consulta la evaluación y las evidencias de cada objetivo.",
+    "empty": "Esta clase aún no tiene objetivos secundarios guardados.",
+    "error": "No se pudo cargar el nivel de dominio.",
+    "refresh": "Actualizar",
+    "unverified": "Por verificar",
+    "evidence": "Ver evidencia",
+    "conditions": "Condiciones de la tarea",
+    "quiz": "Cuestionario",
+    "dialogue": "Conversación en clase",
+    "submitted": "Respuesta enviada",
+    "noAnswer": "Sin respuesta",
+    "card": {
+      "empty": "Aún no hay evidencia",
+      "untracked": "El seguimiento del dominio no está disponible para esta clase.",
+      "unavailable": "La evidencia original cambió o ya no está disponible."
+    },
+    "update": {
+      "pending": "Actualizando el nivel de dominio",
+      "failed": "La última actualización no se completó"
+    },
+    "result": {
+      "correct": "Correcto",
+      "partial": "Parcialmente correcto",
+      "incorrect": "Incorrecto",
+      "ungraded": "Sin evaluar"
+    },
+    "assistance": {
+      "independent": "Sin ayuda",
+      "assisted": "Con ayuda",
+      "unknown": "Ayuda desconocida"
+    },
+    "coverage": {
+      "direct": "Cobertura directa",
+      "partial": "Cobertura parcial",
+      "context": "Solo contexto",
+      "unrelated": "Sin relación"
+    },
+    "speaker": {
+      "student": "Estudiante",
+      "agent": "Agente de clase",
+      "unknown": "Participante"
+    }
+  },
   "classroom": {
     "recentClassrooms": "Recientes",
     "today": "Hoy",

@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { StageMode } from '@/lib/types/stage';
 import { classroomExitLabelKey, exitClassroom } from '@/lib/workbench/classroom-exit';
 import { HeaderControls } from './stage/header-controls';
+import { MasteryPanel } from './classroom/MasteryPanel';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -29,6 +30,7 @@ interface HeaderProps {
   readonly hideGlobalControls?: boolean;
   /** Hide course-level share/export in a workbench-attached classroom. */
   readonly hideCourseActions?: boolean;
+  readonly masteryStageId?: string;
 }
 
 export function Header({
@@ -41,6 +43,7 @@ export function Header({
   hideBackControl,
   hideGlobalControls,
   hideCourseActions,
+  masteryStageId,
 }: HeaderProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -89,6 +92,9 @@ export function Header({
 
         {/* Standalone classroom keeps the full cluster. Workbench-attached
             classrooms omit both the global capsule and course share/export. */}
+        {masteryStageId && !hideCourseActions && (
+          <MasteryPanel stageId={masteryStageId} key={masteryStageId} />
+        )}
         <HeaderControls
           mode={mode}
           proModeActive={proModeActive}

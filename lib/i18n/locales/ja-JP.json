@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "生成完了後に利用できます"
   },
+  "mastery": {
+    "title": "習熟状況",
+    "description": "小目標ごとの評価と根拠を確認できます。",
+    "empty": "この授業には保存済みの小目標がありません。",
+    "error": "習熟状況を読み込めませんでした。",
+    "refresh": "更新",
+    "unverified": "未確認",
+    "evidence": "根拠を見る",
+    "conditions": "解答時の条件",
+    "quiz": "クイズ",
+    "dialogue": "授業内の対話",
+    "submitted": "提出した解答",
+    "noAnswer": "未回答",
+    "card": {
+      "empty": "根拠はまだありません",
+      "untracked": "この授業では習熟状況を記録できません。",
+      "unavailable": "元の根拠が変更されたか、利用できません。"
+    },
+    "update": {
+      "pending": "習熟状況を更新中",
+      "failed": "直近の更新が完了しませんでした"
+    },
+    "result": {
+      "correct": "正解",
+      "partial": "一部正解",
+      "incorrect": "不正解",
+      "ungraded": "未評価"
+    },
+    "assistance": {
+      "independent": "自力で解答",
+      "assisted": "支援あり",
+      "unknown": "支援の有無は不明"
+    },
+    "coverage": {
+      "direct": "直接対応",
+      "partial": "部分的に対応",
+      "context": "背景情報",
+      "unrelated": "無関係"
+    },
+    "speaker": {
+      "student": "学習者",
+      "agent": "授業エージェント",
+      "unknown": "発言者"
+    }
+  },
   "classroom": {
     "recentClassrooms": "最近の教室",
     "today": "今日",

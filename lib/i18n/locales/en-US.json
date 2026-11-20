@@ -1096,6 +1096,51 @@
   "share": {
     "notReady": "Available after generation completes"
   },
+  "mastery": {
+    "title": "Mastery",
+    "description": "Review assessments and evidence for each lesson objective.",
+    "empty": "This lesson has no saved subgoals yet.",
+    "error": "Could not load mastery.",
+    "refresh": "Refresh",
+    "unverified": "Still to verify",
+    "evidence": "View evidence",
+    "conditions": "Task conditions",
+    "quiz": "Quiz",
+    "dialogue": "Classroom conversation",
+    "submitted": "Submitted answer",
+    "noAnswer": "No answer",
+    "card": {
+      "empty": "No evidence yet",
+      "untracked": "Mastery tracking is unavailable for this lesson.",
+      "unavailable": "The original evidence has changed or is unavailable."
+    },
+    "update": {
+      "pending": "Updating mastery",
+      "failed": "The latest update did not finish"
+    },
+    "result": {
+      "correct": "Correct",
+      "partial": "Partly correct",
+      "incorrect": "Incorrect",
+      "ungraded": "Not assessed"
+    },
+    "assistance": {
+      "independent": "Independent",
+      "assisted": "With help",
+      "unknown": "Help unknown"
+    },
+    "coverage": {
+      "direct": "Direct coverage",
+      "partial": "Partial coverage",
+      "context": "Background only",
+      "unrelated": "Unrelated"
+    },
+    "speaker": {
+      "student": "Student",
+      "agent": "Classroom agent",
+      "unknown": "Speaker"
+    }
+  },
   "classroom": {
     "recentClassrooms": "Recent",
     "today": "Today",

@@ -71,6 +71,7 @@ import { generateClassroomId } from '@/lib/server/classroom-persistence';
 import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import type { StepContext } from '@/lib/server/generation/steps/context';
 import type { CourseObjectives } from '@/lib/server/generation/steps/course-objectives';
+import type { PlannerMastery } from '@/lib/server/learner-mastery';
 import type { OutlineEvent, OutlineResult } from '@/lib/server/generation/steps/outline';
 import type {
   SceneActionsInput,
@@ -927,12 +928,37 @@ export async function executeGenerationRun(
     }
     const contextText = context ? renderPreclassLearnerContext(context) : '';
     const student = input.simulatedLearner;
-    const mastery =
-      student && services.learnerMastery
-        ? await withDeadline('mastery-read', STEP_DEADLINES_MS.learnerContextRecheck, signal, () =>
-            services.learnerMastery!(owner, student),
-          )
-        : [];
+    const readMastery = services.learnerMastery;
+    const selectMastery = services.selectLearnerMastery;
+    let mastery: PlannerMastery[] = [];
+    if (student && objectives && readMastery && selectMastery) {
+      const candidates = await withDeadline(
+        'mastery-read',
+        STEP_DEADLINES_MS.learnerContextRecheck,
+        signal,
+        () => readMastery(owner, student),
+      );
+      if (candidates.length) {
+        try {
+          mastery = await withDeadline(
+            'mastery-selection',
+            STEP_DEADLINES_MS.learnerContext,
+            signal,
+            (callSignal) =>
+              selectMastery(
+                owner,
+                candidates,
+                { requirement: input.requirement, objectives },
+                { log, signal: callSignal },
+              ),
+          );
+        } catch (error) {
+          if (signal.aborted || isAbortError(error)) throw error;
+          // History is optional. A failed selection must not pass unfiltered states to the outline.
+          log.warn('Mastery selection unavailable; continuing without historical Mastery');
+        }
+      }
+    }
     // Outline items reach subscribers while the model writes: each is
     // appended (fenced) in order, and the final commit waits for them.
     let appending: Promise<unknown> = Promise.resolve();
@@ -992,14 +1018,25 @@ export async function executeGenerationRun(
       await appending;
     }
     if (appendFailure) throw appendFailure;
-    if (mastery.length && student && services.learnerMastery) {
+    if (mastery.length && student && readMastery) {
       const current = await withDeadline(
         'mastery-recheck',
         STEP_DEADLINES_MS.learnerContextRecheck,
         signal,
-        () => services.learnerMastery!(owner, student),
+        () => readMastery(owner, student),
       );
-      if (JSON.stringify(current) !== JSON.stringify(mastery))
+      const currentByTarget = new Map(
+        current.map((item) => [JSON.stringify([item.target.id, item.target.revision]), item]),
+      );
+      if (
+        mastery.some(
+          (item) =>
+            JSON.stringify(item) !==
+            JSON.stringify(
+              currentByTarget.get(JSON.stringify([item.target.id, item.target.revision])),
+            ),
+        )
+      )
         throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
     }
     if (context)

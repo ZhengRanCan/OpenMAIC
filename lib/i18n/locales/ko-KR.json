@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "생성이 완료된 후 이용 가능합니다"
   },
+  "mastery": {
+    "title": "숙달 현황",
+    "description": "수업의 세부 목표별 평가와 근거를 확인합니다.",
+    "empty": "이 수업에 저장된 세부 목표가 없습니다.",
+    "error": "숙달 현황을 불러올 수 없습니다.",
+    "refresh": "새로고침",
+    "unverified": "추가 확인 필요",
+    "evidence": "근거 보기",
+    "conditions": "응답 조건",
+    "quiz": "퀴즈",
+    "dialogue": "수업 대화",
+    "submitted": "제출한 답변",
+    "noAnswer": "미응답",
+    "card": {
+      "empty": "아직 근거가 없습니다",
+      "untracked": "이 수업에서는 숙달도 기록을 사용할 수 없습니다.",
+      "unavailable": "원래 근거가 변경되었거나 사용할 수 없습니다."
+    },
+    "update": {
+      "pending": "숙달 현황 업데이트 중",
+      "failed": "최근 업데이트가 완료되지 않았습니다"
+    },
+    "result": {
+      "correct": "정답",
+      "partial": "부분 정답",
+      "incorrect": "오답",
+      "ungraded": "평가되지 않음"
+    },
+    "assistance": {
+      "independent": "혼자 답함",
+      "assisted": "도움을 받음",
+      "unknown": "도움 여부를 알 수 없음"
+    },
+    "coverage": {
+      "direct": "직접 해당",
+      "partial": "일부 해당",
+      "context": "배경 정보",
+      "unrelated": "관련 없음"
+    },
+    "speaker": {
+      "student": "학생",
+      "agent": "수업 에이전트",
+      "unknown": "발화자"
+    }
+  },
   "classroom": {
     "recentClassrooms": "최근",
     "today": "오늘",

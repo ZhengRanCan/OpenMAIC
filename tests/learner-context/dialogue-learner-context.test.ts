@@ -99,6 +99,7 @@ function fixture(mode: 'qa' | 'discussion' = 'qa') {
         target: { id: 'private-target', revision: 1, statement: '独立计算密度并提交过程。' },
         summary: '上次只观察到受助计算。',
         unverified: [gap],
+        observations: [],
       },
     ]),
     select: vi.fn<Deps['select']>().mockResolvedValue('{"selected":["M1","T1"]}'),

@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "Có thể dùng sau khi tạo xong"
   },
+  "mastery": {
+    "title": "Mức độ nắm vững",
+    "description": "Xem đánh giá và căn cứ của từng mục tiêu bài học.",
+    "empty": "Bài học này chưa có mục tiêu phụ được lưu.",
+    "error": "Không thể tải mức độ nắm vững.",
+    "refresh": "Làm mới",
+    "unverified": "Cần xác minh",
+    "evidence": "Xem bằng chứng",
+    "conditions": "Điều kiện làm bài",
+    "quiz": "Bài kiểm tra",
+    "dialogue": "Hội thoại trong lớp",
+    "submitted": "Câu trả lời đã nộp",
+    "noAnswer": "Chưa trả lời",
+    "card": {
+      "empty": "Chưa có bằng chứng",
+      "untracked": "Bài học này chưa hỗ trợ lưu mức độ nắm vững.",
+      "unavailable": "Bằng chứng gốc đã thay đổi hoặc không có sẵn."
+    },
+    "update": {
+      "pending": "Đang cập nhật mức độ nắm vững",
+      "failed": "Lần cập nhật gần nhất chưa hoàn tất"
+    },
+    "result": {
+      "correct": "Đúng",
+      "partial": "Đúng một phần",
+      "incorrect": "Sai",
+      "ungraded": "Chưa đánh giá"
+    },
+    "assistance": {
+      "independent": "Tự làm",
+      "assisted": "Có trợ giúp",
+      "unknown": "Chưa rõ có trợ giúp"
+    },
+    "coverage": {
+      "direct": "Đánh giá trực tiếp",
+      "partial": "Đánh giá một phần",
+      "context": "Chỉ là bối cảnh",
+      "unrelated": "Không liên quan"
+    },
+    "speaker": {
+      "student": "Học viên",
+      "agent": "Trợ lý lớp học",
+      "unknown": "Người nói"
+    }
+  },
   "classroom": {
     "recentClassrooms": "Gần đây",
     "today": "Hôm nay",

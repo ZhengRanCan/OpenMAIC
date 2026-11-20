@@ -1039,6 +1039,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
           target,
           summary: '教师给出换算值后，学生算对密度。',
           unverified: ['独立换算并列式'],
+          observations: [],
         };
         const quiz = quizOutlines[0]!;
         const discussion = {
@@ -1052,6 +1053,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
             expect([owner, student]).toEqual([OWNER, 'B']);
             return mastery ? [historic] : [];
           },
+          selectLearnerMastery: async (_owner, candidates) => candidates,
           narrationTarget: async () => null,
           outline: async (_owner, input) => {
             expect(input.requirements.requirement).toBe(requirement);

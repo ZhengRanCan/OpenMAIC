@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "Disponible une fois la génération terminée"
   },
+  "mastery": {
+    "title": "Maîtrise",
+    "description": "Consultez les évaluations et les preuves pour chaque objectif du cours.",
+    "empty": "Ce cours ne contient aucun sous-objectif enregistré.",
+    "error": "Impossible de charger le niveau de maîtrise.",
+    "refresh": "Actualiser",
+    "unverified": "À vérifier",
+    "evidence": "Voir les éléments de preuve",
+    "conditions": "Conditions de réponse",
+    "quiz": "Quiz",
+    "dialogue": "Dialogue en classe",
+    "submitted": "Réponse soumise",
+    "noAnswer": "Aucune réponse",
+    "card": {
+      "empty": "Aucune preuve pour le moment",
+      "untracked": "Le suivi de la maîtrise est indisponible pour ce cours.",
+      "unavailable": "La preuve originale a changé ou est indisponible."
+    },
+    "update": {
+      "pending": "Mise à jour du niveau de maîtrise",
+      "failed": "La dernière mise à jour a échoué"
+    },
+    "result": {
+      "correct": "Correct",
+      "partial": "Partiellement correct",
+      "incorrect": "Incorrect",
+      "ungraded": "Non évalué"
+    },
+    "assistance": {
+      "independent": "Sans aide",
+      "assisted": "Avec aide",
+      "unknown": "Aide inconnue"
+    },
+    "coverage": {
+      "direct": "Couverture directe",
+      "partial": "Couverture partielle",
+      "context": "Contexte uniquement",
+      "unrelated": "Sans rapport"
+    },
+    "speaker": {
+      "student": "Élève",
+      "agent": "Agent pédagogique",
+      "unknown": "Intervenant"
+    }
+  },
   "classroom": {
     "recentClassrooms": "Récents",
     "today": "Aujourd’hui",

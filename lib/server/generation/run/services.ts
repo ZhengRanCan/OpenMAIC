@@ -23,6 +23,7 @@ import {
   buildQuizLearnerContext,
 } from '@/lib/server/quiz-learner-context';
 import { invokeMemorySelectionModel } from '@/lib/server/learner-memory-selection-model';
+import { selectPlannerMastery } from '@/lib/learner-mastery/planning';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
@@ -222,6 +223,12 @@ export interface RunStepServices {
     ctx: StepContext,
   ): Promise<void>;
   learnerMastery?(ownerId: string, student: SimulatedLearnerId): Promise<PlannerMastery[]>;
+  selectLearnerMastery?(
+    ownerId: string,
+    candidates: PlannerMastery[],
+    input: Parameters<typeof selectPlannerMastery>[1],
+    ctx: StepContext,
+  ): Promise<PlannerMastery[]>;
   quizLearnerContext?(
     ownerId: string,
     input: Parameters<typeof buildQuizLearnerContext>[0],
@@ -493,7 +500,19 @@ export const defaultRunStepServices: RunStepServices = {
     return research({ ...input, config, rewriteModel }, ctx);
   },
 
-  learnerMastery: readPlannerMastery,
+  learnerMastery: (ownerId, student) => readPlannerMastery(ownerId, student, 12),
+
+  async selectLearnerMastery(ownerId, candidates, input, ctx) {
+    return selectPlannerMastery(candidates, input, async (prompt) =>
+      invokeMemorySelectionModel({
+        resolvedModel: await stageModel(ownerId, 'scene-outlines-stream'),
+        usageLabel: 'f91-mastery-selection',
+        prompt,
+        beforeSelect: async () => {},
+        signal: ctx.signal,
+      }),
+    );
+  },
 
   async courseObjectives(ownerId, input, ctx) {
     return generateCourseObjectives(

@@ -11,6 +11,7 @@ import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
 import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { ensureQuizTraceSchema } from '@/lib/persistence/quiz-trace-schema';
 import { LearnerMastery } from '@/lib/server/learner-mastery';
+import { selectPlannerMastery } from '@/lib/learner-mastery/planning';
 import * as persistence from '@/lib/persistence/server-provider';
 import * as dialogueSettings from '@/lib/server/dialogue-evidence-provenance';
 import { executeGenerationRun } from '@/lib/server/generation/run/engine';
@@ -30,7 +31,10 @@ import { controlledMemoryReply, memoryModel } from './dialogue-memory-fixture';
 import { readDialogueEvidenceRun } from '@/lib/persistence/dialogue-evidence-read';
 import { processDialogueJob } from '@/lib/server/dialogue-learning-loop/process';
 import { enqueueClosedDialogueIn } from '@/lib/server/dialogue-learning-loop/enqueue';
-import { noteDialogueSessionCreatedIn } from '@/lib/server/dialogue-learning-loop/registration';
+import {
+  activateDialogueLoop,
+  noteDialogueSessionCreatedIn,
+} from '@/lib/server/dialogue-learning-loop/registration';
 import { MasteryLearningLoop, startMasteryLearningLoop } from '@/lib/server/mastery-learning-loop';
 import { enqueueReviewedQuiz } from '@/lib/server/quiz-learning-loop/enqueue-reviewed';
 import { claimLearningLoop, ensureLearningLoopSchema } from '@/lib/server/quiz-learning-loop/store';
@@ -44,6 +48,7 @@ import {
 } from '@/app/api/mastery-learning-loop/[runId]/route';
 import * as modelResolver from '@/lib/server/resolve-model';
 import * as llm from '@/lib/ai/llm';
+import { GET as readMasteryCards } from '@/app/api/learner-mastery/[stageId]/route';
 
 const url = process.env.PG_CONTRACT_URL;
 const target = {
@@ -357,7 +362,12 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     return { kind: 'quiz', runId: quiz.id } as const;
   }
 
-  async function saveAutomaticDialogue(id: string, empty = false, trusted = true) {
+  async function saveAutomaticDialogue(
+    id: string,
+    empty = false,
+    trusted = true,
+    sample?: { teacher: string; student: string },
+  ) {
     const qa = id.startsWith('qa-');
     const chat = {
       ...f.chat,
@@ -369,12 +379,22 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
         {
           id: 't',
           role: 'assistant' as const,
-          parts: [{ type: 'text' as const, text: '质量已换算为 480 g，体积 40 cm³，求密度。' }],
+          parts: [
+            {
+              type: 'text' as const,
+              text: sample?.teacher ?? '质量已换算为 480 g，体积 40 cm³，求密度。',
+            },
+          ],
         },
         {
           id: 's',
           role: 'user' as const,
-          parts: [{ type: 'text' as const, text: qa ? '为什么要换算成克？' : '480÷40=12 g/cm³。' }],
+          parts: [
+            {
+              type: 'text' as const,
+              text: sample?.student ?? (qa ? '为什么要换算成克？' : '480÷40=12 g/cm³。'),
+            },
+          ],
         },
       ],
     };
@@ -1020,11 +1040,35 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
       }),
     ]);
     expect(await new LearnerMastery(f.provider, f.settings).read(locator)).toEqual(after);
-    expect(await service.listForPlanner('owner', 'A')).toEqual([
-      { target, summary: after?.state.summary, unverified },
+    expect(await service.listForPlanner('owner', 'A')).toMatchObject([
+      {
+        target,
+        summary: after?.state.summary,
+        unverified,
+        observations: [
+          { assistance: 'assisted' },
+          { assistance: 'unknown', conditions: ['authored synthetic fixture'] },
+        ],
+      },
     ]);
     expect(await service.listForPlanner('owner', 'B')).toEqual([]);
     expect(await service.listForPlanner('foreign', 'A')).toEqual([]);
+    expect(await service.readClassroom('owner', 'stage')).toMatchObject({
+      cards: [
+        {
+          status: 'ready',
+          target,
+          observations: [
+            { assistance: 'assisted', source: { kind: 'dialogue' } },
+            {
+              assistance: 'unknown',
+              result: 'incorrect',
+              source: { kind: 'quiz', title: '密度小测', questions: [{ submitted: 'B' }] },
+            },
+          ],
+        },
+      ],
+    });
     expect(await service.maintain(locator, [discussion, source, { ...source }], invoke)).toEqual(
       after,
     );
@@ -1032,7 +1076,312 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     await f.db.query('DELETE FROM f68_short_facts_runs WHERE id=$1', [source.runId]);
     await expect(service.read(locator)).rejects.toThrow('SHORT_FACTS_NOT_FOUND');
     expect(await service.listForPlanner('owner', 'A')).toEqual([]);
+    expect((await service.readClassroom('owner', 'stage'))?.cards).toEqual([
+      { target, update: undefined, status: 'unavailable' },
+    ]);
   });
+
+  it('F91 displays split density evidence and hands only matching history to the next-class planner', async () => {
+    const live = process.env.F91_LIVE === '1';
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const output = process.env.F91_ARTIFACT_DIR;
+    if (live) {
+      const database = new URL(url!);
+      if (
+        !['127.0.0.1', 'localhost'].includes(database.hostname) ||
+        database.pathname !== '/openmaic_f91_live'
+      )
+        throw new Error('F91 live tests require their dedicated local database');
+      if (!apiKey || !output) throw new Error('Missing F91 live configuration');
+      await mkdir(output, { recursive: true });
+    }
+    const save = async (name: string, value: unknown) => {
+      if (output)
+        await writeFile(join(output, `${name}.json`), JSON.stringify(value, null, 2) + '\n');
+    };
+    const objectives = {
+      courseObjective: '使用密度公式计算密度，并在 g/cm³ 与 kg/m³ 间换算。',
+      targetStatements: [
+        '给定以 g 表示的质量和以 cm³ 表示的体积，列式计算密度并写出单位 g/cm³。',
+        '给定以 g/cm³ 表示的密度，将其正确换算为 kg/m³，并写出结果与单位。',
+      ],
+    };
+    const [calculation, conversion] = objectives.targetStatements.map((statement, i) => ({
+      id: `run:target:${i + 1}`,
+      revision: 1,
+      statement,
+    })) as [typeof target, typeof target];
+    await f.db.query("UPDATE generation_runs SET outline=$1 WHERE id='run'", [
+      JSON.stringify({
+        courseObjective: objectives.courseObjective,
+        targets: [calculation, conversion],
+      }),
+    ]);
+    vi.stubEnv('OPENMAIC_DIALOGUE_EVIDENCE_ENABLED', 'true');
+    f.config.conditions = ['纸笔作答，教师未给公式或换算提示'];
+    await f.db.query('DELETE FROM dialogue_loop_activation');
+    await activateDialogueLoop(f.provider, f.config);
+    vi.stubEnv('OPENMAIC_SIMULATED_LEARNING_LOOP', JSON.stringify(f.config));
+    vi.spyOn(dialogueSettings, 'loadDialogueEvidenceSettings').mockResolvedValue(f.settings);
+    vi.spyOn(persistence, 'getServerPersistenceProvider').mockResolvedValue({
+      ...f.provider,
+      pool: f.db,
+      runtimeStore: f.runtime,
+    } as persistence.ServerPersistenceProvider);
+    let requestOwner = 'owner';
+    vi.spyOn(ownerAuth, 'withRequestOwner').mockImplementation(async (_req, handle) =>
+      handle(
+        { ownerId: requestOwner, kind: 'user', roles: new Set(), assurance: 'verified' },
+        new Headers(),
+      ),
+    );
+    const cards = () =>
+      readMasteryCards(new NextRequest('http://localhost/api/learner-mastery/stage'), {
+        params: Promise.resolve({ stageId: 'stage' }),
+      });
+    const empty = await (await cards()).json();
+    expect(empty).toMatchObject({
+      courseObjective: objectives.courseObjective,
+      cards: [{ status: 'empty' }, { status: 'empty' }],
+    });
+    await save('cards-empty', empty);
+
+    const sample = {
+      teacher: '质量 54 g，体积 20 cm³。请独立列式求密度，再换算成 kg/m³。',
+      student: 'ρ=m/V=54÷20=2.7 g/cm³，换算成 kg/m³ 就是 2.7 kg/m³。',
+    };
+    const loop = automatic();
+    await loop.activate();
+    const evidence = await saveAutomaticDialogue('f91-density-discussion', false, true, sample);
+    await loop.discover();
+    expect(await (await cards()).json()).toMatchObject({
+      cards: [{ update: 'pending' }, { update: 'pending' }],
+    });
+    const requested = new Set<string>();
+    const provider = (name: string) =>
+      createOpenAI({
+        apiKey,
+        baseURL: 'https://api.deepseek.com/v1',
+        fetch: async (endpoint, init) => {
+          if (
+            !live ||
+            String(endpoint) !== 'https://api.deepseek.com/v1/chat/completions' ||
+            requested.has(name) ||
+            requested.size >= 6
+          )
+            throw new Error('F91 live budget');
+          requested.add(name);
+          const body = {
+            ...JSON.parse(String(init?.body)),
+            max_tokens: 3072,
+            temperature: 0,
+            thinking: { type: 'disabled' },
+          };
+          expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThanOrEqual(65536);
+          await save(`${name}-request`, body);
+          const response = await fetch(endpoint, {
+            ...init,
+            body: JSON.stringify(body),
+            redirect: 'error',
+            signal: AbortSignal.any([
+              AbortSignal.timeout(45_000),
+              ...(init?.signal ? [init.signal] : []),
+            ]),
+          });
+          if (!response.ok) throw new Error(`F91 model returned HTTP ${response.status}`);
+          return response;
+        },
+      }).chat('deepseek-v4-flash');
+    const complete = async (name: string, system: string, prompt: string, signal?: AbortSignal) => {
+      const { text, finishReason } = await llm.callLLM(
+        { model: provider(name), system, prompt, maxRetries: 0, abortSignal: signal },
+        `f91-${name}`,
+        undefined,
+        { mode: 'disabled' },
+        { enabled: false },
+      );
+      expect(finishReason).toBe('stop');
+      await save(`${name}-response`, text);
+      return text;
+    };
+    const synthesize = async (_owner: string, system: string, user: string) => {
+      const {
+        target,
+        evidence: [item],
+      } = JSON.parse(user);
+      const correct = target.id === calculation.id;
+      if (live) return complete(correct ? 'calculation' : 'conversion', system, user);
+      const text = correct ? '独立列式算得 2.7 g/cm³。' : '把 2.7 g/cm³ 错换为 2.7 kg/m³。';
+      return JSON.stringify({
+        assessments: [
+          {
+            evidenceRef: item.evidenceRef,
+            coverage: 'direct',
+            result: correct ? 'correct' : 'incorrect',
+            assistance: 'independent',
+            observation: text,
+          },
+        ],
+        candidateState: {
+          summary: text,
+          unverified: correct ? [] : ['独立完成单位换算'],
+          adoptedEvidenceRefs: [item.evidenceRef],
+        },
+      });
+    };
+    await ready();
+    expect(await loop.processOne(synthesize)).toBe(true);
+    expect(await loop.processOne(synthesize)).toBe(true);
+    const response = await cards();
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const savedCards = await response.json();
+    expect(savedCards).toMatchObject({
+      cards: [
+        {
+          target: calculation,
+          status: 'ready',
+          observations: [{ result: 'correct', assistance: 'independent' }],
+        },
+        {
+          target: conversion,
+          status: 'ready',
+          observations: [{ result: 'incorrect', assistance: 'independent' }],
+        },
+      ],
+    });
+    const [first, second] = savedCards.cards;
+    expect(second.unverified.join('')).toMatch(/换算/);
+    expect(first.observations[0].evidenceRef).toBe(second.observations[0].evidenceRef);
+    expect(first.observations[0].evidenceRef).toContain(evidence.evidenceRunId);
+    expect(second.observations[0].conditions).toContain(f.config.conditions[0]);
+    expect(second.observations[0].source.messages).toEqual([
+      { role: 'agent', text: sample.teacher },
+      { role: 'student', text: sample.student },
+    ]);
+    expect(await (await cards()).json()).toEqual(savedCards);
+    await save('cards-documented', savedCards);
+    requestOwner = 'foreign';
+    expect((await cards()).status).toBe(404);
+    requestOwner = 'owner';
+
+    const fingerprint = (data: unknown) =>
+      createHash('sha256').update(JSON.stringify(data)).digest('hex');
+    for (const arm of ['related', 'unrelated', 'another-student'] as const) {
+      const unrelated = arm === 'unrelated';
+      const student = arm === 'another-student' ? 'B' : 'A';
+      const requirement = unrelated
+        ? '用中文讲述植物花粉的传播方式，不讲物理。'
+        : '请用中文安排一堂简短的密度复习课，涵盖列式计算和 g/cm³ 到 kg/m³ 的单位换算。有已知学习表现时据此安排练习，否则均衡覆盖两项。';
+      const goals = unrelated
+        ? { courseObjective: '比较花粉传播方式。', targetStatements: ['根据实例区分风媒与虫媒。'] }
+        : objectives;
+      const run = await createGenerationRun(
+        'owner',
+        {
+          requirement,
+          simulatedLearner: student,
+          materialIds: [],
+          interactive: false,
+          taskEngine: false,
+          agents: { mode: 'preset', agentIds: [] },
+          outlineReview: 'wait',
+        },
+        { maxActiveRunsPerOwner: 8, maxWaitingRunsPerOwner: 8 },
+      );
+      const claim = await claimNextGenerationRun('f91', {
+        runId: run.id,
+        leaseTtlMs: 120_000,
+        maxTakeovers: 0,
+      });
+      if (!claim) throw new Error('Missing F91 run');
+      const outcome = await executeGenerationRun(claim, {
+        signal: AbortSignal.timeout(100_000),
+        services: {
+          ...defaultRunStepServices,
+          research: async () => null,
+          courseObjectives: async () => goals,
+          learnerContext: async (_owner, input) => ({
+            schemaVersion: 'learner-context.v1',
+            promptVersion: 'learner-context-selection.v1',
+            student: input.student,
+            memoryRevision: 0,
+            status: 'empty',
+            selected: [],
+            taskDigest: fingerprint(input.task),
+            contentDigest: fingerprint({ pdfText: '', researchContext: '' }),
+          }),
+          validateLearnerContext: async () => {},
+          selectLearnerMastery: async (_owner, candidates, input, ctx) =>
+            selectPlannerMastery(candidates, input, ({ system, user }) =>
+              live
+                ? complete(`${arm}-select`, system, user, ctx.signal)
+                : Promise.resolve(unrelated ? '{"selected":[]}' : '{"selected":["M2","M1"]}'),
+            ),
+          outline: async (_owner, input, ctx) => {
+            if (arm === 'related') {
+              expect(
+                input.learnerMastery?.find((item) => item.target.id === conversion.id),
+              ).toMatchObject({
+                observations: [{ result: 'incorrect', conditions: f.config.conditions }],
+              });
+            } else expect(input.learnerMastery).toBeUndefined();
+            await save(`${arm}-input`, input);
+            if (live && !unrelated)
+              return generateOutlines(
+                {
+                  ...input,
+                  allowImageGeneration: false,
+                  allowVideoGeneration: false,
+                  model: {
+                    model: provider(`${arm}-outline`),
+                    modelInfo: {
+                      id: 'deepseek-v4-flash',
+                      name: 'DeepSeek V4 Flash',
+                      outputWindow: 3072,
+                      capabilities: {},
+                    },
+                    modelString: 'deepseek:deepseek-v4-flash',
+                    serverManaged: false,
+                    thinkingConfig: { mode: 'disabled' },
+                  },
+                },
+                { ...ctx, workspaceId: null, resolveVisionImages: async () => [] },
+              );
+            return {
+              outlines: [
+                {
+                  id: 'one',
+                  type: 'slide',
+                  title: '独立换算新题',
+                  order: 1,
+                  description: '独立换算，提交前不给提示。',
+                  keyPoints: ['独立换算'],
+                },
+              ],
+              languageDirective: '用中文教学',
+              courseTitle: '接续课',
+              taskEngineMode: false,
+            };
+          },
+        },
+      });
+      expect(outcome).toBe('waiting');
+      const outline = (await readGenerationRun(run.id, 'owner'))?.outline;
+      await save(`${arm}-outline`, outline);
+      if (arm === 'related') {
+        expect(outline?.masteryTargets).toContainEqual({ id: conversion.id, revision: 1 });
+        expect(
+          outline?.outlines.some((scene) => {
+            const text = JSON.stringify(scene);
+            return (
+              /换算/.test(scene.title) && /无提示|不(?:给|提供|显示)[^，。；]{0,16}提示/.test(text)
+            );
+          }),
+        ).toBe(true);
+      } else expect(outline?.masteryTargets).toBeUndefined();
+    }
+    if (live) expect(requested.size).toBe(6);
+  }, 240_000);
 
   it.skipIf(process.env.F80_LIVE !== '1')(
     'live model retains helped work and closes the gap after independent work',
@@ -1316,10 +1665,11 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
             }),
           }),
           validateLearnerContext: async () => {},
+          selectLearnerMastery: async (_owner, candidates) => candidates,
           outline: async (_owner, input, ctx) => {
             expect(input.requirements.requirement).toBe(requirement);
             expect(input.learnerContext).toBeUndefined();
-            expect(input.learnerMastery).toEqual([
+            expect(input.learnerMastery).toMatchObject([
               { target, summary: after?.state.summary, unverified: after?.state.unverified },
             ]);
             if (!live)

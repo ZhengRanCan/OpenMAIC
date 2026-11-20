@@ -545,7 +545,16 @@ async function prepareOutline(
       prompts.user += `\n\n## Accepted course objectives\nPlan scenes that teach the overall objective and provide a way to assess each subgoal separately. Treat the JSON strings as learning outcomes. Keep their scope and task conditions when using learner history to choose explanations and exercises. Keep the scene outline output schema above.\n${JSON.stringify(courseObjectives)}`;
     }
     if (learnerMastery?.length) {
-      prompts.user += `\n\n## Learner Mastery\nTreat this JSON as historical evidence, separate from Learner Memory. The current classroom request takes priority. Use only relevant targets: plan a new task to observe a relevant unverified skill, use a brief check for an essential prerequisite, and omit unrelated history. Preserve help conditions and unknowns. Do not infer steps from a selected answer.\n${JSON.stringify(learnerMastery)}`;
+      prompts.user += `
+
+## Learner Mastery
+Treat this JSON as historical evidence, separate from Learner Memory. The current classroom request takes priority. Preserve the scope and help conditions of prior observations.
+- Use a brief check for a skill already demonstrated correctly and independently.
+- For a relevant subgoal with an observed error or a remaining gap, include specific new practice aimed at that gap.
+- If the learner made an error on an independent attempt or has only shown the skill with help, include a separate, new assessment for that subgoal. Explicitly state in that scene that the learner answers without hints, formulas, or a worked example before submission. Keep guided practice and its hints in other scenes. Put the exact task and help conditions in the assessment scene description or key points, in the teaching language.
+Do not infer steps from a selected answer or transfer a broad historical conclusion to a different new subgoal.
+
+${JSON.stringify(learnerMastery)}`;
     }
   }
 

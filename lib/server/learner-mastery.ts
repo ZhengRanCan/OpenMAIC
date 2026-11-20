@@ -4,11 +4,17 @@ import { buildDialogueEvidenceContext } from '@/lib/dialogue/evidence-context';
 import type { DialogueEvidenceSettings } from '@/lib/dialogue/evidence-contracts';
 import { shortFactSources } from '@/lib/evidence/short-facts';
 import { digest } from '@/lib/learner-memory/contracts';
+import type {
+  ClassroomMastery,
+  MasteryCard,
+  MasteryCardSource,
+} from '@/lib/learner-mastery/classroom';
 import {
   MASTERY_QUIZ_RULES,
   MASTERY_SYSTEM,
   synthesizeMastery,
   type MasteryEvidence,
+  type MasteryObservation,
   type MasteryState,
 } from '@/lib/learner-mastery/synthesis';
 import {
@@ -38,17 +44,54 @@ export interface MasteryLocator {
 }
 export type PlannerMastery = Pick<MasteryState['state'], 'summary' | 'unverified'> & {
   target: CourseTarget;
+  observations: Array<Omit<MasteryObservation, 'evidenceRef'> & { conditions: string[] }>;
 };
 
-export async function readPlannerMastery(ownerId: string, student: CourseScope['student']) {
+async function configuredMasterySettings(): Promise<DialogueEvidenceSettings | null> {
   const config = readSimulatedLearningLoopConfig();
-  if (config?.sourceNature !== 'synthetic') return [];
-  const settings =
-    process.env.OPENMAIC_DIALOGUE_EVIDENCE_ENABLED === 'true'
-      ? await loadDialogueEvidenceSettings()
-      : { bindings: [], memoryEnvironmentId: config.memoryEnvironmentId };
+  if (config?.sourceNature !== 'synthetic') return null;
+  return process.env.OPENMAIC_DIALOGUE_EVIDENCE_ENABLED === 'true'
+    ? await loadDialogueEvidenceSettings()
+    : { bindings: [], memoryEnvironmentId: config.memoryEnvironmentId };
+}
+
+export async function readPlannerMastery(
+  ownerId: string,
+  student: CourseScope['student'],
+  limit = 3,
+) {
+  const settings = await configuredMasterySettings();
+  if (!settings) return [];
   const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-  return new LearnerMastery(provider, settings).listForPlanner(ownerId, student);
+  return new LearnerMastery(provider, settings).listForPlanner(ownerId, student, limit);
+}
+
+export async function readClassroomMastery(ownerId: string, stageId: string) {
+  const settings = await configuredMasterySettings();
+  const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  if (settings) return new LearnerMastery(provider, settings).readClassroom(ownerId, stageId);
+  return readClassroomCards(provider, ownerId, stageId);
+}
+
+function isSimulatedStudent(student: string | null): student is CourseScope['student'] {
+  return student === 'A' || student === 'B' || student === 'C';
+}
+
+const SOURCE_ERRORS = new Set([
+  'MASTERY_COURSE_UNAVAILABLE',
+  'MASTERY_TARGET_UNAVAILABLE',
+  'MASTERY_SOURCE_UNAVAILABLE',
+  'MASTERY_SOURCE_CHANGED',
+  'SHORT_FACTS_NOT_FOUND',
+  'SOURCE_OR_REQUEST_CHANGED',
+  'NOT_FOUND',
+  'ATTEMPT_NOT_FOUND',
+  'VERSION_NOT_FOUND',
+  'RUN_SCENE_PROOF_UNAVAILABLE',
+]);
+
+function isUnavailable(error: unknown) {
+  return error instanceof Error && SOURCE_ERRORS.has(error.message);
 }
 interface CourseScope {
   stageId: string;
@@ -63,7 +106,7 @@ interface SourceRef {
   operationId?: string;
 }
 export type MasterySource = string | { kind: 'quiz'; runId: string };
-type SourceEntry = { ref: SourceRef; evidence: MasteryEvidence };
+type SourceEntry = { ref: SourceRef; evidence: MasteryEvidence; source: MasteryCardSource };
 
 function distinctSources(sources: readonly MasterySource[]) {
   return new Map(
@@ -98,8 +141,7 @@ async function readCourse(
     [locator.runId, locator.ownerId],
   );
   const row = result.rows[0];
-  if (!row || (row.student !== 'A' && row.student !== 'B' && row.student !== 'C'))
-    throw new Error('MASTERY_COURSE_UNAVAILABLE');
+  if (!row || !isSimulatedStudent(row.student)) throw new Error('MASTERY_COURSE_UNAVAILABLE');
   const target =
     Array.isArray(row.targets) &&
     row.targets.find(
@@ -165,6 +207,9 @@ async function readSources(
       )
         throw new Error('MASTERY_SOURCE_CHANGED');
       const evidenceRef = `${run.id}/${fact.id}`;
+      const messages = snapshot.messages
+        .filter(({ message }) => fact.refs.includes(message.id))
+        .map(({ message, text }) => ({ role: context.sourceIndex[message.id]!.role, text }));
       entries.push({
         ref: {
           runId,
@@ -176,9 +221,13 @@ async function readSources(
           type: fact.type,
           text: fact.evidence,
           conditions: current.conditions,
-          messages: snapshot.messages
-            .filter(({ message }) => fact.refs.includes(message.id))
-            .map(({ message, text }) => ({ role: context.sourceIndex[message.id]!.role, text })),
+          messages,
+        },
+        source: {
+          kind: 'dialogue',
+          title: snapshot.title,
+          occurredAt: new Date(snapshot.updatedAt).toISOString(),
+          messages,
         },
       });
     }
@@ -230,6 +279,17 @@ async function readQuizSources(
   return validation.accepted.map(({ sourceIndex, fact }) => {
     const evidenceRef = `quiz:${run.id}/${sourceIndex}`;
     const refs = fact.refs.map((ref) => run.context.refs[ref]!);
+    const questionEvidence = refs.map((ref) => {
+      const question = questions.get(ref.questionIdentity);
+      if (!question) throw new Error('MASTERY_SOURCE_CHANGED');
+      return {
+        type: question.type,
+        prompt: question.question,
+        options: question.options,
+        submitted: answers[question.id] ?? null,
+        answerKey: question.answer,
+      };
+    });
     return {
       ref: {
         kind: 'quiz',
@@ -242,19 +302,68 @@ async function readQuizSources(
         type: 'quiz_performance',
         text: fact.evidence,
         conditions: run.request.conditions,
-        questions: refs.map((ref) => {
-          const question = questions.get(ref.questionIdentity);
-          if (!question) throw new Error('MASTERY_SOURCE_CHANGED');
-          return {
-            type: question.type,
-            prompt: question.question,
-            options: question.options,
-            submitted: answers[question.id] ?? null,
-            answerKey: question.answer,
-          };
-        }),
+        questions: questionEvidence,
+      },
+      source: {
+        kind: 'quiz',
+        title: scene.title,
+        occurredAt: run.context.source.savedAt,
+        questions: questionEvidence.map(({ type, prompt, options, submitted }) => ({
+          type,
+          prompt,
+          options,
+          submitted,
+        })),
       },
     };
+  });
+}
+
+async function readClassroomCards(
+  provider: Pick<ServerPersistenceProvider, 'withTransaction'>,
+  ownerId: string,
+  stageId: string,
+  readCard?: (tx: Queryable, locator: MasteryLocator, course: CourseScope) => Promise<MasteryCard>,
+): Promise<ClassroomMastery | null> {
+  return provider.withTransaction(async (tx) => {
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+    const { rows } = await tx.query<{
+      id: string;
+      targets: CourseTarget[];
+      course_objective: string | null;
+      student: string | null;
+      state: string;
+    }>(
+      `SELECT r.id, r.outline->'targets' AS targets, r.outline->>'courseObjective' AS course_objective,
+              r.input->>'simulatedLearner' AS student, r.state
+         FROM generation_runs r JOIN stage_meta s ON s.stage_id=r.stage_id AND s.owner_id=r.owner_id
+        WHERE r.stage_id=$1 AND r.owner_id=$2 AND s.deleted_at IS NULL
+          AND r.state IN ('generating', 'paused', 'completed')
+          AND COALESCE(r.input->>'interactive', 'false')='false'
+          AND COALESCE(r.outline->>'taskEngineMode', 'false')='false'
+          AND jsonb_typeof(r.outline->'targets')='array'
+        ORDER BY r.created_at DESC, r.id DESC LIMIT 1`,
+      [stageId, ownerId],
+    );
+    const run = rows[0];
+    if (!run?.targets.length) return null;
+    const cards: MasteryCard[] = [];
+    for (const target of run.targets) {
+      if (!isSimulatedStudent(run.student) || !readCard) {
+        cards.push({ target, status: 'untracked' });
+      } else if (run.state !== 'completed') {
+        cards.push({ target, status: 'empty' });
+      } else {
+        cards.push(
+          await readCard(
+            tx,
+            { ownerId, runId: run.id, targetId: target.id, targetRevision: target.revision },
+            { stageId, student: run.student, target },
+          ),
+        );
+      }
+    }
+    return { ...(run.course_objective ? { courseObjective: run.course_objective } : {}), cards };
   });
 }
 
@@ -308,14 +417,70 @@ export class LearnerMastery {
         refs.map((ref) => (ref.kind === 'quiz' ? { kind: 'quiz', runId: ref.runId } : ref.runId)),
       ),
     );
-    const keys = new Map(available.map(({ ref }) => [ref.evidenceRef, ref.key]));
-    if (refs.some((ref) => keys.get(ref.evidenceRef) !== ref.key))
+    const entries = new Map(available.map((entry) => [entry.ref.evidenceRef, entry]));
+    if (refs.some((ref) => entries.get(ref.evidenceRef)?.ref.key !== ref.key))
       throw new Error('MASTERY_SOURCE_CHANGED');
+    return new Map(refs.map(({ evidenceRef }) => [evidenceRef, entries.get(evidenceRef)!]));
   }
 
   private adopted(row: Row): SourceRef[] {
     const refs = new Set(row.state?.state.observations.map(({ evidenceRef }) => evidenceRef));
     return row.sources.filter(({ evidenceRef }) => refs.has(evidenceRef));
+  }
+
+  private async verifiedObservations(
+    tx: Queryable,
+    locator: MasteryLocator,
+    course: CourseScope,
+    row: Row,
+  ) {
+    const entries = await this.verifyRefs(tx, locator, course, this.adopted(row));
+    return (row.state?.state.observations ?? []).map((observation) => {
+      const entry = entries.get(observation.evidenceRef);
+      if (!entry) throw new Error('MASTERY_SOURCE_CHANGED');
+      return { ...observation, conditions: entry.evidence.conditions, source: entry.source };
+    });
+  }
+
+  async readClassroom(ownerId: string, stageId: string) {
+    return readClassroomCards(this.provider, ownerId, stageId, async (tx, locator, course) => {
+      const { rows } = await tx.query<{ state: string }>(
+        `SELECT state FROM mastery_loop_jobs WHERE run_id=$1 AND environment_id=$2
+           AND target_id=$3 AND target_revision=$4 AND owner_id=$5
+         ORDER BY CASE WHEN state IN ('queued','running') THEN 0 ELSE 1 END, ready_at DESC, id
+         LIMIT 1`,
+        [...this.key(locator), ownerId],
+      );
+      const state = rows[0]?.state;
+      const update: MasteryCard['update'] =
+        state === 'queued' || state === 'running'
+          ? 'pending'
+          : state === 'failed' || state === 'unknown'
+            ? 'failed'
+            : undefined;
+      const card = { target: course.target, update };
+      try {
+        const row = await this.readRow(tx, locator);
+        if (!row.state) return { ...card, status: 'empty' };
+        if (
+          row.state.learnerId !== `simulated-${course.student}` ||
+          row.state.target.id !== course.target.id ||
+          row.state.target.revision !== course.target.revision ||
+          row.state.target.statement !== course.target.statement
+        )
+          return { ...card, status: 'unavailable' };
+        return {
+          ...card,
+          status: 'ready',
+          summary: row.state.state.summary,
+          unverified: row.state.state.unverified,
+          observations: await this.verifiedObservations(tx, locator, course, row),
+        };
+      } catch (error) {
+        if (!isUnavailable(error)) throw error;
+        return { ...card, status: 'unavailable' };
+      }
+    });
   }
 
   async read(locator: MasteryLocator): Promise<MasteryState | null> {
@@ -331,6 +496,7 @@ export class LearnerMastery {
   async listForPlanner(
     ownerId: string,
     student: CourseScope['student'],
+    limit = 3,
   ): Promise<PlannerMastery[]> {
     return this.provider.withTransaction(async (tx) => {
       await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
@@ -359,32 +525,31 @@ export class LearnerMastery {
         if (!state || state.learnerId !== `simulated-${student}`) continue;
         try {
           const course = await readCourse(tx, locator, false);
-          if (state.target.statement !== course.target.statement) continue;
-          await this.verifyRefs(tx, locator, course, this.adopted(row.data));
+          if (
+            state.target.id !== course.target.id ||
+            state.target.revision !== course.target.revision ||
+            state.target.statement !== course.target.statement
+          )
+            continue;
+          const observations = await this.verifiedObservations(tx, locator, course, row.data);
           usable.push({
             target: course.target,
             summary: state.state.summary,
             unverified: state.state.unverified,
+            observations: observations
+              .slice(-4)
+              .map(({ coverage, result, assistance, text, conditions }) => ({
+                coverage,
+                result,
+                assistance,
+                text,
+                conditions,
+              })),
           });
         } catch (error) {
-          if (
-            !(error instanceof Error) ||
-            ![
-              'MASTERY_COURSE_UNAVAILABLE',
-              'MASTERY_TARGET_UNAVAILABLE',
-              'MASTERY_SOURCE_UNAVAILABLE',
-              'MASTERY_SOURCE_CHANGED',
-              'SHORT_FACTS_NOT_FOUND',
-              'SOURCE_OR_REQUEST_CHANGED',
-              'NOT_FOUND',
-              'ATTEMPT_NOT_FOUND',
-              'VERSION_NOT_FOUND',
-              'RUN_SCENE_PROOF_UNAVAILABLE',
-            ].includes(error.message)
-          )
-            throw error;
+          if (!isUnavailable(error)) throw error;
         }
-        if (usable.length === 3) break;
+        if (usable.length === limit) break;
       }
       return usable;
     });

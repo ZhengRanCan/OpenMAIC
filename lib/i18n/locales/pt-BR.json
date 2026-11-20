@@ -1072,6 +1072,51 @@
   "share": {
     "notReady": "Disponível após a geração ser concluída"
   },
+  "mastery": {
+    "title": "Domínio",
+    "description": "Confira as avaliações e evidências de cada objetivo da aula.",
+    "empty": "Esta aula ainda não tem subobjetivos salvos.",
+    "error": "Não foi possível carregar o nível de domínio.",
+    "refresh": "Atualizar",
+    "unverified": "A verificar",
+    "evidence": "Ver evidência",
+    "conditions": "Condições da tarefa",
+    "quiz": "Questionário",
+    "dialogue": "Conversa em aula",
+    "submitted": "Resposta enviada",
+    "noAnswer": "Sem resposta",
+    "card": {
+      "empty": "Ainda não há evidências",
+      "untracked": "O acompanhamento do domínio não está disponível para esta aula.",
+      "unavailable": "A evidência original mudou ou está indisponível."
+    },
+    "update": {
+      "pending": "Atualizando o nível de domínio",
+      "failed": "A última atualização não foi concluída"
+    },
+    "result": {
+      "correct": "Correto",
+      "partial": "Parcialmente correto",
+      "incorrect": "Incorreto",
+      "ungraded": "Não avaliado"
+    },
+    "assistance": {
+      "independent": "Sem ajuda",
+      "assisted": "Com ajuda",
+      "unknown": "Ajuda desconhecida"
+    },
+    "coverage": {
+      "direct": "Cobertura direta",
+      "partial": "Cobertura parcial",
+      "context": "Apenas contexto",
+      "unrelated": "Sem relação"
+    },
+    "speaker": {
+      "student": "Estudante",
+      "agent": "Agente da aula",
+      "unknown": "Participante"
+    }
+  },
   "classroom": {
     "recentClassrooms": "Recentes",
     "today": "Hoje",

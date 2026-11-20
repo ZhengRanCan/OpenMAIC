@@ -1096,6 +1096,51 @@
   "share": {
     "notReady": "生成完成后可分享"
   },
+  "mastery": {
+    "title": "掌握情况",
+    "description": "按课堂子目标查看已有判断及作答依据。",
+    "empty": "这堂课暂无已保存的子目标。",
+    "error": "暂时无法读取掌握情况。",
+    "refresh": "刷新",
+    "unverified": "待验证",
+    "evidence": "查看依据",
+    "conditions": "作答条件",
+    "quiz": "测验",
+    "dialogue": "课堂对话",
+    "submitted": "实际提交",
+    "noAnswer": "未作答",
+    "card": {
+      "empty": "尚无证据",
+      "untracked": "这堂课未启用学习画像的掌握维护。",
+      "unavailable": "原始依据已变更或无法读取。"
+    },
+    "update": {
+      "pending": "正在更新掌握情况",
+      "failed": "最近一次更新未完成"
+    },
+    "result": {
+      "correct": "作答正确",
+      "partial": "部分正确",
+      "incorrect": "作答有误",
+      "ungraded": "尚未评价"
+    },
+    "assistance": {
+      "independent": "独立作答",
+      "assisted": "获得帮助",
+      "unknown": "帮助情况未知"
+    },
+    "coverage": {
+      "direct": "直接覆盖",
+      "partial": "部分覆盖",
+      "context": "背景信息",
+      "unrelated": "与目标无关"
+    },
+    "speaker": {
+      "student": "学生",
+      "agent": "课堂助教",
+      "unknown": "发言者"
+    }
+  },
   "classroom": {
     "recentClassrooms": "最近学习",
     "today": "今天",

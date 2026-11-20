@@ -1057,6 +1057,51 @@
   "share": {
     "notReady": "生成完成後可分享"
   },
+  "mastery": {
+    "title": "掌握情況",
+    "description": "依課堂子目標查看目前判斷及作答依據。",
+    "empty": "這堂課尚無已儲存的子目標。",
+    "error": "目前無法讀取掌握情況。",
+    "refresh": "重新整理",
+    "unverified": "待驗證",
+    "evidence": "查看依據",
+    "conditions": "作答條件",
+    "quiz": "測驗",
+    "dialogue": "課堂對話",
+    "submitted": "實際提交",
+    "noAnswer": "未作答",
+    "card": {
+      "empty": "尚無證據",
+      "untracked": "這堂課尚未啟用學習者檔案的掌握紀錄。",
+      "unavailable": "原始依據已變更或無法讀取。"
+    },
+    "update": {
+      "pending": "正在更新掌握情況",
+      "failed": "最近一次更新未完成"
+    },
+    "result": {
+      "correct": "作答正確",
+      "partial": "部分正確",
+      "incorrect": "作答有誤",
+      "ungraded": "尚未評估"
+    },
+    "assistance": {
+      "independent": "獨立作答",
+      "assisted": "獲得幫助",
+      "unknown": "幫助情況未知"
+    },
+    "coverage": {
+      "direct": "直接涵蓋",
+      "partial": "部分涵蓋",
+      "context": "背景資訊",
+      "unrelated": "與目標無關"
+    },
+    "speaker": {
+      "student": "學生",
+      "agent": "課堂助教",
+      "unknown": "發言者"
+    }
+  },
   "classroom": {
     "recentClassrooms": "近期教室",
     "today": "今天",
