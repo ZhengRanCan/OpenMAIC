@@ -41,7 +41,7 @@ function stepOfRun(view: Pick<RunView, 'state' | 'step'>): PreviewStepId {
   // The material analysis (running, or paused at a failure) shows as the step after it.
   if (step === 'material-analysis' || step === 'research') return 'web-search';
   if (step === 'learner-context') return 'learner-context';
-  if (step === 'outline') return 'outline';
+  if (step === 'course-objectives' || step === 'outline') return 'outline';
   if (step === 'agents') return 'agent-generation';
   const scene = step ? /^scene:\d+:(content|actions|narration)$/.exec(step) : null;
   if (scene) return scene[1] === 'content' ? 'slide-content' : 'actions';

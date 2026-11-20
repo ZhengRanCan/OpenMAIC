@@ -1145,6 +1145,9 @@
     "materialTooLarge": "{{name}} quá lớn: mỗi tài liệu tối đa {{size}}."
   },
   "generation": {
+    "courseObjectives": "Mục tiêu bài học",
+    "generatingCourseObjectives": "Đang tạo mục tiêu bài học",
+    "courseObjectivesFailed": "Không thể tạo mục tiêu bài học. Vui lòng thử lại.",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

@@ -301,9 +301,12 @@ it.skipIf(mode !== 'preflight' && !live)(
       const mastery = new LearnerMastery(app, settings);
       const loop = new MasteryLearningLoop(app, settings);
       const fixed: Partial<RunStepServices> = {
+        courseObjectives: async () => ({
+          courseObjective: statement,
+          targetStatements: [statement],
+        }),
         outline: async () => ({
           outlines: [outline],
-          targetStatements: [statement],
           languageDirective: '用中文教学',
           courseTitle: outline.title,
           taskEngineMode: false,
@@ -369,6 +372,7 @@ it.skipIf(mode !== 'preflight' && !live)(
             signal: AbortSignal.timeout(240_000),
             services: {
               ...defaultRunStepServices,
+              courseObjectives: fixed.courseObjectives!,
               research: async () => null,
               narrationTarget: async () => null,
               ...overrides,

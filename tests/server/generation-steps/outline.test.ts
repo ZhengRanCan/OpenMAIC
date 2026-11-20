@@ -107,65 +107,33 @@ describe('outline step', () => {
     expect(mocks.capabilities).toHaveBeenCalledWith(null);
   });
 
-  it('extends the package system prompt with course targets and keeps the original user request', async () => {
-    streams(OUTLINE_TEXT);
-    await generateOutlines({ ...body, model }, stepContext([]));
+  it('passes accepted objectives to the user prompt without changing the scene output schema', async () => {
+    const courseObjectives = {
+      courseObjective: 'Add fractions with unlike denominators.',
+      targetStatements: ['Find a common denominator.', 'Add the converted fractions.'],
+    };
+    // A stray target-shaped field from the scene model never overrides accepted objectives.
+    streams(OUTLINE_TEXT.replace(/}$/, ',"targetStatements":["Unrelated target"]}'));
+    const result = await generateOutlines({ ...body, model, courseObjectives }, stepContext([]));
     const original = buildOutlinePrompt(body.requirements);
     expect(mocks.streamLLM.mock.calls[0]![0]).toMatchObject({
-      system: expect.stringContaining(original.system),
-      prompt: original.user,
+      system: original.system,
+      prompt: expect.stringContaining(original.user),
     });
-    expect(original.user).not.toContain('## Learner Context');
-    expect(mocks.streamLLM.mock.calls[0]![0].system).toContain('"targetStatements"');
-  });
-
-  it('returns course targets from the same stream without interpreting target entries as scenes', async () => {
-    const statement = 'Given two unlike fractions, add them and show the common denominator.';
-    const first = JSON.stringify({
-      targetStatements: [
-        { id: 'model-id', revision: 10, outlines: [{ id: 'not-a-scene' }] },
-        ' ',
-        ` ${statement} `,
-        statement,
-        'Explain why the denominators must match.',
-        'Simplify the resulting fraction.',
-        'Discard a fourth target.',
-      ],
-    }).slice(0, -1);
-    streams([first, `,${OUTLINE_TEXT.slice(1)}`]);
-    const events: OutlineEvent[] = [];
-    const result = await generateOutlines({ ...body, model }, stepContext(events));
-
-    expect(result.targetStatements).toEqual([
-      statement,
-      'Explain why the denominators must match.',
-      'Simplify the resulting fraction.',
-    ]);
-    expect(result.outlines.map(({ id }) => id)).toEqual(['o1', 'o2']);
-    expect(events.filter(({ type }) => type === 'outline')).toHaveLength(2);
-    expect(mocks.streamLLM).toHaveBeenCalledTimes(1);
-  });
-
-  it('reads a fenced wrapper with targets after the scene array', async () => {
-    const statement = 'Explain why a singular subject takes a singular verb.';
-    streams([
-      '```json\n',
-      OUTLINE_TEXT.slice(0, -1),
-      `,"targetStatements":[${JSON.stringify(statement)}]}\n\`\`\``,
-    ]);
-    const result = await generateOutlines({ ...body, model }, stepContext([]));
+    expect(mocks.streamLLM.mock.calls[0]![0].prompt).toContain(JSON.stringify(courseObjectives));
     expect(result.outlines).toHaveLength(2);
-    expect(result.targetStatements).toEqual([statement]);
+    expect(result).not.toHaveProperty('targetStatements');
   });
 
-  it('preserves targets when the scene array has not finished', async () => {
-    const statement = 'Write a fraction that represents one half.';
+  it('streams scenes only from the top-level outlines array', async () => {
     streams(
-      `{"targetStatements":[${JSON.stringify(statement)}],"outlines":[{"id":"o1","type":"slide","title":"Halves"},`,
+      JSON.stringify({
+        context: { outlines: [{ id: 'not-a-scene', type: 'slide', title: 'Ignore' }] },
+        ...JSON.parse(OUTLINE_TEXT),
+      }),
     );
     const result = await generateOutlines({ ...body, model }, stepContext([]));
-    expect(result.outlines).toHaveLength(1);
-    expect(result.targetStatements).toEqual([statement]);
+    expect(result.outlines.map(({ id }) => id)).toEqual(['o1', 'o2']);
   });
 
   it('accepts a legacy array without adding a target field', async () => {
@@ -204,12 +172,23 @@ describe('outline step', () => {
       },
     ];
     await generateOutlines(
-      { ...body, learnerContext: 'Prefers diagrams.', learnerMastery, model },
+      {
+        ...body,
+        learnerContext: 'Prefers diagrams.',
+        courseObjectives: {
+          courseObjective: 'Use fractions.',
+          targetStatements: ['Add fractions.'],
+        },
+        learnerMastery,
+        model,
+      },
       stepContext([]),
     );
     const prompt = mocks.streamLLM.mock.calls[0]![0].prompt;
     expect(prompt).toContain(body.requirements.requirement);
-    expect(prompt).toContain('Prefers diagrams.\n\n## Learner Mastery');
+    expect(prompt).toContain('Prefers diagrams.\n\n## Accepted course objectives');
+    expect(prompt).toContain('Add fractions.');
+    expect(prompt).toContain('## Learner Mastery');
     expect(prompt).toContain('The current classroom request takes priority');
     expect(prompt).toContain(JSON.stringify(learnerMastery));
   });

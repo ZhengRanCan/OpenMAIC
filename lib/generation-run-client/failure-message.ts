@@ -57,6 +57,7 @@ export function runFailureText(
   if (step === 'research') {
     return failure.message ? { text: failure.message } : { key: 'generation.webSearchFailed' };
   }
+  if (step === 'course-objectives') return { key: 'generation.courseObjectivesFailed' };
   if (step === 'outline') {
     return failure.message
       ? { text: failure.message }

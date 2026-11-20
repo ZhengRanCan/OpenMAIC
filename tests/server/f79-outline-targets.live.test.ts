@@ -16,18 +16,20 @@ import { generateOutlines } from '@/lib/server/generation/steps/outline';
 const CASES = [
   {
     name: 'density',
+    target: '给定质量与体积，统一单位后计算密度并写出结果和单位。',
     requirement:
       '为初中生设计一堂 3 页中文密度课。先示范 0.45 kg、90 cm³ 的密度计算，然后用一道给出 kg 和 cm³ 的新题，让学生独立写出单位换算、列式、结果和单位。',
   },
   {
     name: 'grammar',
+    target: '针对 he、she、they 改写主谓不一致的句子，并解释改写理由。',
     requirement:
       '为初学者设计一堂 3 页中文英语语法课，主题是一般现在时的主谓一致，限 he、she、they 和常见实义动词。用英语例句对比单复数主语，让学生独立改写新的主谓不一致句子，并用自己的话说明改写理由。',
   },
 ];
 
 it.skipIf(process.env.F79_LIVE !== '1')(
-  'generates and confirms course targets from two live Planner streams',
+  'preserves accepted course targets through two live Planner streams and confirmation',
   async () => {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     const output = process.env.F79_ARTIFACT_DIR;
@@ -49,7 +51,7 @@ it.skipIf(process.env.F79_LIVE !== '1')(
 
     try {
       await getServerPersistenceProvider(databaseUrl, () => pool);
-      for (const { name, requirement } of CASES) {
+      for (const { name, requirement, target } of CASES) {
         let calls = 0;
         const save = (file: string, value: unknown) =>
           writeFile(join(output, `${name}.${file}.json`), JSON.stringify(value, null, 2) + '\n', {
@@ -141,6 +143,10 @@ it.skipIf(process.env.F79_LIVE !== '1')(
           signal: AbortSignal.timeout(125_000),
           services: {
             ...defaultRunStepServices,
+            courseObjectives: async () => ({
+              courseObjective: target,
+              targetStatements: [target],
+            }),
             outline: async (_owner, input, ctx) =>
               generateOutlines(
                 {
@@ -172,12 +178,6 @@ it.skipIf(process.env.F79_LIVE !== '1')(
         expect(outcome).toBe('waiting');
         expect(calls).toBe(1);
         if (!captured) throw new Error('F79 model response missing');
-        const modelOutput = JSON.parse(
-          captured.content.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''),
-        );
-        expect(Array.isArray(modelOutput.targetStatements)).toBe(true);
-        expect(modelOutput.targetStatements.length).toBeGreaterThanOrEqual(1);
-        expect(modelOutput.targetStatements.length).toBeLessThanOrEqual(3);
         const params = { params: Promise.resolve({ id: run.id }) };
         const url = `http://localhost/api/generation-runs/${run.id}`;
         const snapshot = async (): Promise<GenerationRunSnapshot> => {
@@ -189,13 +189,10 @@ it.skipIf(process.env.F79_LIVE !== '1')(
         await save('before-confirm', before);
         expect(before.state).toBe('awaiting_outline_confirmation');
         expect(before.outline?.outlines).toHaveLength(3);
-        expect(before.outline?.targets).toEqual(
-          modelOutput.targetStatements.map((statement: unknown, index: number) => ({
-            id: `${run.id}:target:${index + 1}`,
-            revision: 1,
-            statement,
-          })),
-        );
+        expect(before.outline?.courseObjective).toBe(target);
+        expect(before.outline?.targets).toEqual([
+          { id: `${run.id}:target:1`, revision: 1, statement: target },
+        ]);
         const confirmation = await confirmOutline(
           new NextRequest(`${url}/confirm-outline`, {
             method: 'POST',

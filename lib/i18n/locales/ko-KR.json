@@ -1145,6 +1145,9 @@
     "materialTooLarge": "{{name}} 파일이 너무 큽니다. 자료는 최대 {{size}}까지 가능합니다."
   },
   "generation": {
+    "courseObjectives": "수업 목표",
+    "generatingCourseObjectives": "수업 목표 생성 중",
+    "courseObjectivesFailed": "수업 목표를 생성하지 못했습니다. 다시 시도해 주세요.",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

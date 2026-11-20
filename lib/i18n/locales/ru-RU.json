@@ -1145,6 +1145,9 @@
     "materialTooLarge": "Файл {{name}} слишком большой: материал может быть не больше {{size}}."
   },
   "generation": {
+    "courseObjectives": "Цели урока",
+    "generatingCourseObjectives": "Создание целей урока",
+    "courseObjectivesFailed": "Не удалось создать цели урока. Попробуйте ещё раз.",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

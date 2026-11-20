@@ -42,6 +42,7 @@
  */
 import { isAbortError } from '@openmaic/generation';
 import { createHash } from 'node:crypto';
+import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import {
   PreclassLearnerContextError,
@@ -69,6 +70,7 @@ import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { generateClassroomId } from '@/lib/server/classroom-persistence';
 import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import type { StepContext } from '@/lib/server/generation/steps/context';
+import type { CourseObjectives } from '@/lib/server/generation/steps/course-objectives';
 import type { OutlineEvent, OutlineResult } from '@/lib/server/generation/steps/outline';
 import type {
   SceneActionsInput,
@@ -361,6 +363,8 @@ export async function executeGenerationRun(
   const { services, signal } = options;
   let run: StoredRun = claim.run;
   const input = run.input;
+  const includeCourseObjectives =
+    !input.interactive && !resolveVocationalActive({ taskEngineMode: input.taskEngine });
   // The owner the run works for now, refreshed at every step boundary: a
   // claim may move the run's owner into an account while it generates.
   let owner = await currentOwnerOf(run.ownerId);
@@ -752,6 +756,36 @@ export async function executeGenerationRun(
         return done(context);
       }
 
+      case 'course-objectives': {
+        const retry = retryOptions(stepId, 0, 500);
+        let attempts = 0;
+        let lastError: unknown;
+        const objectives = await withRouteRetry(async () => {
+          const fallbackAfter = attempts++ === retry.maxRetries ? lastError : undefined;
+          try {
+            return await withDeadline(
+              stepId,
+              STEP_DEADLINES_MS.courseObjectives,
+              signal,
+              (callSignal) =>
+                services.courseObjectives(
+                  owner,
+                  {
+                    requirement: input.requirement,
+                    pdfText: output<MaterialOutput>('material-analysis')?.pdfText,
+                    ...materialImages(),
+                  },
+                  { log, signal: callSignal, fallbackAfter },
+                ),
+            );
+          } catch (error) {
+            lastError = error;
+            throw error;
+          }
+        }, retry);
+        return done(objectives);
+      }
+
       case 'outline':
         return runOutlineStep(stepId);
 
@@ -862,6 +896,9 @@ export async function executeGenerationRun(
   };
 
   const runOutlineStep = async (stepId: string): Promise<StepCommit> => {
+    const objectives = includeCourseObjectives
+      ? output<CourseObjectives>('course-objectives')
+      : undefined;
     const research = output<ResearchOutput>('research');
     const pdfText = output<MaterialOutput>('material-analysis')?.pdfText;
     const context = input.simulatedLearner
@@ -946,6 +983,7 @@ export async function executeGenerationRun(
             ...(research?.context ? { researchContext: research.context } : {}),
             ...(contextText ? { learnerContext: contextText } : {}),
             ...(mastery.length ? { learnerMastery: mastery } : {}),
+            ...(objectives ? { courseObjectives: objectives } : {}),
           },
           { log, signal: callSignal, emit },
         ),
@@ -977,13 +1015,14 @@ export async function executeGenerationRun(
     const normalized = normalizeSceneOutlines(result.outlines);
     if (!normalized.ok) throw new Error(`The generated outline is unusable: ${normalized.message}`);
     result = { ...result, outlines: normalized.value };
-    const targets = result.targetStatements?.map((statement, index) => ({
+    const targets = objectives?.targetStatements.map((statement, index) => ({
       id: `${run.id}:target:${index + 1}`,
       revision: 1,
       statement,
     }));
     const confirmed: GenerationRunOutline = {
       outlines: result.outlines,
+      ...(objectives ? { courseObjective: objectives.courseObjective } : {}),
       ...(targets?.length ? { targets } : {}),
       languageDirective: result.languageDirective,
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
@@ -1921,6 +1960,7 @@ export async function executeGenerationRun(
       const advance = advanceRun({
         state: run.state,
         runInput: input,
+        includeCourseObjectives,
         completed: new Set([...steps.keys(), ...skippedStepIds()]),
         sceneCount: run.outline?.outlines.length ?? 0,
       });

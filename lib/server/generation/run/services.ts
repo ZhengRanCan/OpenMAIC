@@ -68,6 +68,12 @@ import {
   type OutlineInput,
   type OutlineResult,
 } from '@/lib/server/generation/steps/outline';
+import {
+  generateCourseObjectives,
+  type CourseObjectives,
+  type CourseObjectivesContext,
+  type CourseObjectivesInput,
+} from '@/lib/server/generation/steps/course-objectives';
 import { research, type ResearchResult } from '@/lib/server/generation/steps/research';
 import {
   generateSceneActions,
@@ -226,6 +232,11 @@ export interface RunStepServices {
     context: FrozenQuizLearnerContext,
     ctx: StepContext,
   ): Promise<void>;
+  courseObjectives(
+    ownerId: string,
+    input: Omit<CourseObjectivesInput, 'model'>,
+    ctx: Omit<CourseObjectivesContext, 'resolveVisionImages'>,
+  ): Promise<CourseObjectives>;
   outline(
     ownerId: string,
     input: Omit<OutlineInput, 'model'>,
@@ -483,6 +494,13 @@ export const defaultRunStepServices: RunStepServices = {
   },
 
   learnerMastery: readPlannerMastery,
+
+  async courseObjectives(ownerId, input, ctx) {
+    return generateCourseObjectives(
+      { ...input, model: await stageModel(ownerId, 'scene-outlines-stream') },
+      { ...ctx, resolveVisionImages: ownerVisionImages(ownerId, ctx.log) },
+    );
+  },
 
   async outline(ownerId, input, ctx) {
     return generateOutlines(

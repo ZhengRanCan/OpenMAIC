@@ -82,6 +82,10 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
       return { text: 'material text', images: [] };
     },
     research: async () => null,
+    courseObjectives: async () => ({
+      courseObjective: 'Explain the requested topic.',
+      targetStatements: ['Explain the main idea in a new example.'],
+    }),
     outline: async (_owner, input) => {
       outlineRequirements.push(input.requirements);
       return {

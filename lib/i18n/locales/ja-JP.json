@@ -1145,6 +1145,9 @@
     "materialTooLarge": "{{name}} が大きすぎます。資料は最大 {{size}} までです。"
   },
   "generation": {
+    "courseObjectives": "授業の目標",
+    "generatingCourseObjectives": "授業の目標を生成中",
+    "courseObjectivesFailed": "授業の目標を生成できませんでした。もう一度お試しください。",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

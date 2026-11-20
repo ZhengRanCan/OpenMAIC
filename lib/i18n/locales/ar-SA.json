@@ -1145,6 +1145,9 @@
     "materialTooLarge": "{{name}} كبير جدًا: الحد الأقصى لحجم المادة {{size}}."
   },
   "generation": {
+    "courseObjectives": "أهداف الدرس",
+    "generatingCourseObjectives": "جارٍ إنشاء أهداف الدرس",
+    "courseObjectivesFailed": "تعذّر إنشاء أهداف الدرس. حاول مرة أخرى.",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

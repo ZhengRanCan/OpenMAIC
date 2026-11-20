@@ -1130,6 +1130,9 @@
     "materialTooLarge": "{{name}} 過大：單個素材最大為 {{size}}。"
   },
   "generation": {
+    "courseObjectives": "課堂目標",
+    "generatingCourseObjectives": "正在產生課堂目標",
+    "courseObjectivesFailed": "無法產生課堂目標，請重試。",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

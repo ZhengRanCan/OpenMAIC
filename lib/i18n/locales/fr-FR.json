@@ -1145,6 +1145,9 @@
     "materialTooLarge": "{{name}} est trop volumineux : un support peut faire au plus {{size}}."
   },
   "generation": {
+    "courseObjectives": "Objectifs du cours",
+    "generatingCourseObjectives": "Création des objectifs du cours",
+    "courseObjectivesFailed": "Impossible de générer les objectifs du cours. Réessayez.",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

@@ -1169,6 +1169,9 @@
     "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
+    "courseObjectives": "课级目标",
+    "generatingCourseObjectives": "正在生成课级目标",
+    "courseObjectivesFailed": "课级目标生成失败，请重试。",
     "learnerContextConditions": "适用条件：{{conditions}}",
     "simulatedLearnerLabel": "学习Memory",
     "simulatedLearnerNone": "不使用Memory",

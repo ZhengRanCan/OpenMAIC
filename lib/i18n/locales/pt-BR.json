@@ -1145,6 +1145,9 @@
     "materialTooLarge": "{{name}} é grande demais: um material pode ter no máximo {{size}}."
   },
   "generation": {
+    "courseObjectives": "Objetivos da aula",
+    "generatingCourseObjectives": "Gerando objetivos da aula",
+    "courseObjectivesFailed": "Não foi possível gerar os objetivos da aula. Tente novamente.",
     "learnerContextConditions": "Conditions: {{conditions}}",
     "simulatedLearnerLabel": "Learning Memory",
     "simulatedLearnerNone": "Do not use Memory",

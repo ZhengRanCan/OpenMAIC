@@ -178,6 +178,10 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
         responseTime: 1,
       };
     },
+    courseObjectives: async () => ({
+      courseObjective: 'Explain photosynthesis.',
+      targetStatements: ['Compare photosynthesis under different light.'],
+    }),
     outline: async (_owner, input, ctx) => {
       calls.outline.push(input);
       ctx.emit?.({ type: 'languageDirective', data: 'Use English.' });
@@ -381,7 +385,13 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       outlines: OUTLINES,
       courseTitle: 'Plants',
     });
-    expect(stored.outline).not.toHaveProperty('targets');
+    expect(stored.outline?.targets).toEqual([
+      {
+        id: `${run.id}:target:1`,
+        revision: 1,
+        statement: 'Compare photosynthesis under different light.',
+      },
+    ]);
     expect(await claim(run.id)).toBeNull();
 
     // The outline step got the browser's requirements, with the research decision.
@@ -395,6 +405,10 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
           webSearch: true,
         },
         researchContext: 'research context',
+        courseObjectives: {
+          courseObjective: 'Explain photosynthesis.',
+          targetStatements: ['Compare photosynthesis under different light.'],
+        },
       },
     ]);
 
@@ -407,6 +421,8 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       'step_completed',
       'research_sources',
       'state',
+      'step_started',
+      'step_completed',
       'step_started',
       'outline_language_directive',
       'outline_course_title',
@@ -2536,6 +2552,110 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     );
   });
 
+  it('pauses after three objective failures and reuses the accepted checkpoint after retrying the outline', async () => {
+    const objectives = {
+      courseObjective: '能计算密度并换算单位。',
+      targetStatements: ['用给定质量和体积计算密度。', '在 g/cm³ 和 kg/m³ 间换算。'],
+    };
+    const base = fakeServices();
+    const invalid = new Error('Invalid objectives JSON');
+    const courseObjectives = vi
+      .fn<RunStepServices['courseObjectives']>()
+      .mockRejectedValue(invalid);
+    const outline = vi.fn<RunStepServices['outline']>().mockRejectedValueOnce(new Error('offline'));
+    const services = { ...base.services, courseObjectives, outline };
+    const run = await start(runInput({ requirement: '密度计算与单位换算' }));
+
+    expect(await drive(run.id, services)).toBe('paused');
+    expect(courseObjectives).toHaveBeenCalledTimes(3);
+    expect(courseObjectives.mock.calls.map(([, , ctx]) => ctx.fallbackAfter)).toEqual([
+      undefined,
+      undefined,
+      invalid,
+    ]);
+    expect(outline).not.toHaveBeenCalled();
+    expect((await readGenerationRun(run.id, OWNER))?.error?.step).toBe('course-objectives');
+    expect((await readGenerationRunSteps(run.id)).has('course-objectives')).toBe(false);
+
+    // The existing Retry command permits a new bounded round. This time the
+    // first response fails validation and the next response is accepted.
+    courseObjectives.mockRejectedValueOnce(new Error('Too many objectives'));
+    courseObjectives.mockResolvedValue(objectives);
+    await retryGenerationRun(run.id, OWNER, { commandId: 'retry-objectives' });
+    expect(await drive(run.id, services)).toBe('paused');
+    expect(courseObjectives).toHaveBeenCalledTimes(5);
+    expect(courseObjectives.mock.calls[4]?.[1]).toEqual({
+      requirement: '密度计算与单位换算',
+      pdfText: undefined,
+    });
+    expect((await readGenerationRunSteps(run.id)).get('course-objectives')).toEqual(objectives);
+    expect((await readGenerationRun(run.id, OWNER))?.error?.step).toBe('outline');
+
+    outline.mockImplementation(base.services.outline);
+    await retryGenerationRun(run.id, OWNER, { commandId: 'retry-outline-with-objectives' });
+    expect(await drive(run.id, services, 'worker-resume')).toBe('waiting');
+    expect(courseObjectives).toHaveBeenCalledTimes(5);
+    expect(outline.mock.calls.map(([, input]) => input.courseObjectives)).toEqual([
+      objectives,
+      objectives,
+    ]);
+    expect((await readGenerationRun(run.id, OWNER))?.outline).toMatchObject({
+      courseObjective: objectives.courseObjective,
+      targets: objectives.targetStatements.map((statement, i) => ({
+        id: `${run.id}:target:${i + 1}`,
+        revision: 1,
+        statement,
+      })),
+    });
+  });
+
+  it.each([
+    { interactive: true, taskEngine: false },
+    { interactive: false, taskEngine: true },
+  ])('keeps its existing outline flow in mode %j', async (mode) => {
+    vi.stubEnv('OPENMAIC_ENABLE_VOCATIONAL', 'true');
+    try {
+      const courseObjectives = vi.fn<RunStepServices['courseObjectives']>();
+      const { services, calls } = fakeServices({ courseObjectives });
+      const run = await start(runInput(mode));
+      expect(await drive(run.id, services)).toBe('waiting');
+      expect(courseObjectives).not.toHaveBeenCalled();
+      expect(calls.outline[0]).not.toHaveProperty('courseObjectives');
+      expect((await readGenerationRun(run.id, OWNER))?.outline).not.toHaveProperty(
+        'courseObjective',
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('confirms a legacy outline with existing target IDs and no overall objective', async () => {
+    const { services } = fakeServices();
+    const run = await start(runInput());
+    const targets = [{ id: 'existing-target', revision: 4, statement: 'Explain why.' }];
+    const legacyOutline = {
+      outlines: OUTLINES,
+      targets,
+      languageDirective: 'Use English.',
+      taskEngineMode: false,
+    };
+    expect(await drive(run.id, services)).toBe('waiting');
+    await pool.query('UPDATE generation_runs SET outline=$2::jsonb WHERE id=$1', [
+      run.id,
+      JSON.stringify(legacyOutline),
+    ]);
+    expect((await readGenerationRun(run.id, OWNER))?.outline).toEqual({
+      ...legacyOutline,
+      revision: 1,
+    });
+    await confirm(run.id, OWNER, { commandId: 'confirm-legacy', outlineRevision: 1 });
+    expect(await drive(run.id, services)).toBe('completed');
+    expect((await readGenerationRun(run.id, OWNER))?.outline).toEqual({
+      ...legacyOutline,
+      revision: 1,
+    });
+  });
+
   it.each(['wait', 'auto'] as const)(
     'keeps course target identity and wording after %s confirmation and generation',
     async (outlineReview) => {
@@ -2544,8 +2664,8 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const base = fakeServices();
       const services: RunStepServices = {
         ...base.services,
-        outline: async (...args) => ({
-          ...(await base.services.outline(...args)),
+        courseObjectives: async () => ({
+          courseObjective: 'Explain photosynthesis.',
           targetStatements: [statement],
         }),
       };
@@ -2574,7 +2694,10 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       );
       expect(result.status).toBe(200);
       expect(await result.json()).toMatchObject({
-        run: { state: 'completed', outline: { targets } },
+        run: {
+          state: 'completed',
+          outline: { courseObjective: 'Explain photosynthesis.', targets },
+        },
       });
       expect(await readGenerationRun(run.id, OTHER)).toBeNull();
     },

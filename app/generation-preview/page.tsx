@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, AlertCircle, ArrowLeft, Bot, RefreshCw } from 'lucide-react';
+import { Sparkles, AlertCircle, ArrowLeft, Bot, RefreshCw, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { OutlinesEditor } from '@/components/generation/outlines-editor';
@@ -123,6 +123,26 @@ function GenerationPreviewContent() {
     !!view && (view.state === 'preparing' || view.state === 'outlining') && !view.outline;
   // The run confirms its own outline at its deadline unless the learner holds it.
   const outlineCountdown = view?.input.outlineReview === 'countdown';
+  const generatingObjectives = view?.step === 'course-objectives';
+  const courseObjective = view?.outline?.courseObjective;
+  const targets = view?.outline?.targets;
+  const objectivesSummary =
+    courseObjective || targets?.length ? (
+      <section className="w-full min-w-0 space-y-3 rounded-md border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-left text-sm break-words">
+        <h3 className="flex items-center gap-2 font-semibold">
+          <Target aria-hidden="true" className="size-4 shrink-0 text-blue-600 dark:text-blue-400" />
+          {t('generation.courseObjectives')}
+        </h3>
+        {courseObjective && <p className="font-medium">{courseObjective}</p>}
+        {!!targets?.length && (
+          <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
+            {targets.map((target) => (
+              <li key={target.id}>{target.statement}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+    ) : null;
   const learnerContext = view?.outline?.learnerContext;
   const learnerContextSummary = learnerContext ? (
     <div className="rounded-md border border-muted bg-muted/30 px-4 py-3 text-left text-sm">
@@ -448,6 +468,7 @@ function GenerationPreviewContent() {
               </div>
             )}
 
+            {objectivesSummary}
             {learnerContextSummary}
 
             <OutlinesEditor
@@ -494,6 +515,7 @@ function GenerationPreviewContent() {
       </motion.div>
 
       <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
+        {objectivesSummary}
         {learnerContextSummary}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -535,21 +557,25 @@ function GenerationPreviewContent() {
                     </motion.div>
                   ) : (
                     <motion.div
-                      key={activeStep.id}
+                      key={generatingObjectives ? 'course-objectives' : activeStep.id}
                       initial={{ scale: 0.8, opacity: 0, filter: 'blur(10px)' }}
                       animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
                       exit={{ scale: 1.2, opacity: 0, filter: 'blur(10px)' }}
                       transition={{ duration: 0.4 }}
                       className="absolute inset-0 flex items-center justify-center"
                     >
-                      <StepVisualizer
-                        stepId={activeStep.id}
-                        outlines={outlines}
-                        webSearchSources={webSearchSources}
-                        onExpandOutline={
-                          activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
-                        }
-                      />
+                      {generatingObjectives ? (
+                        <Target aria-hidden="true" className="size-16 text-blue-500" />
+                      ) : (
+                        <StepVisualizer
+                          stepId={activeStep.id}
+                          outlines={outlines}
+                          webSearchSources={webSearchSources}
+                          onExpandOutline={
+                            activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
+                          }
+                        />
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -559,18 +585,28 @@ function GenerationPreviewContent() {
               <div className="space-y-3 max-w-sm mx-auto">
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={error ? 'error' : activeStep.id}
+                    key={
+                      error ? 'error' : generatingObjectives ? 'course-objectives' : activeStep.id
+                    }
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-2"
                   >
                     <h2 className="text-2xl font-bold tracking-tight">
-                      {error ? t('generation.generationFailed') : t(activeStep.title)}
+                      {t(
+                        error
+                          ? 'generation.generationFailed'
+                          : generatingObjectives
+                            ? 'generation.generatingCourseObjectives'
+                            : activeStep.title,
+                      )}
                     </h2>
-                    <p className="text-muted-foreground text-base">
-                      {error ? error : statusMessage || t(activeStep.description)}
-                    </p>
+                    {(error || statusMessage || !generatingObjectives) && (
+                      <p className="text-muted-foreground text-base">
+                        {error || statusMessage || t(activeStep.description)}
+                      </p>
+                    )}
                   </motion.div>
                 </AnimatePresence>
               </div>

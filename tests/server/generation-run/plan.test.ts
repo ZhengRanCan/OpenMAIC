@@ -19,8 +19,11 @@ const withMaterials = { materialIds: ['mat_00000000000000000000000000'] };
 
 describe('generation run plan', () => {
   it('prepares in the browser order: material analysis only with materials, then research and the outline', () => {
-    expect(preparationSteps(noMaterials).map((step) => step.id)).toEqual(['research', 'outline']);
-    expect(preparationSteps(withMaterials).map((step) => step.id)).toEqual([
+    expect(preparationSteps(noMaterials, false).map((step) => step.id)).toEqual([
+      'research',
+      'outline',
+    ]);
+    expect(preparationSteps(withMaterials, false).map((step) => step.id)).toEqual([
       'material-analysis',
       'research',
       'outline',
@@ -30,31 +33,74 @@ describe('generation run plan', () => {
   it.each(['A', 'B', 'C'] as const)(
     'prepares simulated learner %s Context after research and before outline',
     (simulatedLearner) => {
-      expect(preparationSteps({ ...noMaterials, simulatedLearner }).map((step) => step.id)).toEqual(
-        ['research', 'learner-context', 'outline'],
-      );
       expect(
-        preparationSteps({ ...withMaterials, simulatedLearner }).map((step) => step.id),
-      ).toEqual(['material-analysis', 'research', 'learner-context', 'outline']);
+        preparationSteps({ ...noMaterials, simulatedLearner }, true).map((step) => step.id),
+      ).toEqual(['research', 'learner-context', 'course-objectives', 'outline']);
+      expect(
+        preparationSteps({ ...withMaterials, simulatedLearner }, true).map((step) => step.id),
+      ).toEqual([
+        'material-analysis',
+        'research',
+        'learner-context',
+        'course-objectives',
+        'outline',
+      ]);
     },
   );
 
   it('keeps Context in preparing and resumes outline only after its Context checkpoint', () => {
     const runInput = { ...noMaterials, simulatedLearner: 'B' as const };
     const completed = new Set(['research']);
-    expect(advanceRun({ state: 'preparing', runInput, completed, sceneCount: 0 })).toEqual({
+    expect(
+      advanceRun({
+        state: 'preparing',
+        runInput,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
+    ).toEqual({
       kind: 'step',
       step: { id: 'learner-context', kind: 'learner-context' },
       state: 'preparing',
     });
     completed.add('learner-context');
-    expect(advanceRun({ state: 'preparing', runInput, completed, sceneCount: 0 })).toEqual({
+    expect(
+      advanceRun({
+        state: 'preparing',
+        runInput,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
+    ).toMatchObject({
+      step: { id: 'course-objectives' },
+      state: 'outlining',
+    });
+    completed.add('course-objectives');
+    expect(
+      advanceRun({
+        state: 'preparing',
+        runInput,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
+    ).toEqual({
       kind: 'step',
       step: { id: 'outline', kind: 'outline' },
       state: 'outlining',
     });
     completed.add('outline');
-    expect(advanceRun({ state: 'outlining', runInput, completed, sceneCount: 0 })).toEqual({
+    expect(
+      advanceRun({
+        state: 'outlining',
+        runInput,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
+    ).toEqual({
       kind: 'await-outline-confirmation',
     });
   });
@@ -77,6 +123,7 @@ describe('generation run plan', () => {
       state: 'preparing',
       runInput: withMaterials,
       completed,
+      includeCourseObjectives: true,
       sceneCount: 0,
     });
     expect(first).toMatchObject({
@@ -86,26 +133,66 @@ describe('generation run plan', () => {
     });
     completed.add('material-analysis');
     expect(
-      advanceRun({ state: 'preparing', runInput: withMaterials, completed, sceneCount: 0 }),
+      advanceRun({
+        state: 'preparing',
+        runInput: withMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
     ).toMatchObject({ kind: 'step', step: { id: 'research' }, state: 'preparing' });
     completed.add('research');
     expect(
-      advanceRun({ state: 'preparing', runInput: withMaterials, completed, sceneCount: 0 }),
+      advanceRun({
+        state: 'preparing',
+        runInput: withMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
+    ).toMatchObject({ kind: 'step', step: { id: 'course-objectives' }, state: 'outlining' });
+    completed.add('course-objectives');
+    expect(
+      advanceRun({
+        state: 'preparing',
+        runInput: withMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
     ).toMatchObject({ kind: 'step', step: { id: 'outline' }, state: 'outlining' });
     completed.add('outline');
     expect(
-      advanceRun({ state: 'outlining', runInput: withMaterials, completed, sceneCount: 0 }),
+      advanceRun({
+        state: 'outlining',
+        runInput: withMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 0,
+      }),
     ).toEqual({ kind: 'await-outline-confirmation' });
   });
 
   it('resumes a generating run after its last checkpoint, and completes after the last append', () => {
     const completed = new Set(['research', 'outline', 'agents', 'scene:0:content']);
     expect(
-      advanceRun({ state: 'generating', runInput: noMaterials, completed, sceneCount: 2 }),
+      advanceRun({
+        state: 'generating',
+        runInput: noMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 2,
+      }),
     ).toMatchObject({ kind: 'step', step: { id: 'scene:0:actions', sceneIndex: 0 } });
     for (const step of generationSteps(2)) completed.add(step.id);
     expect(
-      advanceRun({ state: 'generating', runInput: noMaterials, completed, sceneCount: 2 }),
+      advanceRun({
+        state: 'generating',
+        runInput: noMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 2,
+      }),
     ).toEqual({ kind: 'complete' });
   });
 
@@ -120,7 +207,13 @@ describe('generation run plan', () => {
       'scene:2:content',
     ]);
     expect(
-      advanceRun({ state: 'generating', runInput: noMaterials, completed, sceneCount: 3 }),
+      advanceRun({
+        state: 'generating',
+        runInput: noMaterials,
+        completed,
+        includeCourseObjectives: true,
+        sceneCount: 3,
+      }),
     ).toMatchObject({ step: { id: 'scene:1:content' } });
   });
 
@@ -132,7 +225,13 @@ describe('generation run plan', () => {
       'ended',
     ] as const) {
       expect(() =>
-        advanceRun({ state, runInput: noMaterials, completed: new Set(), sceneCount: 1 }),
+        advanceRun({
+          state,
+          runInput: noMaterials,
+          completed: new Set(),
+          includeCourseObjectives: true,
+          sceneCount: 1,
+        }),
       ).toThrow(/has no step/);
     }
   });
@@ -141,6 +240,7 @@ describe('generation run plan', () => {
     expect(stateForRetry('material-analysis')).toBe('preparing');
     expect(stateForRetry('research')).toBe('preparing');
     expect(stateForRetry('learner-context')).toBe('preparing');
+    expect(stateForRetry('course-objectives')).toBe('outlining');
     expect(stateForRetry('outline')).toBe('outlining');
     expect(stateForRetry('agents')).toBe('generating');
     expect(stateForRetry(sceneStepId(3, 'narration'))).toBe('generating');
@@ -149,7 +249,7 @@ describe('generation run plan', () => {
 
   it('parses the step ids it produces, and nothing else', () => {
     for (const step of [
-      ...preparationSteps({ ...withMaterials, simulatedLearner: 'B' }),
+      ...preparationSteps({ ...withMaterials, simulatedLearner: 'B' }, true),
       ...generationSteps(2),
     ]) {
       expect(parseStepId(step.id)).toEqual(step);

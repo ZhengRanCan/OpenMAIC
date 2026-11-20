@@ -1298,6 +1298,10 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
         signal: AbortSignal.timeout(125_000),
         services: {
           ...defaultRunStepServices,
+          courseObjectives: async () => ({
+            courseObjective: '能解新情境中的同类题。',
+            targetStatements: ['给定新情境，独立列式并说明每一步。'],
+          }),
           learnerContext: async (_owner, input) => ({
             schemaVersion: 'learner-context.v1',
             promptVersion: 'learner-context-selection.v1',

@@ -2,7 +2,8 @@
  * The run's state machine, as pure functions over what is checkpointed.
  *
  * A run's steps follow the browser's classic order: material analysis (when
- * materials are given) → research → outline → [confirmation] → agents → for
+ * materials are given) → research → course objectives (standard mode) →
+ * outline → [confirmation] → agents → for
  * each scene in outline order: content → actions → narration (which appends
  * the narrated scene to the course in the same commit, so its clips are never
  * held by a checkpoint alone). The step list is fixed by the input and the
@@ -23,6 +24,7 @@ export type RunStep =
   | { id: 'material-analysis'; kind: 'material-analysis' }
   | { id: 'research'; kind: 'research' }
   | { id: 'learner-context'; kind: 'learner-context' }
+  | { id: 'course-objectives'; kind: 'course-objectives' }
   | { id: 'outline'; kind: 'outline' }
   | { id: 'agents'; kind: 'agents' }
   | { id: string; kind: SceneStepKind; sceneIndex: number };
@@ -39,6 +41,7 @@ export function parseStepId(id: string): RunStep | null {
     id === 'material-analysis' ||
     id === 'research' ||
     id === 'learner-context' ||
+    id === 'course-objectives' ||
     id === 'outline' ||
     id === 'agents'
   ) {
@@ -52,6 +55,7 @@ export function parseStepId(id: string): RunStep | null {
 /** The steps before the outline is confirmed. */
 export function preparationSteps(
   input: Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'>,
+  includeCourseObjectives: boolean,
 ): RunStep[] {
   return [
     ...(input.materialIds.length > 0
@@ -60,6 +64,9 @@ export function preparationSteps(
     { id: 'research', kind: 'research' },
     ...(input.simulatedLearner
       ? [{ id: 'learner-context', kind: 'learner-context' } as const]
+      : []),
+    ...(includeCourseObjectives
+      ? [{ id: 'course-objectives', kind: 'course-objectives' } as const]
       : []),
     { id: 'outline', kind: 'outline' },
   ];
@@ -84,7 +91,7 @@ export function phaseOfStep(step: RunStep): ExecutableRunState {
     step.kind === 'learner-context'
   )
     return 'preparing';
-  if (step.kind === 'outline') return 'outlining';
+  if (step.kind === 'course-objectives' || step.kind === 'outline') return 'outlining';
   return 'generating';
 }
 
@@ -103,12 +110,15 @@ export type RunAdvance =
 export function advanceRun(input: {
   state: GenerationRunState;
   runInput: Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'>;
+  includeCourseObjectives: boolean;
   completed: ReadonlySet<string>;
   sceneCount: number;
 }): RunAdvance {
   const { state, completed } = input;
   if (state === 'preparing' || state === 'outlining') {
-    const next = preparationSteps(input.runInput).find((step) => !completed.has(step.id));
+    const next = preparationSteps(input.runInput, input.includeCourseObjectives).find(
+      (step) => !completed.has(step.id),
+    );
     if (!next) return { kind: 'await-outline-confirmation' };
     return { kind: 'step', step: next, state: phaseOfStep(next) };
   }

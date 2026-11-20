@@ -119,6 +119,7 @@ export interface CourseTarget {
 /** The outline a run generated, as last confirmed or edited. */
 export interface GenerationRunOutline {
   outlines: SceneOutline[];
+  courseObjective?: string;
   targets?: CourseTarget[];
   /** The exact, server-resolved Context used by this outline, retained after compaction. */
   learnerContext?: FrozenLearnerContext;
