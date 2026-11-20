@@ -23,6 +23,8 @@ import { encodeJson } from '@openmaic/storage/pg-json';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
+import { assertLearnerProfileIn, LearnerProfileError } from '@/lib/persistence/learner-profiles';
+import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { startOwnerMaterialExtractions } from '@/lib/persistence/owner-materials';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -299,6 +301,8 @@ async function provider() {
   return persistence;
 }
 
+export { provider as generationRunPersistence };
+
 /** Forget the provisioned schema (tests that drop it). */
 export function resetGenerationRunSchemaForTests(): void {
   delete schemaState[SCHEMA_STATE_KEY];
@@ -543,19 +547,28 @@ async function enforceActiveRunLimitIn(
   ownerId: string,
   limit: number,
 ): Promise<string> {
+  const owner = await lockRunOwnerIn(tx, ownerId);
+  await checkActiveRunLimitIn(tx, owner, limit);
+  return owner;
+}
+
+async function lockRunOwnerIn(tx: Queryable, ownerId: string): Promise<string> {
   // Counted for the owner the runs belong to now: every owner claimed into it
   // shares its limit, and its lock.
   const owner = await canonicalOwnerIn(tx, ownerId);
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
     `openmaic.generation-runs.owner:${owner}`,
   ]);
+  return owner;
+}
+
+async function checkActiveRunLimitIn(tx: Queryable, owner: string, limit: number) {
   const active = await tx.query<{ n: string | number }>(
     `SELECT count(*) AS n FROM generation_runs
       WHERE ${OWNED_BY('$1')} AND state = ANY($2::text[])`,
     [owner, [...LIMITED_RUN_STATES]],
   );
   if (Number(active.rows[0]?.n ?? 0) >= limit) throw new ActiveRunLimitError(limit);
-  return owner;
 }
 
 /** {@link currentOwnerOf}, on an open transaction. */
@@ -585,7 +598,14 @@ export async function createGenerationRun(
 ): Promise<StoredRun> {
   const { withTransaction } = await provider();
   return withTransaction(async (tx) => {
-    const owner = await enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+    const selection = input.learnerProfileSelection;
+    if (selection && selection.mode !== 'none') await fenceOwnerWrite(tx, ownerId);
+    const owner = await lockRunOwnerIn(tx, ownerId);
+    const replay = await blankProfileRunIn(tx, owner, input);
+    if (replay) return replay;
+    await checkActiveRunLimitIn(tx, owner, options.maxActiveRunsPerOwner);
+    if (selection?.mode === 'existing')
+      await assertLearnerProfileIn(tx, owner, selection.profileId);
     const waiting = await tx.query<{ n: string | number }>(
       `SELECT count(*) AS n FROM generation_runs
         WHERE ${OWNED_BY('$1')} AND state = 'awaiting_outline_confirmation'`,
@@ -607,6 +627,27 @@ export async function createGenerationRun(
     ]);
     return storedRun(row.rows[0]!);
   });
+}
+
+async function blankProfileRunIn(tx: Queryable, ownerId: string, input: GenerationRunInput) {
+  const selection = input.learnerProfileSelection;
+  if (selection?.mode !== 'blank') return null;
+  const { rows } = await tx.query<RunRow & { same_input: boolean }>(
+    `SELECT ${RUN_COLUMNS}, input=$3::jsonb AS same_input FROM generation_runs
+      WHERE ${OWNED_BY('$1')} AND input->'learnerProfileSelection'->>'mode'='blank'
+        AND input->'learnerProfileSelection'->>'requestId'=$2
+        AND NOT EXISTS (SELECT 1 FROM owner_merges WHERE from_owner_id=$1)`,
+    [ownerId, selection.requestId, encodeJson(input, 'run input')],
+  );
+  if (rows.length > 1 || (rows[0] && !rows[0].same_input))
+    throw new LearnerProfileError('request-conflict');
+  return rows[0] ? storedRun(rows[0]) : null;
+}
+
+export async function readBlankProfileRun(ownerId: string, input: GenerationRunInput) {
+  if (input.learnerProfileSelection?.mode !== 'blank') return null;
+  const { withTransaction } = await provider();
+  return withTransaction((tx) => blankProfileRunIn(tx, ownerId, input));
 }
 
 /**

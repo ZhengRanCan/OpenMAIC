@@ -4,6 +4,7 @@
  * caller-facing.
  */
 import { capBodyStream } from '@/lib/server/capped-stream';
+import { learnerProfileSelectionSchema } from '@/lib/learner-context/learner-profile-contracts';
 import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import { MAX_CLASSROOM_MATERIALS } from '@/lib/server/classroom-materials';
 import { isMaterialId } from '@/lib/server/materials/material-id';
@@ -126,6 +127,17 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
   const taskEngine = optionalBoolean(body.taskEngine, 'taskEngine');
   if (!taskEngine.ok) return taskEngine;
 
+  let learnerProfileSelection: GenerationRunInput['learnerProfileSelection'];
+  if (body.learnerProfileSelection !== undefined) {
+    const parsed = learnerProfileSelectionSchema.safeParse(body.learnerProfileSelection);
+    if (!parsed.success) return { ok: false, message: 'Invalid learner profile selection' };
+    if (body.simulatedLearner !== undefined)
+      return { ok: false, message: 'Choose one learner identity' };
+    if (parsed.data.mode !== 'none' && (interactive.value || taskEngine.value))
+      return { ok: false, message: 'Learner profiles are available for ordinary classrooms only' };
+    learnerProfileSelection = parsed.data;
+  }
+
   let simulatedLearner: GenerationRunInput['simulatedLearner'];
   if (body.simulatedLearner !== undefined) {
     if (
@@ -228,11 +240,14 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
     value: {
       requirement,
       ...(simulatedLearner ? { simulatedLearner } : {}),
+      ...(learnerProfileSelection ? { learnerProfileSelection } : {}),
       materialIds,
       interactive: interactive.value,
       taskEngine: taskEngine.value,
       agents,
-      ...(!simulatedLearner && learnerProfile ? { learnerProfile } : {}),
+      ...(!simulatedLearner && !learnerProfileSelection && learnerProfile
+        ? { learnerProfile }
+        : {}),
       outlineReview,
       ...(voice ? { voice } : {}),
       ...(releaseMaterials.value && materialIds.length > 0 ? { releaseMaterials: true } : {}),

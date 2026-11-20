@@ -6,6 +6,7 @@
  */
 import { ttsSelection } from '@/lib/audio/tts-selection';
 import type { ModelCapabilities } from '@/lib/model-settings/capabilities';
+import type { LearnerProfileSelection } from '@/lib/learner-context/learner-profile-contracts';
 import { useAgentRegistry, whenAgentRegistryLoaded } from '@/lib/orchestration/registry/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -73,6 +74,7 @@ export async function startClassicRun(input: {
   interactive: boolean;
   taskEngine: boolean;
   simulatedLearner?: 'A' | 'B' | 'C';
+  learnerProfileSelection?: LearnerProfileSelection;
   capabilities: ModelCapabilities;
 }): Promise<RunSnapshot> {
   if (input.simulatedLearner && (input.interactive || input.taskEngine)) {
@@ -81,9 +83,9 @@ export async function startClassicRun(input: {
   const agents = await selectedRunAgents();
   const materialIds = [...input.materialIds];
 
-  const profile = useUserProfileStore.getState();
+  const profile = input.learnerProfileSelection ? undefined : useUserProfileStore.getState();
   const learnerProfile =
-    !input.simulatedLearner && (profile.nickname || profile.bio)
+    !input.simulatedLearner && profile && (profile.nickname || profile.bio)
       ? {
           ...(profile.nickname ? { nickname: profile.nickname } : {}),
           ...(profile.bio ? { bio: profile.bio } : {}),
@@ -98,6 +100,9 @@ export async function startClassicRun(input: {
     interactive: input.interactive,
     taskEngine: input.taskEngine,
     ...(input.simulatedLearner ? { simulatedLearner: input.simulatedLearner } : {}),
+    ...(input.learnerProfileSelection
+      ? { learnerProfileSelection: input.learnerProfileSelection }
+      : {}),
     agents,
     ...(learnerProfile ? { learnerProfile } : {}),
     ...(voice ? { voice } : {}),

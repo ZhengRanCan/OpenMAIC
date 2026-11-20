@@ -6,7 +6,7 @@
  * and the run API routes.
  */
 import { NextRequest } from 'next/server';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -360,6 +360,173 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
   async function eventTypes(runId: string) {
     return (await readGenerationRunEvents(runId, 0)).map((event) => event.type);
   }
+
+  it(
+    'F92 creates a profile only with successful course completion, reuses it, and preserves old ownership',
+    async () => {
+      const { GET: list } = await import('@/app/api/learner-profiles/route');
+      const { GET: binding } = await import('@/app/api/learner-profiles/classroom/[stageId]/route');
+      const { PUT: nameProfile } = await import('@/app/api/learner-profiles/[profileId]/route');
+      const { POST: startRun } = await import('@/app/api/generation-runs/route');
+      const anonymousCookie = randomUUID();
+      const anonymous = `anon:${anonymousCookie}`;
+      const account = `user:f92-${randomUUID()}`;
+      const blank = runInput({
+        learnerProfile: undefined,
+        learnerProfileSelection: { mode: 'blank', requestId: randomUUID() },
+        outlineReview: 'auto',
+      });
+      const starter = () =>
+        createGenerationRun(anonymous, blank, {
+          maxActiveRunsPerOwner: 1,
+          maxWaitingRunsPerOwner: 1,
+        });
+      const profiles = async (cookieId: string) => {
+        const response = await list(
+          new NextRequest('http://localhost/api/learner-profiles', { headers: cookie(cookieId) }),
+        );
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+        return (await response.json()).profiles;
+      };
+      const read = (stageId: string, cookieId = anonymousCookie) =>
+        binding(
+          new NextRequest(`http://localhost/api/learner-profiles/classroom/${stageId}`, {
+            headers: cookie(cookieId),
+          }),
+          { params: Promise.resolve({ stageId }) },
+        );
+      const getCount = async () =>
+        Number(
+          (
+            await pool.query('SELECT count(*) AS n FROM learner_profiles WHERE owner_id=$1', [
+              anonymous,
+            ])
+          ).rows[0]?.n,
+        );
+
+      const [first, duplicate] = await Promise.all([starter(), starter()]);
+      expect(duplicate.id).toBe(first.id);
+      expect(await getCount()).toBe(0);
+      await expect(
+        start({ ...blank, requirement: 'Different course' }, anonymous),
+      ).rejects.toMatchObject({
+        code: 'request-conflict',
+      });
+      const base = fakeServices({ research: async () => null });
+      let fail = true;
+      const services = {
+        ...base.services,
+        sceneContent: async (...args: Parameters<RunStepServices['sceneContent']>) => {
+          if (fail && args[1].outline.id === 'o2')
+            throw new Error('F92 recoverable generation failure');
+          return base.services.sceneContent(...args);
+        },
+      };
+      expect(await drive(first.id, services)).toBe('paused');
+      const stageId = (await readGenerationRun(first.id, anonymous))!.stageId!;
+      expect(stageId).toBeTruthy();
+      expect((await read(stageId)).status).toBe(404);
+      expect(await profiles(anonymousCookie)).toEqual([]);
+      fail = false;
+      await retryGenerationRun(first.id, anonymous, { commandId: 'f92-retry' });
+      expect(await drive(first.id, services)).toBe('completed');
+      expect(await getCount()).toBe(1);
+      expect((await read(stageId, OTHER_COOKIE)).status).toBe(404);
+      const firstBinding = await (await read(stageId)).json();
+      const profileId = firstBinding.profile.id as string;
+      expect(firstBinding).toEqual({ profile: { id: profileId, name: null }, promptName: true });
+      const setName = (name: string, cookieId = anonymousCookie, site = 'same-origin') =>
+        nameProfile(
+          new NextRequest(`http://localhost/api/learner-profiles/${profileId}`, {
+            method: 'PUT',
+            headers: {
+              ...cookie(cookieId),
+              'content-type': 'application/json',
+              'sec-fetch-site': site,
+            },
+            body: JSON.stringify({ name }),
+          }),
+          { params: Promise.resolve({ profileId }) },
+        );
+      expect((await setName('物理', OTHER_COOKIE)).status).toBe(404);
+      expect((await setName('物理', anonymousCookie, 'cross-site')).status).toBe(403);
+      expect((await setName('   ')).status).toBe(400);
+      expect(await (await setName(' 物理 ')).json()).toEqual({ id: profileId, name: '物理' });
+      expect((await setName('物理')).status).toBe(200);
+      expect((await setName('其它学科')).status).toBe(409);
+      expect(await profiles(anonymousCookie)).toEqual([{ id: profileId, name: '物理' }]);
+      expect(await profiles(OTHER_COOKIE)).toEqual([]);
+      const existing = runInput({
+        outlineReview: 'auto',
+        learnerProfileSelection: { mode: 'existing', profileId },
+      });
+      const foreign = await startRun(
+        new NextRequest('http://localhost/api/generation-runs', {
+          method: 'POST',
+          headers: { ...cookie(OTHER_COOKIE), 'content-type': 'application/json' },
+          body: JSON.stringify(existing),
+        }),
+      );
+      expect(foreign.status).toBe(404);
+      const replay = await startRun(
+        new NextRequest('http://localhost/api/generation-runs', {
+          method: 'POST',
+          headers: { ...cookie(anonymousCookie), 'content-type': 'application/json' },
+          body: JSON.stringify(blank),
+        }),
+      );
+      expect((await replay.json()).run.id).toBe(first.id);
+      expect(await getCount()).toBe(1);
+
+      const second = await start(
+        {
+          ...blank,
+          learnerProfileSelection: { mode: 'blank', requestId: randomUUID() },
+        },
+        anonymous,
+      );
+      expect(await drive(second.id, base.services)).toBe('completed');
+      expect(await getCount()).toBe(2);
+      const secondStage = (await readGenerationRun(second.id, anonymous))!.stageId!;
+      expect((await (await read(secondStage)).json()).profile.id).not.toBe(profileId);
+      const reuse = await start(existing, anonymous);
+      expect(await drive(reuse.id, base.services)).toBe('completed');
+      const reuseStage = (await readGenerationRun(reuse.id, anonymous))!.stageId!;
+      expect(await (await read(reuseStage)).json()).toEqual({
+        profile: { id: profileId, name: '物理' },
+        promptName: false,
+      });
+      for (const selection of [undefined, { mode: 'none' } as const]) {
+        const unbound = await start(
+          runInput({ outlineReview: 'auto', learnerProfileSelection: selection }),
+          anonymous,
+        );
+        expect(await drive(unbound.id, base.services)).toBe('completed');
+        const saved = await readGenerationRun(unbound.id, anonymous);
+        expect(saved?.input.learnerProfileSelection).toEqual(selection);
+        expect(await documentStore(anonymous).loadDocument(saved!.stageId!)).not.toBeNull();
+        expect((await read(saved!.stageId!)).status).toBe(404);
+      }
+      expect(await getCount()).toBe(2);
+      expect((await (await read(stageId)).json()).profile.id).toBe(profileId);
+
+      await pool.query('INSERT INTO owner_merges (from_owner_id,to_owner_id) VALUES ($1,$2)', [
+        anonymous,
+        account,
+      ]);
+      await pool.query('UPDATE stage_meta SET owner_id=$2 WHERE owner_id=$1', [anonymous, account]);
+      const { listLearnerProfiles, readClassroomLearnerProfile } =
+        await import('@/lib/server/learner-profiles');
+      expect(await listLearnerProfiles(anonymous)).toEqual([]);
+      expect(await listLearnerProfiles(account)).toContainEqual({ id: profileId, name: '物理' });
+      expect(await readClassroomLearnerProfile(account, stageId)).toEqual({
+        profile: { id: profileId, name: '物理' },
+        promptName: false,
+      });
+      expect((await start(blank, account)).id).toBe(first.id);
+    },
+    SLOW_TEST_MS,
+  );
 
   it('produces the course the browser flow would, step by step, with the same context', async () => {
     // The log as it stood while the last scene generated (a finished run's

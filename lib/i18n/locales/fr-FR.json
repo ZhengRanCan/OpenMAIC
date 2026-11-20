@@ -9,6 +9,21 @@
     "retry": "Réessayer",
     "close": "Fermer"
   },
+  "learnerProfiles": {
+    "title": "Profil d’apprentissage",
+    "none": "Sans profil",
+    "blank": "Profil vierge",
+    "unnamed": "Profil sans nom",
+    "bound": "Profil du cours · {{name}}",
+    "nameTitle": "Nommez votre profil",
+    "nameDescription": "Votre cours est prêt. Nommez le profil pour le retrouver la prochaine fois.",
+    "nameLabel": "Nom du profil",
+    "later": "Nommer plus tard",
+    "save": "Enregistrer le nom",
+    "saveFailed": "Impossible d’enregistrer le nom. Réessayez.",
+    "unavailable": "Impossible de charger les profils.",
+    "unsupported": "Le choix du profil est disponible pour les cours standard."
+  },
   "home": {
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
     "greetingWithName": "Bonjour, {{name}}"

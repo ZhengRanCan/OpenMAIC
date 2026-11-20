@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import { nanoid } from 'nanoid';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -107,10 +108,11 @@ import {
 } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
-import {
-  SimulatedLearnerSelect,
-  type SimulatedLearnerChoice,
-} from '@/components/generation/simulated-learner-select';
+import { LearnerProfilePicker } from '@/components/generation/learner-profile-picker';
+import type {
+  LearnerProfileChoice,
+  LearnerProfileSelection,
+} from '@/lib/learner-context/learner-profile-contracts';
 import { ProBadge } from '@/components/workbench/ProBadge';
 import { arrivedByProSwap, startProSwap } from '@/lib/workbench/pro-swap';
 import {
@@ -135,17 +137,18 @@ interface FormState {
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
-  simulatedLearner: SimulatedLearnerChoice;
+  learnerChoice: LearnerProfileChoice;
 }
 
 const initialFormState: FormState = {
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
-  simulatedLearner: '',
+  learnerChoice: { mode: 'none' },
 };
 
 function HomePage() {
+  const blankProfileRequest = useRef<{ key: string; requestId: string } | null>(null);
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
@@ -539,9 +542,6 @@ function HomePage() {
     setForm((prev) => ({
       ...prev,
       [field]: value,
-      ...((field === 'interactiveMode' || field === 'vocationalTestMode') && value
-        ? { simulatedLearner: '' as const }
-        : {}),
     }));
     try {
       if (field === 'interactiveMode')
@@ -596,12 +596,28 @@ function HomePage() {
       if (materialIds.length > 0 && !(await courseMaterials.verify())) {
         throw new Error(t('toolbar.materialUnavailable'));
       }
+      let learnerProfileSelection: LearnerProfileSelection | undefined;
+      if (!form.interactiveMode && !form.vocationalTestMode) {
+        const choice = form.learnerChoice;
+        if (choice.mode === 'blank') {
+          const key = JSON.stringify([form.requirement.trim(), materialIds]);
+          if (blankProfileRequest.current?.key !== key) {
+            blankProfileRequest.current = { key, requestId: nanoid() };
+          }
+          learnerProfileSelection = {
+            mode: 'blank',
+            requestId: blankProfileRequest.current.requestId,
+          };
+        } else if (choice.mode === 'existing') {
+          learnerProfileSelection = { mode: 'existing', profileId: choice.profileId };
+        } else learnerProfileSelection = choice;
+      }
       const run = await startClassicRun({
         requirement: form.requirement,
         materialIds,
         interactive: form.vocationalTestMode ? true : form.interactiveMode,
         taskEngine: form.vocationalTestMode,
-        ...(form.simulatedLearner ? { simulatedLearner: form.simulatedLearner } : {}),
+        learnerProfileSelection,
         capabilities,
       });
       router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
@@ -615,7 +631,13 @@ function HomePage() {
       if (err instanceof RunStartRefusedError) {
         setError(t(err.reason, err.values));
       } else if (err instanceof RunApiError) {
-        setError(runApiErrorText(err, t));
+        if (form.learnerChoice.mode === 'blank' && err.status === 409)
+          blankProfileRequest.current = null;
+        setError(
+          form.learnerChoice.mode === 'existing' && err.status === 404
+            ? t('learnerProfiles.unavailable')
+            : runApiErrorText(err, t),
+        );
       } else {
         setError(err instanceof Error ? err.message : t('upload.generateFailed'));
       }
@@ -814,7 +836,15 @@ function HomePage() {
           >
             {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex items-start justify-between">
-              <GreetingBar />
+              <GreetingBar
+                choice={form.learnerChoice}
+                onChoose={(choice) => {
+                  if (choice.mode !== 'blank') blankProfileRequest.current = null;
+                  updateForm('learnerChoice', choice);
+                }}
+                supported={!form.interactiveMode && !form.vocationalTestMode}
+                disabled={preparingGenerate}
+              />
               <div className="pr-3 pt-3.5 shrink-0">
                 <AgentBar />
               </div>
@@ -829,13 +859,6 @@ function HomePage() {
               onChange={(e) => updateForm('requirement', e.target.value)}
               onKeyDown={handleKeyDown}
               rows={4}
-            />
-
-            <SimulatedLearnerSelect
-              value={form.simulatedLearner}
-              onChange={(value) => updateForm('simulatedLearner', value)}
-              unsupported={form.interactiveMode || form.vocationalTestMode}
-              disabled={preparingGenerate}
             />
 
             {/* Toolbar row */}
@@ -1346,7 +1369,17 @@ function isCustomAvatar(src: string) {
   return src.startsWith('data:');
 }
 
-function GreetingBar() {
+function GreetingBar({
+  choice,
+  onChoose,
+  supported,
+  disabled,
+}: {
+  choice: LearnerProfileChoice;
+  onChoose: (choice: LearnerProfileChoice) => void;
+  supported: boolean;
+  disabled: boolean;
+}) {
   const { t } = useI18n();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
@@ -1362,8 +1395,21 @@ function GreetingBar() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const displayName = nickname || t('profile.defaultNickname');
+
+  useEffect(() => {
+    if (open) {
+      const panel = panelRef.current;
+      (
+        panel?.querySelector<HTMLInputElement>('input[type="radio"]:checked:not(:disabled)') ??
+        panel?.querySelector<HTMLInputElement>('input[type="radio"]:not(:disabled)') ??
+        panel
+      )?.focus();
+    }
+  }, [open]);
 
   // Click-outside to collapse
   useEffect(() => {
@@ -1422,7 +1468,17 @@ function GreetingBar() {
   };
 
   return (
-    <div ref={containerRef} className="relative pl-4 pr-2 pt-3.5 pb-1 w-auto">
+    <div
+      ref={containerRef}
+      className="relative pl-4 pr-2 pt-3.5 pb-1 w-auto"
+      onKeyDown={(event) => {
+        if (open && event.key === 'Escape' && !editingName) {
+          setOpen(false);
+          setAvatarPickerOpen(false);
+          requestAnimationFrame(() => triggerRef.current?.focus());
+        }
+      }}
+    >
       <input
         ref={avatarInputRef}
         type="file"
@@ -1433,7 +1489,10 @@ function GreetingBar() {
 
       {/* ── Collapsed pill (always in flow) ── */}
       {!open && (
-        <div
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-expanded={open}
           className="flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
           onClick={() => setOpen(true)}
         >
@@ -1449,24 +1508,33 @@ function GreetingBar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="leading-none select-none flex items-center gap-1">
-                  <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
+                  <span className="flex min-w-0 flex-col items-start gap-1 text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
                     {t('home.greetingWithName', { name: displayName })}
+                    {supported && (
+                      <span className="max-w-40 truncate text-[11px] font-normal text-muted-foreground">
+                        {choice.mode === 'existing'
+                          ? (choice.name ?? t('learnerProfiles.unnamed'))
+                          : t(`learnerProfiles.${choice.mode}`)}
+                      </span>
+                    )}
                   </span>
                   <ChevronDown className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
                 </span>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}>
-                {t('profile.editTooltip')}
+                {t('learnerProfiles.title')}
               </TooltipContent>
             </Tooltip>
           </div>
-        </div>
+        </button>
       )}
 
       {/* ── Expanded panel (absolute, floating) ── */}
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={panelRef}
+            tabIndex={-1}
             initial={{ opacity: 0, y: -4, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
@@ -1562,6 +1630,12 @@ function GreetingBar() {
 
               {/* ── Expandable content ── */}
               <div className="pt-2" onClick={(e) => e.stopPropagation()}>
+                <LearnerProfilePicker
+                  value={choice}
+                  onChange={onChoose}
+                  supported={supported}
+                  disabled={disabled}
+                />
                 {/* Avatar picker */}
                 <AnimatePresence>
                   {avatarPickerOpen && (

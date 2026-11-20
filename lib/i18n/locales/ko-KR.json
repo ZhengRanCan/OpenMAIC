@@ -9,6 +9,21 @@
     "retry": "다시 시도",
     "close": "닫기"
   },
+  "learnerProfiles": {
+    "title": "학습 프로필",
+    "none": "프로필 사용 안 함",
+    "blank": "빈 프로필",
+    "unnamed": "이름 없는 프로필",
+    "bound": "수업 프로필 · {{name}}",
+    "nameTitle": "학습 프로필 이름 지정",
+    "nameDescription": "수업이 준비되었습니다. 다음에 찾을 수 있도록 이름을 정하세요.",
+    "nameLabel": "프로필 이름",
+    "later": "나중에 이름 지정",
+    "save": "이름 저장",
+    "saveFailed": "이름을 저장하지 못했습니다. 다시 시도해 주세요.",
+    "unavailable": "학습 프로필을 불러올 수 없습니다.",
+    "unsupported": "일반 수업에서 프로필을 선택할 수 있습니다."
+  },
   "home": {
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
     "greetingWithName": "안녕하세요, {{name}}!"

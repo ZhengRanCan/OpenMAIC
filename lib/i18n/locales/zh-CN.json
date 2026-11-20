@@ -9,6 +9,21 @@
     "retry": "重试",
     "close": "关闭"
   },
+  "learnerProfiles": {
+    "title": "学习画像",
+    "none": "不使用画像",
+    "blank": "空白画像",
+    "unnamed": "未命名画像",
+    "bound": "课堂画像 · {{name}}",
+    "nameTitle": "给画像起个名字",
+    "nameDescription": "课堂已完成。命名后可在下次建课时选用这份画像。",
+    "nameLabel": "画像名称",
+    "later": "稍后命名",
+    "save": "保存名称",
+    "saveFailed": "暂时无法保存名称，请重试。",
+    "unavailable": "暂时无法读取学习画像。",
+    "unsupported": "普通课堂支持选择学习画像。"
+  },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"

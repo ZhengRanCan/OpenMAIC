@@ -9,6 +9,21 @@
     "retry": "Tentar novamente",
     "close": "Fechar"
   },
+  "learnerProfiles": {
+    "title": "Perfil de aprendizagem",
+    "none": "Sem perfil",
+    "blank": "Perfil em branco",
+    "unnamed": "Perfil sem nome",
+    "bound": "Perfil da aula · {{name}}",
+    "nameTitle": "Dê um nome ao perfil",
+    "nameDescription": "Sua aula está pronta. Dê um nome ao perfil para encontrá-lo na próxima vez.",
+    "nameLabel": "Nome do perfil",
+    "later": "Nomear mais tarde",
+    "save": "Salvar nome",
+    "saveFailed": "Não foi possível salvar o nome. Tente novamente.",
+    "unavailable": "Não foi possível carregar os perfis.",
+    "unsupported": "A seleção de perfis está disponível em aulas padrão."
+  },
   "home": {
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
     "greetingWithName": "Olá, {{name}}"

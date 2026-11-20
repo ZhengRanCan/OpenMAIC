@@ -9,6 +9,21 @@
     "retry": "重试",
     "close": "關閉"
   },
+  "learnerProfiles": {
+    "title": "學習者檔案",
+    "none": "不使用檔案",
+    "blank": "空白檔案",
+    "unnamed": "未命名檔案",
+    "bound": "課堂檔案 · {{name}}",
+    "nameTitle": "為檔案命名",
+    "nameDescription": "課堂已完成。命名後可在下次建立課堂時選用。",
+    "nameLabel": "檔案名稱",
+    "later": "稍後命名",
+    "save": "儲存名稱",
+    "saveFailed": "目前無法儲存名稱，請重試。",
+    "unavailable": "目前無法讀取學習者檔案。",
+    "unsupported": "一般課堂支援選擇學習者檔案。"
+  },
   "home": {
     "slogan": "多智能體互動課室中的生成式學習",
     "greetingWithName": "嗨，{{name}}"

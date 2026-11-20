@@ -9,6 +9,21 @@
     "retry": "再試行",
     "close": "閉じる"
   },
+  "learnerProfiles": {
+    "title": "学習プロフィール",
+    "none": "プロフィールなし",
+    "blank": "空のプロフィール",
+    "unnamed": "名前のないプロフィール",
+    "bound": "授業のプロフィール · {{name}}",
+    "nameTitle": "プロフィールに名前を付ける",
+    "nameDescription": "授業の準備ができました。次回選びやすいように名前を付けてください。",
+    "nameLabel": "プロフィール名",
+    "later": "後で名前を付ける",
+    "save": "名前を保存",
+    "saveFailed": "名前を保存できませんでした。もう一度お試しください。",
+    "unavailable": "学習プロフィールを読み込めませんでした。",
+    "unsupported": "通常の授業でプロフィールを選べます。"
+  },
   "home": {
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"

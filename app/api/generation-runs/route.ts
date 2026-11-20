@@ -20,6 +20,7 @@
  *     refused.
  */
 import type { NextRequest } from 'next/server';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 
 import { apiSuccess } from '@/lib/server/api-response';
 import { ownerApiError, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
@@ -51,6 +52,8 @@ export async function POST(req: NextRequest) {
       const run = await startGenerationRun(ownerId, parsed.value);
       return withOwnerResponseHeaders(apiSuccess({ run: runSnapshot(run) }, 202), responseHeaders);
     } catch (error) {
+      const ownerRefusal = ownerWriteErrorResponse(error, responseHeaders);
+      if (ownerRefusal) return ownerRefusal;
       const refusal = startRefusal(error);
       if (refusal) {
         return ownerApiError(refusal.code, refusal.status, refusal.message, responseHeaders);

@@ -9,6 +9,21 @@
     "retry": "Retry",
     "close": "Close"
   },
+  "learnerProfiles": {
+    "title": "Learning profile",
+    "none": "No profile",
+    "blank": "Blank profile",
+    "unnamed": "Unnamed profile",
+    "bound": "Classroom profile · {{name}}",
+    "nameTitle": "Name your learning profile",
+    "nameDescription": "Your classroom is ready. Name the profile to find it next time.",
+    "nameLabel": "Profile name",
+    "later": "Name later",
+    "save": "Save name",
+    "saveFailed": "Could not save the name. Try again.",
+    "unavailable": "Could not load learning profiles.",
+    "unsupported": "Profile selection is available for standard classrooms."
+  },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}"

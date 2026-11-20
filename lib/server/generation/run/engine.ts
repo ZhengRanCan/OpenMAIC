@@ -44,6 +44,7 @@ import { isAbortError } from '@openmaic/generation';
 import { createHash } from 'node:crypto';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { bindLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import {
   PreclassLearnerContextError,
   type FrozenLearnerContext,
@@ -221,14 +222,15 @@ function topicFromRequirement(requirement: string): string {
 
 /** The learner profile line the actions step reads. */
 export function learnerProfileText(input: GenerationRunInput): string | undefined {
-  if (input.simulatedLearner) return undefined;
+  if (input.simulatedLearner || input.learnerProfileSelection) return undefined;
   const { nickname, bio } = input.learnerProfile ?? {};
   return nickname || bio ? `Student: ${nickname || 'Unknown'}${bio ? ` — ${bio}` : ''}` : undefined;
 }
 
 /** The requirements the outline and the first scene are generated with. */
 export function runRequirements(input: GenerationRunInput, webSearch: boolean): UserRequirements {
-  const profile = input.simulatedLearner ? undefined : input.learnerProfile;
+  const profile =
+    input.simulatedLearner || input.learnerProfileSelection ? undefined : input.learnerProfile;
   return {
     requirement: input.requirement,
     ...(profile?.nickname ? { userNickname: profile.nickname } : {}),
@@ -1915,6 +1917,10 @@ export async function executeGenerationRun(
       commit: async (tx) => {
         // A Retry that queued media since the pass settled is generated first.
         if (await hasMediaWorkIn(tx, run.id)) throw new MediaWorkPendingError();
+        const selection = input.learnerProfileSelection;
+        if (selection && selection.mode !== 'none') {
+          await bindLearnerProfileIn(tx, { stageId, runId: run.id, selection });
+        }
         options.onLeaseReleased?.();
         committed = await commitGenerationRunIn(tx, lease, {
           steps: unplaced.steps,

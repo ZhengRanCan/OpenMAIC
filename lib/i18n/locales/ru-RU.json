@@ -9,6 +9,21 @@
     "retry": "Повторить",
     "close": "Закрыть"
   },
+  "learnerProfiles": {
+    "title": "Профиль обучения",
+    "none": "Без профиля",
+    "blank": "Пустой профиль",
+    "unnamed": "Профиль без имени",
+    "bound": "Профиль урока · {{name}}",
+    "nameTitle": "Дайте профилю имя",
+    "nameDescription": "Урок готов. Дайте профилю имя, чтобы найти его в следующий раз.",
+    "nameLabel": "Имя профиля",
+    "later": "Назвать позже",
+    "save": "Сохранить имя",
+    "saveFailed": "Не удалось сохранить имя. Попробуйте ещё раз.",
+    "unavailable": "Не удалось загрузить профили обучения.",
+    "unsupported": "Выбор профиля доступен в обычных уроках."
+  },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"

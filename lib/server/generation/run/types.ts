@@ -11,6 +11,7 @@
 import type { AgentInfo } from '@openmaic/generation';
 import type { FrozenLearnerContext, SimulatedLearnerId } from '@/lib/learner-context/contracts';
 import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
+import type { LearnerProfileSelection } from '@/lib/learner-context/learner-profile-contracts';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -80,6 +81,7 @@ export type GenerationRunAgents =
  */
 export interface GenerationRunInput {
   requirement: string;
+  learnerProfileSelection?: LearnerProfileSelection;
   /** Explicit synthetic identity; never a browser-supplied Memory body or scope. */
   simulatedLearner?: SimulatedLearnerId;
   /** Owner-library uploads (`POST /api/materials`), in order. */

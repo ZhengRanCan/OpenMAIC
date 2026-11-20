@@ -18,6 +18,37 @@ import {
 import { withRouteRetry } from '@/lib/server/generation/run/retry';
 
 describe('run input', () => {
+  const profileId = '4131d954-52bc-4d57-8c4b-49a7e323948e';
+  it.each([
+    { mode: 'none' },
+    { mode: 'blank', requestId: 'blank-profile-c7193e31' },
+    { mode: 'existing', profileId },
+  ])(
+    'accepts explicit ordinary profile selection %j without reusing account biography',
+    (learnerProfileSelection) => {
+      const parsed = parseRunInput({
+        requirement: 'Teach density',
+        learnerProfileSelection,
+        learnerProfile: { nickname: 'Not a learning profile' },
+      });
+      expect(parsed).toMatchObject({ ok: true, value: { learnerProfileSelection } });
+      if (parsed.ok) expect(parsed.value).not.toHaveProperty('learnerProfile');
+    },
+  );
+
+  it.each([
+    { learnerProfileSelection: { mode: 'blank', requestId: 'short' } },
+    { learnerProfileSelection: { mode: 'existing', profileId, name: 'forged' } },
+    { learnerProfileSelection: { mode: 'none' }, simulatedLearner: 'A' },
+    { learnerProfileSelection: { mode: 'existing', profileId }, interactive: true },
+    {
+      learnerProfileSelection: { mode: 'blank', requestId: 'blank-profile-c7193e31' },
+      taskEngine: true,
+    },
+  ])('rejects mixed modes and malformed profile selection %j', (input) => {
+    expect(parseRunInput({ requirement: 'Teach density', ...input }).ok).toBe(false);
+  });
+
   it('fills the defaults: no materials, generated agents, waiting outline review', () => {
     expect(parseRunInput({ requirement: 'Teach fractions' })).toEqual({
       ok: true,

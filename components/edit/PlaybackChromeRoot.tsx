@@ -1563,6 +1563,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             '[role="slider"]',
             'input[type="range"]',
             '[data-mastery-controls]',
+            '[data-profile-controls]',
           ].join(', '),
         ) !== null
       );
@@ -1743,7 +1744,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               hideBackControl={hideHeaderBackControl}
               hideGlobalControls={hideHeaderGlobalControls}
               hideCourseActions={hideHeaderCourseActions}
-              masteryStageId={stage?.id}
+              stageId={stage?.id}
+              courseComplete={generationComplete === true}
             />
           )}
 

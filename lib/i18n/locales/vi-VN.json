@@ -9,6 +9,21 @@
     "retry": "Thử lại",
     "close": "Đóng"
   },
+  "learnerProfiles": {
+    "title": "Hồ sơ học tập",
+    "none": "Không dùng hồ sơ",
+    "blank": "Hồ sơ trống",
+    "unnamed": "Hồ sơ chưa đặt tên",
+    "bound": "Hồ sơ lớp học · {{name}}",
+    "nameTitle": "Đặt tên hồ sơ học tập",
+    "nameDescription": "Lớp học đã sẵn sàng. Đặt tên để tìm lại hồ sơ lần sau.",
+    "nameLabel": "Tên hồ sơ",
+    "later": "Đặt tên sau",
+    "save": "Lưu tên",
+    "saveFailed": "Không lưu được tên. Hãy thử lại.",
+    "unavailable": "Không tải được hồ sơ học tập.",
+    "unsupported": "Có thể chọn hồ sơ trong lớp học tiêu chuẩn."
+  },
   "home": {
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"

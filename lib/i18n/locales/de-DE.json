@@ -9,6 +9,21 @@
     "retry": "Erneut versuchen",
     "close": "Schließen"
   },
+  "learnerProfiles": {
+    "title": "Lernprofil",
+    "none": "Kein Profil",
+    "blank": "Leeres Profil",
+    "unnamed": "Unbenanntes Profil",
+    "bound": "Unterrichtsprofil · {{name}}",
+    "nameTitle": "Lernprofil benennen",
+    "nameDescription": "Die Stunde ist bereit. Benenne das Profil, damit du es nächstes Mal findest.",
+    "nameLabel": "Profilname",
+    "later": "Später benennen",
+    "save": "Namen speichern",
+    "saveFailed": "Der Name konnte nicht gespeichert werden. Bitte versuche es erneut.",
+    "unavailable": "Die Lernprofile konnten nicht geladen werden.",
+    "unsupported": "Profile stehen für Standardstunden zur Auswahl."
+  },
   "home": {
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"

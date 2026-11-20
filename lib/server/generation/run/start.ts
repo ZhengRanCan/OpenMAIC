@@ -10,12 +10,14 @@ import {
   resolveClassroomMaterials,
 } from '@/lib/server/classroom-materials';
 import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
+import { LearnerProfileError } from '@/lib/persistence/learner-profiles';
 
 import { generationRunConfig } from './config';
 import { wakeGenerationRunner } from './runner';
 import {
   ActiveRunLimitError,
   createGenerationRun,
+  readBlankProfileRun,
   WaitingRunLimitError,
   type StoredRun,
 } from './store';
@@ -30,6 +32,15 @@ export interface StartRefusal {
 
 /** The refusal `error` (thrown by {@link startGenerationRun}) answers with, or null for a fault. */
 export function startRefusal(error: unknown): StartRefusal | null {
+  if (error instanceof LearnerProfileError) {
+    return error.code === 'unavailable'
+      ? { code: 'INVALID_REQUEST', status: 404, message: 'The learner profile is unavailable' }
+      : {
+          code: 'INVALID_REQUEST',
+          status: 409,
+          message: 'The profile request was already used with different input',
+        };
+  }
   if (error instanceof ClassroomMaterialsRejectedError || error instanceof UnknownAgentsError) {
     return { code: 'INVALID_REQUEST', status: 400, message: error.message };
   }
@@ -53,6 +64,11 @@ export async function startGenerationRun(
   ownerId: string,
   input: GenerationRunInput,
 ): Promise<StoredRun> {
+  const replay = await readBlankProfileRun(ownerId, input);
+  if (replay) {
+    wakeGenerationRunner();
+    return replay;
+  }
   if (input.materialIds.length > 0) {
     await resolveClassroomMaterials(ownerId, input.materialIds, { forward: false });
   }
