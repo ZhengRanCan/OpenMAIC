@@ -14,8 +14,12 @@
 import { PERMANENT_MEDIA_FAILURE_CODES } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import type { SceneOutline } from '@/lib/types/generation';
+import { interactiveOutlineProfileId } from '@/lib/learner-context/profile-outline-memory';
 
 import type { ExecutableRunState, GenerationRunInput, GenerationRunState } from './types';
+
+type PreparationInput = Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'> &
+  Partial<Pick<GenerationRunInput, 'interactive' | 'taskEngine' | 'learnerProfileSelection'>>;
 
 /** A scene's narration step also appends it to the course, in the same commit. */
 export type SceneStepKind = 'content' | 'actions' | 'narration';
@@ -54,7 +58,7 @@ export function parseStepId(id: string): RunStep | null {
 
 /** The steps before the outline is confirmed. */
 export function preparationSteps(
-  input: Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'>,
+  input: PreparationInput,
   includeCourseObjectives: boolean,
 ): RunStep[] {
   return [
@@ -62,7 +66,7 @@ export function preparationSteps(
       ? [{ id: 'material-analysis', kind: 'material-analysis' } as const]
       : []),
     { id: 'research', kind: 'research' },
-    ...(input.simulatedLearner
+    ...(input.simulatedLearner || interactiveOutlineProfileId(input)
       ? [{ id: 'learner-context', kind: 'learner-context' } as const]
       : []),
     ...(includeCourseObjectives
@@ -109,7 +113,7 @@ export type RunAdvance =
  */
 export function advanceRun(input: {
   state: GenerationRunState;
-  runInput: Pick<GenerationRunInput, 'materialIds' | 'simulatedLearner'>;
+  runInput: PreparationInput;
   includeCourseObjectives: boolean;
   completed: ReadonlySet<string>;
   sceneCount: number;

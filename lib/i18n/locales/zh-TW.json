@@ -73,7 +73,7 @@
     "save": "儲存名稱",
     "saveFailed": "目前無法儲存名稱，請重試。",
     "unavailable": "目前無法讀取學習者檔案。",
-    "unsupported": "一般課堂支援選擇學習者檔案。"
+    "unsupported": "職業模式暫不支援選擇學習者檔案。"
   },
   "home": {
     "slogan": "多智能體互動課室中的生成式學習",
@@ -1241,6 +1241,9 @@
     "materialTooLarge": "{{name}} 過大：單個素材最大為 {{size}}。"
   },
   "generation": {
+    "interactiveMemoryCount": "本次大綱選用了 {{count}} 筆學習 Memory",
+    "interactiveMemoryEmpty": "本次課堂沒有選用學習 Memory。",
+    "interactiveMemoryEarlierTeaching": "作答前記錄有教學發言。",
     "courseObjectives": "課堂目標",
     "generatingCourseObjectives": "正在產生課堂目標",
     "courseObjectivesFailed": "無法產生課堂目標，請重試。",

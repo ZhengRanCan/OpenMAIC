@@ -162,6 +162,35 @@ describe('outline step', () => {
     expect(requirements.userBio).toBe('Browser bio');
   });
 
+  it('projects formal Memory exclusively into the deep-interaction user prompt', async () => {
+    streams(OUTLINE_TEXT, OUTLINE_TEXT);
+    const requirements = { ...body.requirements, interactiveMode: true };
+    const interactiveLearnerMemory = [
+      {
+        text: '有公式提示时算出 2.7 g/cm³。',
+        section: 'experiences' as const,
+        source: 'discussion' as const,
+        conditions: [{ help: 'prior-teacher-messages' as const }],
+      },
+    ];
+    await generateOutlines({ ...body, requirements, model }, stepContext([]));
+    await generateOutlines(
+      { ...body, requirements, interactiveLearnerMemory, model },
+      stepContext([]),
+    );
+    const control = mocks.streamLLM.mock.calls[0]![0];
+    const personalized = mocks.streamLLM.mock.calls[1]![0];
+    expect(control.system).toContain('Interactive Mode Outline Generator');
+    expect(personalized.system).toBe(control.system);
+    expect(personalized.prompt.startsWith(control.prompt)).toBe(true);
+    expect(control.prompt).not.toContain('## Selected learner Memory');
+    expect(personalized.prompt).toContain(
+      'The current classroom request and materials take priority',
+    );
+    expect(personalized.prompt).toContain(JSON.stringify(interactiveLearnerMemory));
+    expect(personalized.prompt).not.toContain('## Accepted course objectives');
+  });
+
   it('renders Mastery separately from Memory without replacing the current request', async () => {
     streams(OUTLINE_TEXT);
     const learnerMastery = [

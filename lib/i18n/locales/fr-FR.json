@@ -22,7 +22,7 @@
     "save": "Enregistrer le nom",
     "saveFailed": "Impossible d’enregistrer le nom. Réessayez.",
     "unavailable": "Impossible de charger les profils.",
-    "unsupported": "Le choix du profil est disponible pour les cours standard."
+    "unsupported": "Le choix du profil est indisponible en mode professionnel."
   },
   "home": {
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",

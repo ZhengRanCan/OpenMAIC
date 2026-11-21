@@ -774,6 +774,115 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(after.progress).toEqual({ scenesTotal: 1, scenesCompleted: 1 });
   });
 
+  it(
+    'F94 binds deep courses, reselects stale records, and leaves the opt-out path untouched',
+    async () => {
+      const ownerCookie = randomUUID();
+      const owner = `anon:${ownerCookie}`;
+      const { readClassroomLearnerProfile, listLearnerProfiles } =
+        await import('@/lib/server/learner-profiles');
+      const { POST } = await import('@/app/api/generation-runs/route');
+      const post = (body: GenerationRunInput, identity = ownerCookie) =>
+        POST(
+          new NextRequest('http://localhost/api/generation-runs', {
+            method: 'POST',
+            headers: { ...cookie(identity), 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+        );
+      const blankInput = runInput({
+        interactive: true,
+        outlineReview: 'wait',
+        learnerProfileSelection: { mode: 'blank', requestId: randomUUID() },
+      });
+      const selected = {
+        text: '给出图示后说明了光合作用。',
+        section: 'experiences' as const,
+        source: 'discussion' as const,
+        conditions: [{ help: 'prior-teacher-messages' as const }],
+      };
+      const profileOutlineMemory = vi.fn<NonNullable<RunStepServices['profileOutlineMemory']>>(
+        async (who, input, ctx) => {
+          expect(who).toBe(owner);
+          expect(input.content).toMatchObject({ researchContext: 'research context' });
+          await ctx.beforeSelect();
+          return { profileId: input.profileId, selected: [{ key: 'server-item', ...selected }] };
+        },
+      );
+      const validateProfileOutlineMemory =
+        vi.fn<NonNullable<RunStepServices['validateProfileOutlineMemory']>>();
+      validateProfileOutlineMemory.mockResolvedValue(undefined);
+      const { services, calls } = fakeServices({
+        profileOutlineMemory,
+        validateProfileOutlineMemory,
+      });
+
+      const startedBlank = await post(blankInput);
+      expect(startedBlank.status).toBe(202);
+      const blankId = (await startedBlank.json()).run.id as string;
+      expect(await drive(blankId, services)).toBe('waiting');
+      expect(await listLearnerProfiles(owner)).toEqual([]);
+      expect(profileOutlineMemory).not.toHaveBeenCalled();
+      await confirm(blankId, owner, { commandId: 'confirm-f94-blank', outlineRevision: 1 });
+      expect(await drive(blankId, services)).toBe('completed');
+      const blank = await readGenerationRun(blankId, owner);
+      const binding = await readClassroomLearnerProfile(owner, blank!.stageId!);
+      expect(binding?.promptName).toBe(true);
+      const profileId = binding!.profile.id;
+
+      const existingInput = runInput({
+        interactive: true,
+        learnerProfileSelection: { mode: 'existing', profileId },
+      });
+      expect((await post(existingInput, OTHER_COOKIE)).status).toBe(404);
+      expect((await post({ ...existingInput, taskEngine: true })).status).toBe(400);
+      const started = await post(existingInput);
+      expect(started.status).toBe(202);
+      const id = (await started.json()).run.id as string;
+      validateProfileOutlineMemory
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID'));
+      expect(await drive(id, services)).toBe('paused');
+      expect((await readGenerationRun(id, owner))?.error?.errorCode).toBe(
+        'LEARNER_CONTEXT_INVALID',
+      );
+      await retryGenerationRun(id, owner, { commandId: 'f94-reselect-stale' });
+      expect(await drive(id, services)).toBe('waiting');
+      expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
+      expect(calls.outline.at(-1)).toMatchObject({ interactiveLearnerMemory: [selected] });
+      expect(calls.outline.at(-1)).not.toHaveProperty('courseObjectives');
+      const reviewed = await readGenerationRun(id, owner);
+      expect(reviewed?.outline?.profileMemory).toEqual({ selected: [selected] });
+      await confirm(id, owner, { commandId: 'confirm-f94-existing', outlineRevision: 1 });
+      expect(await drive(id, services)).toBe('completed');
+      const completed = await readGenerationRun(id, owner);
+      expect((await readClassroomLearnerProfile(owner, completed!.stageId!))?.profile.id).toBe(
+        profileId,
+      );
+      expect(completed?.outline?.profileMemory).toEqual({ selected: [selected] });
+      expect(calls.sceneContent.at(-1)).not.toHaveProperty('interactiveLearnerMemory');
+
+      for (const choice of [{ mode: 'none' } as const, undefined]) {
+        const control = await start(
+          runInput({
+            interactive: true,
+            outlineReview: 'auto',
+            learnerProfileSelection: choice,
+          }),
+          owner,
+        );
+        expect(await drive(control.id, services)).toBe('completed');
+        const saved = await readGenerationRun(control.id, owner);
+        expect(await readClassroomLearnerProfile(owner, saved!.stageId!)).toBeNull();
+        expect(calls.outline.at(-1)).not.toHaveProperty('interactiveLearnerMemory');
+        expect(saved?.outline).not.toHaveProperty('profileMemory');
+      }
+      expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
+      expect(validateProfileOutlineMemory).toHaveBeenCalledTimes(4);
+    },
+    SLOW_TEST_MS,
+  );
+
   describe('F65 frozen learner context', () => {
     type ContextInput = Parameters<NonNullable<RunStepServices['learnerContext']>>[1];
     function frozenContext(input: ContextInput, revision = 3): FrozenLearnerContext {

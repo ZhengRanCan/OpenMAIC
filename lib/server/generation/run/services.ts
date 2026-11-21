@@ -23,6 +23,11 @@ import {
   buildQuizLearnerContext,
 } from '@/lib/server/quiz-learner-context';
 import { invokeMemorySelectionModel } from '@/lib/server/learner-memory-selection-model';
+import type { ProfileOutlineMemory } from '@/lib/learner-context/profile-outline-memory';
+import {
+  assertInteractiveProfileMemoryCurrent,
+  buildInteractiveProfileMemory,
+} from './interactive-profile-memory';
 import { selectPlannerMastery } from '@/lib/learner-mastery/planning';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -222,6 +227,12 @@ export interface RunStepServices {
     context: FrozenLearnerContext,
     ctx: StepContext,
   ): Promise<void>;
+  profileOutlineMemory?(
+    ownerId: string,
+    input: Parameters<typeof buildInteractiveProfileMemory>[1],
+    ctx: StepContext & { beforeSelect: () => Promise<void> },
+  ): Promise<ProfileOutlineMemory>;
+  validateProfileOutlineMemory?(ownerId: string, memory: ProfileOutlineMemory): Promise<void>;
   learnerMastery?(ownerId: string, student: SimulatedLearnerId): Promise<PlannerMastery[]>;
   selectLearnerMastery?(
     ownerId: string,
@@ -562,6 +573,33 @@ export const defaultRunStepServices: RunStepServices = {
       await assertPreclassContextCurrent(context);
     } catch (error) {
       if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+      throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+    }
+  },
+
+  async profileOutlineMemory(ownerId, input, ctx) {
+    try {
+      return await buildInteractiveProfileMemory(ownerId, input, async (prompt) => {
+        const model = await stageModel(ownerId, 'scene-outlines-stream');
+        return invokeMemorySelectionModel({
+          resolvedModel: model,
+          usageLabel: 'interactive-profile-memory',
+          prompt,
+          beforeSelect: ctx.beforeSelect,
+          signal: ctx.signal,
+        });
+      });
+    } catch (error) {
+      if (error instanceof PreclassLearnerContextError || ctx.signal?.aborted) throw error;
+      throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
+    }
+  },
+
+  async validateProfileOutlineMemory(ownerId, memory) {
+    try {
+      await assertInteractiveProfileMemoryCurrent(ownerId, memory);
+    } catch (error) {
+      if (error instanceof PreclassLearnerContextError) throw error;
       throw new PreclassLearnerContextError('LEARNER_MEMORY_UNAVAILABLE');
     }
   },

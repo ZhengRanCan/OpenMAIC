@@ -22,7 +22,7 @@
     "save": "Salvar nome",
     "saveFailed": "Não foi possível salvar o nome. Tente novamente.",
     "unavailable": "Não foi possível carregar os perfis.",
-    "unsupported": "A seleção de perfis está disponível em aulas padrão."
+    "unsupported": "A seleção de perfis não está disponível no modo profissional."
   },
   "home": {
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",

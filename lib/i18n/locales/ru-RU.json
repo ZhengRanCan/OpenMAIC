@@ -22,7 +22,7 @@
     "save": "Сохранить имя",
     "saveFailed": "Не удалось сохранить имя. Попробуйте ещё раз.",
     "unavailable": "Не удалось загрузить профили обучения.",
-    "unsupported": "Выбор профиля доступен в обычных уроках."
+    "unsupported": "В профессиональном режиме выбор профиля недоступен."
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",

@@ -73,7 +73,7 @@
     "save": "保存名称",
     "saveFailed": "暂时无法保存名称，请重试。",
     "unavailable": "暂时无法读取学习画像。",
-    "unsupported": "普通课堂支持选择学习画像。"
+    "unsupported": "职业模式暂不支持选择学习画像。"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -1280,6 +1280,9 @@
     "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
+    "interactiveMemoryCount": "本次大纲选用了 {{count}} 条学习 Memory",
+    "interactiveMemoryEmpty": "本次课堂没有选用学习 Memory。",
+    "interactiveMemoryEarlierTeaching": "作答前记录有教学发言。",
     "courseObjectives": "课级目标",
     "generatingCourseObjectives": "正在生成课级目标",
     "courseObjectivesFailed": "课级目标生成失败，请重试。",

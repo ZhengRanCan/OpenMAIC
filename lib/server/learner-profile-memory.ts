@@ -102,21 +102,31 @@ export async function readProfileMemoryBasis(
   return withTransaction(async (tx) => {
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
     await assertLearnerProfileIn(tx, ownerId, profileId);
-    const {
-      rows: [item],
-    } = await tx.query<ProfileSourceLocator & { source_digest: string; refs: number[] }>(
-      `SELECT j.stage_id,j.profile_id,j.kind,j.activity_id,j.record_id,j.review_id,j.source_digest,i.refs
+    return readAuthorizedProfileMemoryBasisIn(tx, ownerId, profileId, itemId);
+  });
+}
+
+/** The caller already verified ownership of the profile in this transaction. */
+export async function readAuthorizedProfileMemoryBasisIn(
+  tx: Queryable,
+  ownerId: string,
+  profileId: string,
+  itemId: string,
+): Promise<ProfileMemorySource | null> {
+  const {
+    rows: [item],
+  } = await tx.query<ProfileSourceLocator & { source_digest: string; refs: number[] }>(
+    `SELECT j.stage_id,j.profile_id,j.kind,j.activity_id,j.record_id,j.review_id,j.source_digest,i.refs
        FROM learner_profile_memory_items i
        JOIN learner_profile_memory_jobs j ON j.id=i.job_id AND j.profile_id=$1 WHERE i.id=$2`,
-      [profileId, itemId],
-    );
-    if (!item) return null;
-    const access = await readProfileSourceAccess(tx, item);
-    if (access?.owner_id !== ownerId) return null;
-    const current = await readProfileMemorySource(tx, item, access);
-    if (!current || current.digest !== item.source_digest) return null;
-    return { ...current.basis, parts: item.refs.map((index) => current.basis.parts[index]) };
-  });
+    [profileId, itemId],
+  );
+  if (!item) return null;
+  const access = await readProfileSourceAccess(tx, item);
+  if (access?.owner_id !== ownerId) return null;
+  const current = await readProfileMemorySource(tx, item, access);
+  if (!current || current.digest !== item.source_digest) return null;
+  return { ...current.basis, parts: item.refs.map((index) => current.basis.parts[index]) };
 }
 
 export async function flagProfileMemory(ownerId: string, profileId: string, itemId: string) {

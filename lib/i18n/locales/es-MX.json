@@ -22,7 +22,7 @@
     "save": "Guardar nombre",
     "saveFailed": "No se pudo guardar el nombre. Inténtalo de nuevo.",
     "unavailable": "No se pudieron cargar los perfiles.",
-    "unsupported": "Puedes elegir un perfil en las clases estándar."
+    "unsupported": "La selección de perfiles no está disponible en el modo vocacional."
   },
   "home": {
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",

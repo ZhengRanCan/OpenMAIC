@@ -599,10 +599,10 @@ function HomePage() {
         throw new Error(t('toolbar.materialUnavailable'));
       }
       let learnerProfileSelection: LearnerProfileSelection | undefined;
-      if (!form.interactiveMode && !form.vocationalTestMode) {
+      if (!form.vocationalTestMode) {
         const choice = form.learnerChoice;
         if (choice.mode === 'blank') {
-          const key = JSON.stringify([form.requirement.trim(), materialIds]);
+          const key = JSON.stringify([form.requirement.trim(), materialIds, form.interactiveMode]);
           if (blankProfileRequest.current?.key !== key) {
             blankProfileRequest.current = { key, requestId: nanoid() };
           }
@@ -855,7 +855,7 @@ function HomePage() {
                       : current,
                   );
                 }}
-                supported={!form.interactiveMode && !form.vocationalTestMode}
+                supported={!form.vocationalTestMode}
                 disabled={preparingGenerate}
               />
               <div className="pr-3 pt-3.5 shrink-0">

@@ -15,6 +15,8 @@ import { Sparkles, AlertCircle, ArrowLeft, Bot, RefreshCw, Target } from 'lucide
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { OutlinesEditor } from '@/components/generation/outlines-editor';
+import { ProfileOutlineMemorySummary } from '@/components/generation/profile-outline-memory-summary';
+import { interactiveOutlineProfileId } from '@/lib/learner-context/profile-outline-memory';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -97,7 +99,7 @@ function GenerationPreviewContent() {
     const ids = previewStepIds({
       webSearch: !!capabilities.webSearch,
       autoAgents: view.input.agents.mode === 'auto',
-      learnerContext: !!view.input.simulatedLearner,
+      learnerContext: !!(view.input.simulatedLearner || interactiveOutlineProfileId(view.input)),
     });
     return ids.map((id) =>
       id === 'learner-context'
@@ -144,7 +146,10 @@ function GenerationPreviewContent() {
       </section>
     ) : null;
   const learnerContext = view?.outline?.learnerContext;
-  const learnerContextSummary = learnerContext ? (
+  const profileMemory = view?.outline?.profileMemory;
+  const learnerContextSummary = profileMemory ? (
+    <ProfileOutlineMemorySummary memory={profileMemory} />
+  ) : learnerContext ? (
     <div className="rounded-md border border-muted bg-muted/30 px-4 py-3 text-left text-sm">
       <p>
         {t('generation.learnerContextSummary', {

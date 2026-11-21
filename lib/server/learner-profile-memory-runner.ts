@@ -22,7 +22,9 @@ type Invoke = (ownerId: string, system: string, prompt: string) => Promise<strin
 
 const INSERT_JOBS = `INSERT INTO learner_profile_memory_jobs (stage_id,profile_id,kind,activity_id,record_id)`;
 const BOUND_STAGE = `FROM classroom_learner_profiles b
-  JOIN stage_meta s ON s.stage_id=b.stage_id AND s.deleted_at IS NULL`;
+  JOIN stage_meta s ON s.stage_id=b.stage_id AND s.deleted_at IS NULL
+  JOIN document_stages d ON d.id=s.stage_id
+    AND d.interactive_mode IS NOT TRUE AND d.task_engine_mode IS NOT TRUE`;
 
 export async function discoverProfileMemory(app: Provider) {
   await app.pool.query(

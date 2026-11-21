@@ -12,6 +12,7 @@ import type { AgentInfo } from '@openmaic/generation';
 import type { FrozenLearnerContext, SimulatedLearnerId } from '@/lib/learner-context/contracts';
 import type { FrozenQuizLearnerContext } from '@/lib/learner-context/quiz-contracts';
 import type { LearnerProfileSelection } from '@/lib/learner-context/learner-profile-contracts';
+import type { ProfileOutlineMemoryPreview } from '@/lib/learner-context/profile-outline-memory';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -125,6 +126,7 @@ export interface GenerationRunOutline {
   targets?: CourseTarget[];
   /** The exact, server-resolved Context used by this outline, retained after compaction. */
   learnerContext?: FrozenLearnerContext;
+  profileMemory?: ProfileOutlineMemoryPreview;
   masteryTargets?: Pick<CourseTarget, 'id' | 'revision'>[];
   /** Per-Quiz inputs retained after transient step checkpoints are compacted. */
   quizLearnerContexts?: Record<string, FrozenQuizLearnerContext>;

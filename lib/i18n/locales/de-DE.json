@@ -22,7 +22,7 @@
     "save": "Namen speichern",
     "saveFailed": "Der Name konnte nicht gespeichert werden. Bitte versuche es erneut.",
     "unavailable": "Die Lernprofile konnten nicht geladen werden.",
-    "unsupported": "Profile stehen für Standardstunden zur Auswahl."
+    "unsupported": "Im Berufsmodus ist keine Profilauswahl verfügbar."
   },
   "home": {
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",

@@ -46,6 +46,11 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { bindLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import {
+  interactiveOutlineProfileId,
+  projectProfileOutlineMemory,
+  type ProfileOutlineMemory,
+} from '@/lib/learner-context/profile-outline-memory';
+import {
   PreclassLearnerContextError,
   type FrozenLearnerContext,
 } from '@/lib/learner-context/contracts';
@@ -366,6 +371,7 @@ export async function executeGenerationRun(
   const { services, signal } = options;
   let run: StoredRun = claim.run;
   const input = run.input;
+  const outlineProfileId = interactiveOutlineProfileId(input);
   const includeCourseObjectives =
     !input.interactive && !resolveVocationalActive({ taskEngineMode: input.taskEngine });
   // The owner the run works for now, refreshed at every step boundary: a
@@ -727,10 +733,32 @@ export async function executeGenerationRun(
       }
 
       case 'learner-context': {
-        if (!input.simulatedLearner || !services.learnerContext)
-          throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
         if (output('learner-context:calling'))
           throw new PreclassLearnerContextError('LEARNER_CONTEXT_CALL_UNKNOWN');
+        const content = {
+          pdfText: output<MaterialOutput>('material-analysis')?.pdfText,
+          researchContext: output<ResearchOutput>('research')?.context,
+        };
+        const beforeSelect = () =>
+          commit({ step: { id: 'learner-context:calling', output: { started: true } } });
+        if (outlineProfileId) {
+          const select = services.profileOutlineMemory;
+          if (!select) throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+          const memory = await withDeadline(
+            stepId,
+            STEP_DEADLINES_MS.learnerContext,
+            signal,
+            (callSignal) =>
+              select(
+                owner,
+                { profileId: outlineProfileId, task: input.requirement, content },
+                { log, signal: callSignal, beforeSelect },
+              ),
+          );
+          return done(memory);
+        }
+        if (!input.simulatedLearner || !services.learnerContext)
+          throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
         const context = await withDeadline(
           stepId,
           STEP_DEADLINES_MS.learnerContext,
@@ -741,18 +769,12 @@ export async function executeGenerationRun(
               {
                 student: input.simulatedLearner!,
                 task: input.requirement,
-                content: {
-                  pdfText: output<MaterialOutput>('material-analysis')?.pdfText,
-                  researchContext: output<ResearchOutput>('research')?.context,
-                },
+                content,
               },
               {
                 log,
                 signal: callSignal,
-                beforeSelect: () =>
-                  commit({
-                    step: { id: 'learner-context:calling', output: { started: true } },
-                  }),
+                beforeSelect,
               },
             ),
         );
@@ -929,6 +951,23 @@ export async function executeGenerationRun(
       );
     }
     const contextText = context ? renderPreclassLearnerContext(context) : '';
+    const profileMemory = outlineProfileId
+      ? output<ProfileOutlineMemory>('learner-context')
+      : undefined;
+    const validateProfile = services.validateProfileOutlineMemory;
+    const recheckProfile = async () => {
+      if (!outlineProfileId) return;
+      if (!profileMemory || profileMemory.profileId !== outlineProfileId || !validateProfile)
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+      await withDeadline(
+        'profile-outline-memory-recheck',
+        STEP_DEADLINES_MS.learnerContextRecheck,
+        signal,
+        () => validateProfile(owner, profileMemory),
+      );
+    };
+    await recheckProfile();
+    const previewMemory = profileMemory ? projectProfileOutlineMemory(profileMemory) : undefined;
     const student = input.simulatedLearner;
     const readMastery = services.learnerMastery;
     const selectMastery = services.selectLearnerMastery;
@@ -1010,6 +1049,9 @@ export async function executeGenerationRun(
             ...materialImages(),
             ...(research?.context ? { researchContext: research.context } : {}),
             ...(contextText ? { learnerContext: contextText } : {}),
+            ...(previewMemory?.selected.length
+              ? { interactiveLearnerMemory: previewMemory.selected }
+              : {}),
             ...(mastery.length ? { learnerMastery: mastery } : {}),
             ...(objectives ? { courseObjectives: objectives } : {}),
           },
@@ -1020,6 +1062,7 @@ export async function executeGenerationRun(
       await appending;
     }
     if (appendFailure) throw appendFailure;
+    await recheckProfile();
     if (mastery.length && student && readMastery) {
       const current = await withDeadline(
         'mastery-recheck',
@@ -1067,6 +1110,7 @@ export async function executeGenerationRun(
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
       taskEngineMode: result.taskEngineMode,
       ...(context ? { learnerContext: context } : {}),
+      ...(previewMemory ? { profileMemory: previewMemory } : {}),
       ...(mastery.length
         ? {
             masteryTargets: mastery.map(({ target }) => ({

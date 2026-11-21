@@ -73,7 +73,7 @@
     "save": "Save name",
     "saveFailed": "Could not save the name. Try again.",
     "unavailable": "Could not load learning profiles.",
-    "unsupported": "Profile selection is available for standard classrooms."
+    "unsupported": "Learner profiles are unavailable in vocational mode."
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
@@ -1280,6 +1280,9 @@
     "materialTooLarge": "{{name}} is too large: a material can be at most {{size}}."
   },
   "generation": {
+    "interactiveMemoryCount": "Learner Memory used for this outline: {{count}}",
+    "interactiveMemoryEmpty": "No learner Memory was selected for this lesson.",
+    "interactiveMemoryEarlierTeaching": "Teaching messages were recorded before the answer.",
     "courseObjectives": "Course objectives",
     "generatingCourseObjectives": "Generating course objectives",
     "courseObjectivesFailed": "Course objectives could not be generated. Try again.",

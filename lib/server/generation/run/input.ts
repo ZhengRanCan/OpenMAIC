@@ -133,8 +133,8 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
     if (!parsed.success) return { ok: false, message: 'Invalid learner profile selection' };
     if (body.simulatedLearner !== undefined)
       return { ok: false, message: 'Choose one learner identity' };
-    if (parsed.data.mode !== 'none' && (interactive.value || taskEngine.value))
-      return { ok: false, message: 'Learner profiles are available for ordinary classrooms only' };
+    if (parsed.data.mode !== 'none' && taskEngine.value)
+      return { ok: false, message: 'Learner profiles are unavailable in vocational mode' };
     learnerProfileSelection = parsed.data;
   }
 
@@ -154,6 +154,8 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
   }
   if (
     body.learnerContext !== undefined ||
+    body.interactiveLearnerMemory !== undefined ||
+    body.profileMemory !== undefined ||
     body.memory !== undefined ||
     body.namespace !== undefined ||
     body.learnerKey !== undefined

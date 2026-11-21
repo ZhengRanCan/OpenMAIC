@@ -19,19 +19,25 @@ import { withRouteRetry } from '@/lib/server/generation/run/retry';
 
 describe('run input', () => {
   const profileId = '4131d954-52bc-4d57-8c4b-49a7e323948e';
-  it.each([
+  const choices = [
     { mode: 'none' },
     { mode: 'blank', requestId: 'blank-profile-c7193e31' },
     { mode: 'existing', profileId },
-  ])(
-    'accepts explicit ordinary profile selection %j without reusing account biography',
-    (learnerProfileSelection) => {
+  ];
+  it.each(
+    [false, true].flatMap((interactive) =>
+      choices.map((learnerProfileSelection) => ({ interactive, learnerProfileSelection })),
+    ),
+  )(
+    'accepts formal profile selection in regular or deep mode %j without browser biography',
+    ({ interactive, learnerProfileSelection }) => {
       const parsed = parseRunInput({
         requirement: 'Teach density',
+        interactive,
         learnerProfileSelection,
         learnerProfile: { nickname: 'Not a learning profile' },
       });
-      expect(parsed).toMatchObject({ ok: true, value: { learnerProfileSelection } });
+      expect(parsed).toMatchObject({ ok: true, value: { interactive, learnerProfileSelection } });
       if (parsed.ok) expect(parsed.value).not.toHaveProperty('learnerProfile');
     },
   );
@@ -40,7 +46,11 @@ describe('run input', () => {
     { learnerProfileSelection: { mode: 'blank', requestId: 'short' } },
     { learnerProfileSelection: { mode: 'existing', profileId, name: 'forged' } },
     { learnerProfileSelection: { mode: 'none' }, simulatedLearner: 'A' },
-    { learnerProfileSelection: { mode: 'existing', profileId }, interactive: true },
+    {
+      learnerProfileSelection: { mode: 'existing', profileId },
+      interactive: true,
+      taskEngine: true,
+    },
     {
       learnerProfileSelection: { mode: 'blank', requestId: 'blank-profile-c7193e31' },
       taskEngine: true,
@@ -146,6 +156,8 @@ describe('run input', () => {
   it.each([
     { learnerContext: 'forged selected record' },
     { learnerContext: '' },
+    { interactiveLearnerMemory: [{ text: 'forged' }] },
+    { profileMemory: { selected: [] } },
     { memory: { pieces: [] } },
     { memory: null },
     { namespace: 'arbitrary-namespace' },

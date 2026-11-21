@@ -12,6 +12,10 @@ import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { readQuizAttempt } from '@/lib/persistence/quiz-trace-read';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { generationRunPersistence } from '@/lib/server/generation/run/store';
+import {
+  assertInteractiveProfileMemoryCurrent,
+  buildInteractiveProfileMemory,
+} from '@/lib/server/generation/run/interactive-profile-memory';
 import { editProfileMemory, readProfileMemory } from '@/lib/server/learner-profile-memory';
 import {
   discoverProfileMemory,
@@ -48,12 +52,12 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     await admin?.end();
   });
 
-  async function prepareClassroom(stageId: string, withProfile: boolean) {
+  async function prepareClassroom(stageId: string, withProfile: boolean, interactiveMode = false) {
     const store = await getOwnerScopedDocumentStore(owner);
     const now = Date.now();
     const scene = { ...testScene, stageId };
     await store.saveDocument({
-      stage: { id: stageId, name: stageId, createdAt: now, updatedAt: now },
+      stage: { id: stageId, name: stageId, createdAt: now, updatedAt: now, interactiveMode },
       scenes: [scene],
     });
     const profile = withProfile
@@ -169,6 +173,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     const physics = await prepareClassroom('Physics', true);
     const chemistry = await prepareClassroom('Chemistry', true);
     const unbound = await prepareClassroom('No-profile', false);
+    const deep = await prepareClassroom('Deep', true, true);
     const physicsId = physics.profile!;
     const chemistryId = chemistry.profile!;
     const original = await readProfileMemory(owner, physicsId);
@@ -177,6 +182,8 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     const unboundQuiz = await submitQuiz(unbound);
     await saveDiscussionAndQA(chemistry.stageId);
     await saveDiscussionAndQA(unbound.stageId);
+    await submitQuiz(deep);
+    await saveDiscussionAndQA(deep.stageId);
     await Promise.all([discoverProfileMemory(app), discoverProfileMemory(app)]);
     expect(
       (await app.pool.query('SELECT kind FROM learner_profile_memory_jobs ORDER BY kind')).rows,
@@ -285,6 +292,44 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     expect(saved.items).toHaveLength(1);
     const chemistryView = await readProfileMemory(owner, chemistryId);
     expect(chemistryView.items.map((i) => i.kind).sort()).toEqual(['discussion', 'qa']);
+    expect((await readProfileMemory(owner, deep.profile!)).items).toEqual([]);
+    expect(
+      await buildInteractiveProfileMemory(
+        owner,
+        { profileId: deep.profile!, task: '密度', content: {} },
+        async () => {
+          throw new Error('An empty profile should not need a selector call');
+        },
+      ),
+    ).toEqual({ profileId: deep.profile, selected: [] });
+    const selected = await buildInteractiveProfileMemory(
+      owner,
+      {
+        profileId: chemistryId,
+        task: '复习密度',
+        content: { pdfText: '本课包括质量和体积。' },
+      },
+      async ({ user }) => {
+        expect(user).not.toContain(chemistryId);
+        expect(user).not.toContain('用 54 除以 20，密度是 2.7。');
+        expect(user).not.toContain('提示：把质量除以体积。');
+        const payload = JSON.parse(user);
+        expect(payload).toMatchObject({
+          task: '复习密度',
+          content: { pdfText: '本课包括质量和体积。' },
+        });
+        expect(payload.memory).toHaveLength(2);
+        return JSON.stringify({
+          selected: [
+            payload.memory.find((item: { source: string }) => item.source === 'discussion').id,
+          ],
+        });
+      },
+    );
+    expect(selected.selected).toMatchObject([
+      { source: 'discussion', conditions: [{ help: 'prior-teacher-messages' }] },
+    ]);
+    await assertInteractiveProfileMemoryCurrent(owner, selected);
     expect((await PUT(request('PUT', physicsId, cookie, update), context(physicsId))).status).toBe(
       409,
     );
@@ -350,6 +395,32 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       answer: '用 54 除以 20，密度是 2.7。',
       previous: [{ text: '提示：把质量除以体积。' }],
     });
+    expect(
+      (
+        await PATCH(
+          request('PATCH', chemistryId, cookie, { flagged: true }),
+          itemContext(chemistryId, discussionId),
+        )
+      ).status,
+    ).toBe(204);
+    await expect(assertInteractiveProfileMemoryCurrent(owner, selected)).rejects.toMatchObject({
+      code: 'LEARNER_CONTEXT_INVALID',
+    });
+    const afterFlag = await buildInteractiveProfileMemory(
+      owner,
+      {
+        profileId: chemistryId,
+        task: '复习密度',
+        content: {},
+      },
+      async ({ user }) => {
+        expect(JSON.parse(user).memory.map((item: { source: string }) => item.source)).toEqual([
+          'qa',
+        ]);
+        return '{"selected":[]}';
+      },
+    );
+    expect(afterFlag.selected).toEqual([]);
     for (let repeat = 0; repeat < 2; repeat++) {
       expect(
         (
