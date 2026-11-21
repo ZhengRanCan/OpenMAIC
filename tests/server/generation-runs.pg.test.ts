@@ -812,9 +812,17 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const validateProfileOutlineMemory =
         vi.fn<NonNullable<RunStepServices['validateProfileOutlineMemory']>>();
       validateProfileOutlineMemory.mockResolvedValue(undefined);
+      const objectives = {
+        courseObjective: '能解释光合作用。',
+        targetStatements: ['说明光照如何影响光合作用。'],
+      };
+      const courseObjectives = vi
+        .fn<RunStepServices['courseObjectives']>()
+        .mockResolvedValue(objectives);
       const { services, calls } = fakeServices({
         profileOutlineMemory,
         validateProfileOutlineMemory,
+        courseObjectives,
       });
 
       const startedBlank = await post(blankInput);
@@ -823,6 +831,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(await drive(blankId, services)).toBe('waiting');
       expect(await listLearnerProfiles(owner)).toEqual([]);
       expect(profileOutlineMemory).not.toHaveBeenCalled();
+      expect(calls.outline.at(-1)).toMatchObject({ courseObjectives: objectives });
       await confirm(blankId, owner, { commandId: 'confirm-f94-blank', outlineRevision: 1 });
       expect(await drive(blankId, services)).toBe('completed');
       const blank = await readGenerationRun(blankId, owner);
@@ -849,8 +858,10 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       await retryGenerationRun(id, owner, { commandId: 'f94-reselect-stale' });
       expect(await drive(id, services)).toBe('waiting');
       expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
-      expect(calls.outline.at(-1)).toMatchObject({ interactiveLearnerMemory: [selected] });
-      expect(calls.outline.at(-1)).not.toHaveProperty('courseObjectives');
+      expect(calls.outline.at(-1)).toMatchObject({
+        interactiveLearnerMemory: [selected],
+        courseObjectives: objectives,
+      });
       const reviewed = await readGenerationRun(id, owner);
       expect(reviewed?.outline?.profileMemory).toEqual({ selected: [selected] });
       await confirm(id, owner, { commandId: 'confirm-f94-existing', outlineRevision: 1 });
@@ -860,6 +871,8 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         profileId,
       );
       expect(completed?.outline?.profileMemory).toEqual({ selected: [selected] });
+      expect(completed?.outline?.courseObjective).toBe(objectives.courseObjective);
+      expect(completed?.outline?.targets).toEqual(reviewed?.outline?.targets);
       expect(calls.sceneContent.at(-1)).not.toHaveProperty('interactiveLearnerMemory');
 
       for (const choice of [{ mode: 'none' } as const, undefined]) {
@@ -875,10 +888,15 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         const saved = await readGenerationRun(control.id, owner);
         expect(await readClassroomLearnerProfile(owner, saved!.stageId!)).toBeNull();
         expect(calls.outline.at(-1)).not.toHaveProperty('interactiveLearnerMemory');
+        expect(calls.outline.at(-1)).toMatchObject({ courseObjectives: objectives });
         expect(saved?.outline).not.toHaveProperty('profileMemory');
       }
       expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
       expect(validateProfileOutlineMemory).toHaveBeenCalledTimes(4);
+      expect(courseObjectives).toHaveBeenCalledTimes(4);
+      for (const [, input] of courseObjectives.mock.calls) {
+        expect(input).toEqual({ requirement: 'Teach photosynthesis', pdfText: undefined });
+      }
     },
     SLOW_TEST_MS,
   );
@@ -2830,67 +2848,72 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     );
   });
 
-  it('pauses after three objective failures and reuses the accepted checkpoint after retrying the outline', async () => {
-    const objectives = {
-      courseObjective: '能计算密度并换算单位。',
-      targetStatements: ['用给定质量和体积计算密度。', '在 g/cm³ 和 kg/m³ 间换算。'],
-    };
-    const base = fakeServices();
-    const invalid = new Error('Invalid objectives JSON');
-    const courseObjectives = vi
-      .fn<RunStepServices['courseObjectives']>()
-      .mockRejectedValue(invalid);
-    const outline = vi.fn<RunStepServices['outline']>().mockRejectedValueOnce(new Error('offline'));
-    const services = { ...base.services, courseObjectives, outline };
-    const run = await start(runInput({ requirement: '密度计算与单位换算' }));
+  it.each([false, true])(
+    'pauses after objective failures and reuses accepted objectives on outline retry (interactive=%s)',
+    async (interactive) => {
+      const objectives = {
+        courseObjective: '能计算密度并换算单位。',
+        targetStatements: ['用给定质量和体积计算密度。', '在 g/cm³ 和 kg/m³ 间换算。'],
+      };
+      const base = fakeServices();
+      const invalid = new Error('Invalid objectives JSON');
+      const courseObjectives = vi
+        .fn<RunStepServices['courseObjectives']>()
+        .mockRejectedValue(invalid);
+      const outline = vi
+        .fn<RunStepServices['outline']>()
+        .mockRejectedValueOnce(new Error('offline'));
+      const services = { ...base.services, courseObjectives, outline };
+      const run = await start(runInput({ requirement: '密度计算与单位换算', interactive }));
 
-    expect(await drive(run.id, services)).toBe('paused');
-    expect(courseObjectives).toHaveBeenCalledTimes(3);
-    expect(courseObjectives.mock.calls.map(([, , ctx]) => ctx.fallbackAfter)).toEqual([
-      undefined,
-      undefined,
-      invalid,
-    ]);
-    expect(outline).not.toHaveBeenCalled();
-    expect((await readGenerationRun(run.id, OWNER))?.error?.step).toBe('course-objectives');
-    expect((await readGenerationRunSteps(run.id)).has('course-objectives')).toBe(false);
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(courseObjectives).toHaveBeenCalledTimes(3);
+      expect(courseObjectives.mock.calls.map(([, , ctx]) => ctx.fallbackAfter)).toEqual([
+        undefined,
+        undefined,
+        invalid,
+      ]);
+      expect(outline).not.toHaveBeenCalled();
+      expect((await readGenerationRun(run.id, OWNER))?.error?.step).toBe('course-objectives');
+      expect((await readGenerationRunSteps(run.id)).has('course-objectives')).toBe(false);
 
-    // The existing Retry command permits a new bounded round. This time the
-    // first response fails validation and the next response is accepted.
-    courseObjectives.mockRejectedValueOnce(new Error('Too many objectives'));
-    courseObjectives.mockResolvedValue(objectives);
-    await retryGenerationRun(run.id, OWNER, { commandId: 'retry-objectives' });
-    expect(await drive(run.id, services)).toBe('paused');
-    expect(courseObjectives).toHaveBeenCalledTimes(5);
-    expect(courseObjectives.mock.calls[4]?.[1]).toEqual({
-      requirement: '密度计算与单位换算',
-      pdfText: undefined,
-    });
-    expect((await readGenerationRunSteps(run.id)).get('course-objectives')).toEqual(objectives);
-    expect((await readGenerationRun(run.id, OWNER))?.error?.step).toBe('outline');
+      // The existing Retry command permits a new bounded round. This time the
+      // first response fails validation and the next response is accepted.
+      courseObjectives.mockRejectedValueOnce(new Error('Too many objectives'));
+      courseObjectives.mockResolvedValue(objectives);
+      await retryGenerationRun(run.id, OWNER, { commandId: 'retry-objectives' });
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(courseObjectives).toHaveBeenCalledTimes(5);
+      expect(courseObjectives.mock.calls[4]?.[1]).toEqual({
+        requirement: '密度计算与单位换算',
+        pdfText: undefined,
+      });
+      expect((await readGenerationRunSteps(run.id)).get('course-objectives')).toEqual(objectives);
+      expect((await readGenerationRun(run.id, OWNER))?.error?.step).toBe('outline');
 
-    outline.mockImplementation(base.services.outline);
-    await retryGenerationRun(run.id, OWNER, { commandId: 'retry-outline-with-objectives' });
-    expect(await drive(run.id, services, 'worker-resume')).toBe('waiting');
-    expect(courseObjectives).toHaveBeenCalledTimes(5);
-    expect(outline.mock.calls.map(([, input]) => input.courseObjectives)).toEqual([
-      objectives,
-      objectives,
-    ]);
-    expect((await readGenerationRun(run.id, OWNER))?.outline).toMatchObject({
-      courseObjective: objectives.courseObjective,
-      targets: objectives.targetStatements.map((statement, i) => ({
-        id: `${run.id}:target:${i + 1}`,
-        revision: 1,
-        statement,
-      })),
-    });
-  });
+      outline.mockImplementation(base.services.outline);
+      await retryGenerationRun(run.id, OWNER, { commandId: 'retry-outline-with-objectives' });
+      expect(await drive(run.id, services, 'worker-resume')).toBe('waiting');
+      expect(courseObjectives).toHaveBeenCalledTimes(5);
+      expect(outline.mock.calls.map(([, input]) => input.courseObjectives)).toEqual([
+        objectives,
+        objectives,
+      ]);
+      expect((await readGenerationRun(run.id, OWNER))?.outline).toMatchObject({
+        courseObjective: objectives.courseObjective,
+        targets: objectives.targetStatements.map((statement, i) => ({
+          id: `${run.id}:target:${i + 1}`,
+          revision: 1,
+          statement,
+        })),
+      });
+    },
+  );
 
   it.each([
-    { interactive: true, taskEngine: false },
     { interactive: false, taskEngine: true },
-  ])('keeps its existing outline flow in mode %j', async (mode) => {
+    { interactive: true, taskEngine: true },
+  ])('keeps the existing active vocational outline flow in mode %j', async (mode) => {
     vi.stubEnv('OPENMAIC_ENABLE_VOCATIONAL', 'true');
     try {
       const courseObjectives = vi.fn<RunStepServices['courseObjectives']>();
@@ -2905,6 +2928,28 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it('confirms a saved deep-interaction outline that predates course objectives', async () => {
+    const legacy = {
+      outlines: OUTLINES,
+      languageDirective: 'Use English.',
+      taskEngineMode: false,
+    };
+    const courseObjectives = vi.fn<RunStepServices['courseObjectives']>();
+    const outline = vi.fn<RunStepServices['outline']>();
+    const { services } = fakeServices({ courseObjectives, outline });
+    const run = await start(runInput({ interactive: true }));
+    await pool.query(
+      `UPDATE generation_runs SET state='awaiting_outline_confirmation',
+       outline=$2::jsonb, outline_revision=1, scenes_total=$3 WHERE id=$1`,
+      [run.id, JSON.stringify(legacy), OUTLINES.length],
+    );
+    await confirm(run.id, OWNER, { commandId: 'confirm-saved-deep', outlineRevision: 1 });
+    expect(await drive(run.id, services)).toBe('completed');
+    expect(courseObjectives).not.toHaveBeenCalled();
+    expect(outline).not.toHaveBeenCalled();
+    expect((await readGenerationRun(run.id, OWNER))?.outline).toEqual({ ...legacy, revision: 1 });
   });
 
   it('confirms a legacy outline with existing target IDs and no overall objective', async () => {

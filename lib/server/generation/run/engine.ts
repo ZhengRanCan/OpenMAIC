@@ -372,8 +372,7 @@ export async function executeGenerationRun(
   let run: StoredRun = claim.run;
   const input = run.input;
   const outlineProfileId = interactiveOutlineProfileId(input);
-  const includeCourseObjectives =
-    !input.interactive && !resolveVocationalActive({ taskEngineMode: input.taskEngine });
+  const includeCourseObjectives = !resolveVocationalActive({ taskEngineMode: input.taskEngine });
   // The owner the run works for now, refreshed at every step boundary: a
   // claim may move the run's owner into an account while it generates.
   let owner = await currentOwnerOf(run.ownerId);

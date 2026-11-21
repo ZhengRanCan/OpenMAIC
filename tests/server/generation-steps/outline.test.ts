@@ -162,9 +162,13 @@ describe('outline step', () => {
     expect(requirements.userBio).toBe('Browser bio');
   });
 
-  it('projects formal Memory exclusively into the deep-interaction user prompt', async () => {
+  it('passes the same accepted objectives to deep outlines, with Memory added only when selected', async () => {
     streams(OUTLINE_TEXT, OUTLINE_TEXT);
     const requirements = { ...body.requirements, interactiveMode: true };
+    const courseObjectives = {
+      courseObjective: '能计算密度并换算单位。',
+      targetStatements: ['用给定质量和体积计算密度。', '在 g/cm³ 和 kg/m³ 间换算。'],
+    };
     const interactiveLearnerMemory = [
       {
         text: '有公式提示时算出 2.7 g/cm³。',
@@ -173,9 +177,9 @@ describe('outline step', () => {
         conditions: [{ help: 'prior-teacher-messages' as const }],
       },
     ];
-    await generateOutlines({ ...body, requirements, model }, stepContext([]));
+    await generateOutlines({ ...body, requirements, courseObjectives, model }, stepContext([]));
     await generateOutlines(
-      { ...body, requirements, interactiveLearnerMemory, model },
+      { ...body, requirements, courseObjectives, interactiveLearnerMemory, model },
       stepContext([]),
     );
     const control = mocks.streamLLM.mock.calls[0]![0];
@@ -188,7 +192,9 @@ describe('outline step', () => {
       'The current classroom request and materials take priority',
     );
     expect(personalized.prompt).toContain(JSON.stringify(interactiveLearnerMemory));
-    expect(personalized.prompt).not.toContain('## Accepted course objectives');
+    expect(control.prompt).toContain('## Accepted course objectives');
+    expect(control.prompt).toContain(JSON.stringify(courseObjectives));
+    expect(personalized.prompt).toContain(JSON.stringify(courseObjectives));
   });
 
   it('renders Mastery separately from Memory without replacing the current request', async () => {

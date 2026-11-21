@@ -1,8 +1,8 @@
 /**
  * The run's state machine, as pure functions over what is checkpointed.
  *
- * A run's steps follow the browser's classic order: material analysis (when
- * materials are given) → research → course objectives (standard mode) →
+ * A run starts with material analysis (when supplied) → research →
+ * learner context (when selected) → course objectives (standard and interactive modes) →
  * outline → [confirmation] → agents → for
  * each scene in outline order: content → actions → narration (which appends
  * the narrated scene to the course in the same commit, so its clips are never
