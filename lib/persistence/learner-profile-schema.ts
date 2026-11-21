@@ -18,3 +18,41 @@ CREATE UNIQUE INDEX generation_runs_blank_profile_request_idx
   ON generation_runs (owner_id, (input->'learnerProfileSelection'->>'requestId'))
   WHERE input->'learnerProfileSelection'->>'mode' = 'blank';
 `;
+
+export const LEARNER_PROFILE_MEMORY_SCHEMA = `
+ALTER TABLE learner_profiles
+  ADD COLUMN memory_revision INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN background TEXT NOT NULL DEFAULT '',
+  ADD COLUMN goals TEXT NOT NULL DEFAULT '',
+  ADD COLUMN preferences TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE learner_profile_memory_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stage_id TEXT NOT NULL,
+  profile_id UUID NOT NULL REFERENCES learner_profiles(id),
+  kind TEXT NOT NULL CHECK (kind IN ('quiz', 'qa', 'discussion')),
+  activity_id TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','finished','failed')),
+  claim_id UUID,
+  claimed_at TIMESTAMPTZ,
+  ready_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source_digest TEXT,
+  review_id TEXT,
+  UNIQUE(stage_id,kind,activity_id,record_id)
+);
+CREATE INDEX learner_profile_memory_ready ON learner_profile_memory_jobs(ready_at,id)
+  WHERE state IN ('queued','running');
+CREATE TABLE learner_profile_memory_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES learner_profile_memory_jobs(id) ON DELETE CASCADE,
+  section TEXT NOT NULL CHECK (section IN ('background','goals','preferences','experiences')),
+  summary TEXT NOT NULL,
+  refs JSONB NOT NULL,
+  flagged_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX learner_profile_memory_jobs_profile ON learner_profile_memory_jobs(profile_id,id);
+CREATE INDEX learner_profile_memory_items_job ON learner_profile_memory_items(job_id);
+`;

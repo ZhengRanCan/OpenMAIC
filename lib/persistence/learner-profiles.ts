@@ -106,7 +106,8 @@ export async function nameLearnerProfileIn(
   name: string,
 ): Promise<LearnerProfileSummary> {
   const { rows } = await tx.query<LearnerProfileSummary>(
-    `${OWNERS} UPDATE learner_profiles SET name=$3
+    `${OWNERS} UPDATE learner_profiles SET name=$3,
+        memory_revision=memory_revision + CASE WHEN name IS NULL THEN 1 ELSE 0 END
       WHERE id=$2 AND owner_id IN (SELECT id FROM owners) AND (name IS NULL OR name=$3)
       RETURNING id,name`,
     [ownerId, profileId, name],

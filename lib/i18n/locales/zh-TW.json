@@ -9,6 +9,57 @@
     "retry": "重试",
     "close": "關閉"
   },
+  "profileMemory": {
+    "title": "學習畫像",
+    "pending": "課堂記錄正在整理，稍後可重新整理查看。",
+    "maintenanceFailed": "部分課堂記錄未能整理，仍可查看原始課堂記錄。",
+    "view": "查看",
+    "viewNamed": "查看畫像 {{name}}",
+    "refresh": "重新整理記錄",
+    "edit": "編輯畫像",
+    "save": "儲存畫像",
+    "sections": {
+      "background": "背景",
+      "goals": "學習目標",
+      "preferences": "教學偏好",
+      "experiences": "學習經歷"
+    },
+    "editFields": {
+      "background": "簡介",
+      "goals": "學習目標",
+      "preferences": "教學偏好"
+    },
+    "personal": "使用者填寫",
+    "system": "系統摘要",
+    "empty": "尚無記錄",
+    "kind": {
+      "quiz": "Quiz",
+      "qa": "問答",
+      "discussion": "討論"
+    },
+    "source": "查看原始依據",
+    "flag": "標記有誤",
+    "flagged": "已標記有誤",
+    "sourceUnavailable": "原始依據已變更或無法讀取。",
+    "saveFailed": "儲存失敗，請重試。",
+    "conflict": "畫像已在其他頁面修改。目前草稿仍顯示在此，取消編輯後可查看更新的版本。",
+    "role": {
+      "teacher": "教學發言",
+      "student": "前一則學生發言"
+    },
+    "answer": "學生原答",
+    "historicalReview": "以下評分為產生這則摘要時採用的歷史評閱。",
+    "review": {
+      "correct": "該題正常評閱，答對",
+      "incorrect": "該題正常評閱，答錯",
+      "unknown": "該題尚無可用評閱"
+    },
+    "help": {
+      "practice-requested": "記錄中有補充練習求助。",
+      "prior-teacher-messages": "作答前有教學發言，見上方原文。",
+      "unknown": "記錄未確認是否獲得幫助。"
+    }
+  },
   "learnerProfiles": {
     "title": "學習者檔案",
     "none": "不使用檔案",

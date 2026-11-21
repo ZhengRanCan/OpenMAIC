@@ -12,11 +12,15 @@ import type {
 export function LearnerProfilePicker({
   value,
   onChange,
+  onView,
+  revision,
   supported,
   disabled,
 }: {
   value: LearnerProfileChoice;
   onChange: (choice: LearnerProfileChoice) => void;
+  onView: (profile: LearnerProfileSummary, trigger: HTMLButtonElement) => void;
+  revision: number;
   supported: boolean;
   disabled: boolean;
 }) {
@@ -41,7 +45,7 @@ export function LearnerProfilePicker({
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [retry, supported]);
+  }, [retry, supported, revision]);
 
   if (!supported)
     return <p className="px-2 text-xs text-muted-foreground">{t('learnerProfiles.unsupported')}</p>;
@@ -66,17 +70,32 @@ export function LearnerProfilePicker({
               ? value.mode === 'existing' && value.profileId === choice.profileId
               : value.mode === choice.mode;
           return (
-            <label
-              key={key}
-              className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-sm hover:bg-muted"
-            >
-              <input type="radio" name={id} checked={checked} onChange={() => onChange(choice)} />
-              <span className="break-words">
-                {choice.mode === 'existing'
-                  ? (choice.name ?? t('learnerProfiles.unnamed'))
-                  : t(`learnerProfiles.${choice.mode}`)}
-              </span>
-            </label>
+            <div key={key} className="flex items-center gap-1">
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-sm hover:bg-muted">
+                <input type="radio" name={id} checked={checked} onChange={() => onChange(choice)} />
+                <span className="[overflow-wrap:anywhere]">
+                  {choice.mode === 'existing'
+                    ? (choice.name ?? t('learnerProfiles.unnamed'))
+                    : t(`learnerProfiles.${choice.mode}`)}
+                </span>
+              </label>
+              {choice.mode === 'existing' && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-1.5 text-xs"
+                  aria-label={t('profileMemory.viewNamed', {
+                    name: choice.name ?? t('learnerProfiles.unnamed'),
+                  })}
+                  onClick={(event) =>
+                    onView({ id: choice.profileId, name: choice.name }, event.currentTarget)
+                  }
+                >
+                  {t('profileMemory.view')}
+                </Button>
+              )}
+            </div>
           );
         })}
       </div>

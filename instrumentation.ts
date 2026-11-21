@@ -91,6 +91,8 @@ export async function register(): Promise<void> {
   let quizLearningLoop: { stop: () => Promise<void> } | undefined;
   let dialogueLearningLoop: { stop: () => Promise<void> } | undefined;
   let masteryLearningLoop: { stop: () => Promise<void> } | undefined;
+  const { startProfileMemoryRunner } = await import('@/lib/server/learner-profile-memory-runner');
+  const profileMemoryRunner = startProfileMemoryRunner();
   try {
     if (process.env.OPENMAIC_AUTOMATIC_MASTERY === 'true') {
       const { startMasteryLearningLoop } = await import('@/lib/server/mastery-learning-loop');
@@ -176,6 +178,7 @@ export async function register(): Promise<void> {
       } catch {
         console.error('[instrumentation] Mastery learning loop drain failed');
       }
+      await profileMemoryRunner.stop();
       try {
         await extractionRunner?.stop();
       } catch (error) {

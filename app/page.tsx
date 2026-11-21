@@ -109,9 +109,11 @@ import {
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 import { LearnerProfilePicker } from '@/components/generation/learner-profile-picker';
+import { LearnerProfileMemoryDialog } from '@/components/generation/learner-profile-memory-dialog';
 import type {
   LearnerProfileChoice,
   LearnerProfileSelection,
+  LearnerProfileSummary,
 } from '@/lib/learner-context/learner-profile-contracts';
 import { ProBadge } from '@/components/workbench/ProBadge';
 import { arrivedByProSwap, startProSwap } from '@/lib/workbench/pro-swap';
@@ -842,6 +844,17 @@ function HomePage() {
                   if (choice.mode !== 'blank') blankProfileRequest.current = null;
                   updateForm('learnerChoice', choice);
                 }}
+                onProfileRename={(profile) => {
+                  setForm((current) =>
+                    current.learnerChoice.mode === 'existing' &&
+                    current.learnerChoice.profileId === profile.id
+                      ? {
+                          ...current,
+                          learnerChoice: { ...current.learnerChoice, name: profile.name },
+                        }
+                      : current,
+                  );
+                }}
                 supported={!form.interactiveMode && !form.vocationalTestMode}
                 disabled={preparingGenerate}
               />
@@ -1372,11 +1385,13 @@ function isCustomAvatar(src: string) {
 function GreetingBar({
   choice,
   onChoose,
+  onProfileRename,
   supported,
   disabled,
 }: {
   choice: LearnerProfileChoice;
   onChoose: (choice: LearnerProfileChoice) => void;
+  onProfileRename: (profile: LearnerProfileSummary) => void;
   supported: boolean;
   disabled: boolean;
 }) {
@@ -1392,11 +1407,14 @@ function GreetingBar({
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [profileMemory, setProfileMemory] = useState<LearnerProfileSummary>();
+  const [profileListRevision, setProfileListRevision] = useState(0);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const memoryTriggerRef = useRef<HTMLButtonElement>(null);
 
   const displayName = nickname || t('profile.defaultNickname');
 
@@ -1413,7 +1431,7 @@ function GreetingBar({
 
   // Click-outside to collapse
   useEffect(() => {
-    if (!open) return;
+    if (!open || profileMemory) return;
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -1423,7 +1441,7 @@ function GreetingBar({
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  }, [open, profileMemory]);
 
   const startEditName = () => {
     setNameDraft(nickname);
@@ -1472,7 +1490,7 @@ function GreetingBar({
       ref={containerRef}
       className="relative pl-4 pr-2 pt-3.5 pb-1 w-auto"
       onKeyDown={(event) => {
-        if (open && event.key === 'Escape' && !editingName) {
+        if (open && event.key === 'Escape' && !editingName && !profileMemory) {
           setOpen(false);
           setAvatarPickerOpen(false);
           requestAnimationFrame(() => triggerRef.current?.focus());
@@ -1633,6 +1651,11 @@ function GreetingBar({
                 <LearnerProfilePicker
                   value={choice}
                   onChange={onChoose}
+                  revision={profileListRevision}
+                  onView={(profile, button) => {
+                    memoryTriggerRef.current = button;
+                    setProfileMemory(profile);
+                  }}
                   supported={supported}
                   disabled={disabled}
                 />
@@ -1694,6 +1717,19 @@ function GreetingBar({
           </motion.div>
         )}
       </AnimatePresence>
+      {profileMemory && (
+        <LearnerProfileMemoryDialog
+          key={profileMemory.id}
+          profile={profileMemory}
+          onClose={() => setProfileMemory(undefined)}
+          onName={(profile) => {
+            setProfileMemory(profile);
+            onProfileRename(profile);
+            setProfileListRevision((n) => n + 1);
+          }}
+          returnFocus={() => memoryTriggerRef.current?.focus()}
+        />
+      )}
     </div>
   );
 }

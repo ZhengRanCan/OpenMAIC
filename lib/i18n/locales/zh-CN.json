@@ -9,6 +9,57 @@
     "retry": "重试",
     "close": "关闭"
   },
+  "profileMemory": {
+    "title": "学习画像",
+    "pending": "课堂记录正在整理。稍后可刷新查看。",
+    "maintenanceFailed": "部分课堂记录未能整理，原始课堂记录仍可回看。",
+    "view": "查看",
+    "viewNamed": "查看画像 {{name}}",
+    "refresh": "刷新记录",
+    "edit": "编辑画像",
+    "save": "保存画像",
+    "sections": {
+      "background": "背景",
+      "goals": "学习目标",
+      "preferences": "教学偏好",
+      "experiences": "学习经历"
+    },
+    "editFields": {
+      "background": "简介",
+      "goals": "学习目标",
+      "preferences": "教学偏好"
+    },
+    "personal": "用户填写",
+    "system": "系统总结",
+    "empty": "暂无记录",
+    "kind": {
+      "quiz": "Quiz",
+      "qa": "问答",
+      "discussion": "讨论"
+    },
+    "source": "查看原始依据",
+    "flag": "标记有误",
+    "flagged": "已标记有误",
+    "sourceUnavailable": "原始依据已变更或无法读取。",
+    "saveFailed": "保存失败，请重试。",
+    "conflict": "画像已在其他页面修改。当前草稿仍显示在这里，取消编辑后可查看更新的版本。",
+    "role": {
+      "teacher": "教学发言",
+      "student": "前一条学生发言"
+    },
+    "answer": "学生原答",
+    "historicalReview": "以下评分为生成这条总结时采用的历史评阅。",
+    "review": {
+      "correct": "该题正常评阅，答对",
+      "incorrect": "该题正常评阅，答错",
+      "unknown": "该题暂无可用评阅"
+    },
+    "help": {
+      "practice-requested": "记录中有补充练习求助。",
+      "prior-teacher-messages": "作答前有教学发言，见上方原文。",
+      "unknown": "记录未确认是否获得帮助。"
+    }
+  },
   "learnerProfiles": {
     "title": "学习画像",
     "none": "不使用画像",

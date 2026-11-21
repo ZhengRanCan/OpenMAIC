@@ -9,6 +9,57 @@
     "retry": "Retry",
     "close": "Close"
   },
+  "profileMemory": {
+    "title": "Learning profile",
+    "pending": "Classroom records are being processed. Refresh to check again.",
+    "maintenanceFailed": "Some classroom records could not be summarized. The original records remain available.",
+    "view": "View",
+    "viewNamed": "View profile {{name}}",
+    "refresh": "Refresh records",
+    "edit": "Edit profile",
+    "save": "Save profile",
+    "sections": {
+      "background": "Background",
+      "goals": "Learning goals",
+      "preferences": "Teaching preferences",
+      "experiences": "Learning experiences"
+    },
+    "editFields": {
+      "background": "Bio",
+      "goals": "Learning goals",
+      "preferences": "Teaching preferences"
+    },
+    "personal": "Entered by you",
+    "system": "System summary",
+    "empty": "No records yet",
+    "kind": {
+      "quiz": "Quiz",
+      "qa": "Q&A",
+      "discussion": "Discussion"
+    },
+    "source": "View original evidence",
+    "flag": "Flag as incorrect",
+    "flagged": "Flagged as incorrect",
+    "sourceUnavailable": "The original evidence has changed or is unavailable.",
+    "saveFailed": "Could not save. Try again.",
+    "conflict": "This profile changed in another view. Your draft is still here. Cancel editing to see the latest saved version.",
+    "role": {
+      "teacher": "Teaching message",
+      "student": "Earlier student message"
+    },
+    "answer": "Original student answer",
+    "historicalReview": "This is the earlier evaluation used to generate this summary.",
+    "review": {
+      "correct": "Graded correct",
+      "incorrect": "Graded incorrect",
+      "unknown": "No usable evaluation for this question"
+    },
+    "help": {
+      "practice-requested": "A request for help on the practice question was recorded.",
+      "prior-teacher-messages": "Teaching messages preceded the answer. See the original text above.",
+      "unknown": "The record does not establish whether help was given."
+    }
+  },
   "learnerProfiles": {
     "title": "Learning profile",
     "none": "No profile",
