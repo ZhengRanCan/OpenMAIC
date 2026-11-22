@@ -13,6 +13,7 @@ import type { RunView } from './types';
 
 export type PreviewStepId =
   | 'web-search'
+  | 'course-objectives'
   | 'learner-context'
   | 'outline'
   | 'agent-generation'
@@ -24,10 +25,15 @@ export function previewStepIds(input: {
   webSearch: boolean;
   autoAgents: boolean;
   learnerContext?: boolean;
+  formalLearnerContext?: boolean;
 }): PreviewStepId[] {
   return [
     ...(input.webSearch ? (['web-search'] as const) : []),
-    ...(input.learnerContext ? (['learner-context'] as const) : []),
+    ...(input.formalLearnerContext
+      ? (['course-objectives', 'learner-context'] as const)
+      : input.learnerContext
+        ? (['learner-context'] as const)
+        : []),
     'outline',
     ...(input.autoAgents ? (['agent-generation'] as const) : []),
     'slide-content',
@@ -35,13 +41,14 @@ export function previewStepIds(input: {
   ];
 }
 
-function stepOfRun(view: Pick<RunView, 'state' | 'step'>): PreviewStepId {
+function stepOfRun(view: Pick<RunView, 'state' | 'step'>, showsObjectives: boolean): PreviewStepId {
   const step = view.step;
   if (view.state === 'awaiting_outline_confirmation') return 'outline';
   // The material analysis (running, or paused at a failure) shows as the step after it.
   if (step === 'material-analysis' || step === 'research') return 'web-search';
   if (step === 'learner-context') return 'learner-context';
-  if (step === 'course-objectives' || step === 'outline') return 'outline';
+  if (step === 'course-objectives') return showsObjectives ? 'course-objectives' : 'outline';
+  if (step === 'outline') return 'outline';
   if (step === 'agents') return 'agent-generation';
   const scene = step ? /^scene:\d+:(content|actions|narration)$/.exec(step) : null;
   if (scene) return scene[1] === 'content' ? 'slide-content' : 'actions';
@@ -58,13 +65,14 @@ export function previewStepIndex(
 ): number {
   const order: PreviewStepId[] = [
     'web-search',
+    'course-objectives',
     'learner-context',
     'outline',
     'agent-generation',
     'slide-content',
     'actions',
   ];
-  const at = order.indexOf(stepOfRun(view));
+  const at = order.indexOf(stepOfRun(view, steps.includes('course-objectives')));
   for (let rank = at; rank < order.length; rank += 1) {
     const index = steps.indexOf(order[rank]!);
     if (index >= 0) return index;

@@ -34,7 +34,11 @@
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
-import { LEARNER_PROFILE_MEMORY_SCHEMA, LEARNER_PROFILE_SCHEMA } from './learner-profile-schema';
+import {
+  LEARNER_PROFILE_MASTERY_SCHEMA,
+  LEARNER_PROFILE_MEMORY_SCHEMA,
+  LEARNER_PROFILE_SCHEMA,
+} from './learner-profile-schema';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS generation_runs (
@@ -169,6 +173,12 @@ export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
       version: 8,
       name: 'learner_profile_memory',
       up: LEARNER_PROFILE_MEMORY_SCHEMA,
+      transaction: true,
+    },
+    {
+      version: 9,
+      name: 'learner_profile_mastery',
+      up: LEARNER_PROFILE_MASTERY_SCHEMA,
       transaction: true,
     },
   ],

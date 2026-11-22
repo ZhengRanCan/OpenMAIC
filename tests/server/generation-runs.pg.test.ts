@@ -182,6 +182,8 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
       courseObjective: 'Explain photosynthesis.',
       targetStatements: ['Compare photosynthesis under different light.'],
     }),
+    profileOutlineMemory: async (_owner, { profileId }) => ({ profileId, selected: [] }),
+    validateProfileOutlineMemory: async () => {},
     outline: async (_owner, input, ctx) => {
       calls.outline.push(input);
       ctx.emit?.({ type: 'languageDirective', data: 'Use English.' });
@@ -775,7 +777,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
   });
 
   it(
-    'F94 binds deep courses, reselects stale records, and leaves the opt-out path untouched',
+    'F98 plans with formal profiles in both modes and reselects stale records',
     async () => {
       const ownerCookie = randomUUID();
       const owner = `anon:${ownerCookie}`;
@@ -801,10 +803,23 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         source: 'discussion' as const,
         conditions: [{ help: 'prior-teacher-messages' as const }],
       };
+      const objectives = {
+        courseObjective: '能解释光合作用。',
+        targetStatements: ['说明光照如何影响光合作用。'],
+      };
+      const mastery = [
+        {
+          target: { id: 'old-target', revision: 1, statement: objectives.targetStatements[0] },
+          summary: '有图示帮助。',
+          observations: [],
+          unverified: ['独立说明光照的影响。'],
+        },
+      ];
       const profileOutlineMemory = vi.fn<NonNullable<RunStepServices['profileOutlineMemory']>>(
         async (who, input, ctx) => {
           expect(who).toBe(owner);
           expect(input.content).toMatchObject({ researchContext: 'research context' });
+          expect(input.objectives).toEqual(objectives);
           await ctx.beforeSelect();
           return { profileId: input.profileId, selected: [{ key: 'server-item', ...selected }] };
         },
@@ -812,10 +827,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const validateProfileOutlineMemory =
         vi.fn<NonNullable<RunStepServices['validateProfileOutlineMemory']>>();
       validateProfileOutlineMemory.mockResolvedValue(undefined);
-      const objectives = {
-        courseObjective: '能解释光合作用。',
-        targetStatements: ['说明光照如何影响光合作用。'],
-      };
       const courseObjectives = vi
         .fn<RunStepServices['courseObjectives']>()
         .mockResolvedValue(objectives);
@@ -823,6 +834,12 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         profileOutlineMemory,
         validateProfileOutlineMemory,
         courseObjectives,
+        profileMastery: async (who, profileId) => {
+          expect(who).toBe(owner);
+          expect(profileId).toBe((await listLearnerProfiles(owner))[0].id);
+          return mastery;
+        },
+        selectLearnerMastery: async (_who, candidates) => candidates,
       });
 
       const startedBlank = await post(blankInput);
@@ -859,7 +876,10 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(await drive(id, services)).toBe('waiting');
       expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
       expect(calls.outline.at(-1)).toMatchObject({
-        interactiveLearnerMemory: [selected],
+        profileLearnerMemory: [selected],
+        profileLearnerMastery: [
+          { ...mastery[0], target: { statement: objectives.targetStatements[0] } },
+        ],
         courseObjectives: objectives,
       });
       const reviewed = await readGenerationRun(id, owner);
@@ -873,7 +893,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(completed?.outline?.profileMemory).toEqual({ selected: [selected] });
       expect(completed?.outline?.courseObjective).toBe(objectives.courseObjective);
       expect(completed?.outline?.targets).toEqual(reviewed?.outline?.targets);
-      expect(calls.sceneContent.at(-1)).not.toHaveProperty('interactiveLearnerMemory');
+      expect(calls.sceneContent.at(-1)).not.toHaveProperty('profileLearnerMemory');
 
       for (const choice of [{ mode: 'none' } as const, undefined]) {
         const control = await start(
@@ -887,13 +907,24 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         expect(await drive(control.id, services)).toBe('completed');
         const saved = await readGenerationRun(control.id, owner);
         expect(await readClassroomLearnerProfile(owner, saved!.stageId!)).toBeNull();
-        expect(calls.outline.at(-1)).not.toHaveProperty('interactiveLearnerMemory');
+        expect(calls.outline.at(-1)).not.toHaveProperty('profileLearnerMemory');
         expect(calls.outline.at(-1)).toMatchObject({ courseObjectives: objectives });
         expect(saved?.outline).not.toHaveProperty('profileMemory');
       }
-      expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
-      expect(validateProfileOutlineMemory).toHaveBeenCalledTimes(4);
-      expect(courseObjectives).toHaveBeenCalledTimes(4);
+      const ordinary = await start(
+        { ...existingInput, interactive: false, outlineReview: 'auto' },
+        owner,
+      );
+      expect(await drive(ordinary.id, services)).toBe('completed');
+      expect(calls.outline.at(-1)).toMatchObject({
+        profileLearnerMemory: [selected],
+        profileLearnerMastery: [
+          { ...mastery[0], target: { statement: objectives.targetStatements[0] } },
+        ],
+      });
+      expect(profileOutlineMemory).toHaveBeenCalledTimes(3);
+      expect(validateProfileOutlineMemory).toHaveBeenCalledTimes(6);
+      expect(courseObjectives).toHaveBeenCalledTimes(5);
       for (const [, input] of courseObjectives.mock.calls) {
         expect(input).toEqual({ requirement: 'Teach photosynthesis', pdfText: undefined });
       }

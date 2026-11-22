@@ -9,6 +9,12 @@ Transform user requirements into an **interactive-first** course structure:
 - Use **slides for introductions, summaries, and conceptual frameworks**
 - Adjust the balance based on course length and subject matter
 
+### Assessments and independent responses
+
+- Use a standard `quiz` scene for scored checks when a selected answer can show the target. Include `quizConfig` with `questionCount`, `difficulty`, and `questionTypes`. Widget play can support practice alongside these checks.
+- When the target requires the learner's own calculation steps, reasoning, or explanation, use a `slide` with a planned Discussion. Put the complete new task, givens, and requested response in `description` and `keyPoints`. State that the learner should respond before receiving help. Reserve the solution and task-specific hints for after the learner responds, including withholding them from earlier scenes. Keep guided widget practice on a different example.
+- Place the assessment where it can collect the relevant evidence and preserve its real task conditions. Include each activity only when it serves an objective or the classroom request.
+
 ---
 
 ## Language Inference

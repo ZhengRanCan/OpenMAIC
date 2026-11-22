@@ -46,7 +46,7 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { bindLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import {
-  interactiveOutlineProfileId,
+  outlineLearnerProfileId,
   projectProfileOutlineMemory,
   type ProfileOutlineMemory,
 } from '@/lib/learner-context/profile-outline-memory';
@@ -371,7 +371,7 @@ export async function executeGenerationRun(
   const { services, signal } = options;
   let run: StoredRun = claim.run;
   const input = run.input;
-  const outlineProfileId = interactiveOutlineProfileId(input);
+  const outlineProfileId = outlineLearnerProfileId(input);
   const includeCourseObjectives = !resolveVocationalActive({ taskEngineMode: input.taskEngine });
   // The owner the run works for now, refreshed at every step boundary: a
   // claim may move the run's owner into an account while it generates.
@@ -750,7 +750,12 @@ export async function executeGenerationRun(
             (callSignal) =>
               select(
                 owner,
-                { profileId: outlineProfileId, task: input.requirement, content },
+                {
+                  profileId: outlineProfileId,
+                  task: input.requirement,
+                  content,
+                  objectives: output<CourseObjectives>('course-objectives'),
+                },
                 { log, signal: callSignal, beforeSelect },
               ),
           );
@@ -968,15 +973,22 @@ export async function executeGenerationRun(
     await recheckProfile();
     const previewMemory = profileMemory ? projectProfileOutlineMemory(profileMemory) : undefined;
     const student = input.simulatedLearner;
-    const readMastery = services.learnerMastery;
+    const readSimulatedMastery = services.learnerMastery;
+    const readFormalMastery = services.profileMastery;
+    const readMastery =
+      outlineProfileId && readFormalMastery
+        ? () => readFormalMastery(owner, outlineProfileId)
+        : student && readSimulatedMastery
+          ? () => readSimulatedMastery(owner, student)
+          : undefined;
     const selectMastery = services.selectLearnerMastery;
     let mastery: PlannerMastery[] = [];
-    if (student && objectives && readMastery && selectMastery) {
+    if (objectives && readMastery && selectMastery) {
       const candidates = await withDeadline(
         'mastery-read',
         STEP_DEADLINES_MS.learnerContextRecheck,
         signal,
-        () => readMastery(owner, student),
+        readMastery,
       );
       if (candidates.length) {
         try {
@@ -1049,9 +1061,18 @@ export async function executeGenerationRun(
             ...(research?.context ? { researchContext: research.context } : {}),
             ...(contextText ? { learnerContext: contextText } : {}),
             ...(previewMemory?.selected.length
-              ? { interactiveLearnerMemory: previewMemory.selected }
+              ? { profileLearnerMemory: previewMemory.selected }
               : {}),
-            ...(mastery.length ? { learnerMastery: mastery } : {}),
+            ...(mastery.length && outlineProfileId
+              ? {
+                  profileLearnerMastery: mastery.map(({ target, ...state }) => ({
+                    ...state,
+                    target: { statement: target.statement },
+                  })),
+                }
+              : mastery.length
+                ? { learnerMastery: mastery }
+                : {}),
             ...(objectives ? { courseObjectives: objectives } : {}),
           },
           { log, signal: callSignal, emit },
@@ -1062,12 +1083,12 @@ export async function executeGenerationRun(
     }
     if (appendFailure) throw appendFailure;
     await recheckProfile();
-    if (mastery.length && student && readMastery) {
+    if (mastery.length && readMastery) {
       const current = await withDeadline(
         'mastery-recheck',
         STEP_DEADLINES_MS.learnerContextRecheck,
         signal,
-        () => readMastery(owner, student),
+        readMastery,
       );
       const currentByTarget = new Map(
         current.map((item) => [JSON.stringify([item.target.id, item.target.revision]), item]),

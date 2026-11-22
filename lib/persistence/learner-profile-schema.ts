@@ -56,3 +56,16 @@ CREATE TABLE learner_profile_memory_items (
 CREATE INDEX learner_profile_memory_jobs_profile ON learner_profile_memory_jobs(profile_id,id);
 CREATE INDEX learner_profile_memory_items_job ON learner_profile_memory_items(job_id);
 `;
+
+export const LEARNER_PROFILE_MASTERY_SCHEMA = `
+CREATE TABLE learner_profile_mastery (
+  stage_id TEXT NOT NULL REFERENCES classroom_learner_profiles(stage_id) ON DELETE CASCADE,
+  target_id TEXT NOT NULL,
+  target_revision INTEGER NOT NULL CHECK (target_revision > 0),
+  state JSONB NOT NULL,
+  sources JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (stage_id, target_id, target_revision)
+);
+CREATE INDEX classroom_learner_profiles_profile_idx ON classroom_learner_profiles(profile_id);
+`;

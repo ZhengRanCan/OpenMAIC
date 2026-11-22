@@ -8,15 +8,21 @@ import {
   PATCH,
 } from '@/app/api/learner-profiles/[profileId]/memory/[itemId]/route';
 import { bindLearnerProfileIn } from '@/lib/persistence/learner-profiles';
+import { readProfileMemorySource } from '@/lib/persistence/learner-profile-memory-source';
 import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { readQuizAttempt } from '@/lib/persistence/quiz-trace-read';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
-import { generationRunPersistence } from '@/lib/server/generation/run/store';
+import {
+  generationRunPersistence,
+  resetGenerationRunSchemaForTests,
+} from '@/lib/server/generation/run/store';
 import {
   assertInteractiveProfileMemoryCurrent,
   buildInteractiveProfileMemory,
 } from '@/lib/server/generation/run/interactive-profile-memory';
 import { editProfileMemory, readProfileMemory } from '@/lib/server/learner-profile-memory';
+import { readProfilePlannerMastery } from '@/lib/server/learner-profile-mastery';
+import { GET as GET_MASTERY } from '@/app/api/learner-mastery/[stageId]/route';
 import { QuizFeedbackService } from '@/lib/server/quiz-feedback';
 import { QuizPracticeService } from '@/lib/server/quiz-practice';
 import {
@@ -668,5 +674,155 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       'Synthetic question V1',
       'Synthetic question V1',
     ]);
+  });
+
+  it('reads a formal Mastery card and history only for the bound profile and current saved evidence', async () => {
+    const deep = await prepareClassroom('F98-Mastery', true, true);
+    const other = await prepareClassroom('F98-Other-profile', true);
+    const { attemptId } = await submitQuiz(deep);
+    const quiz = await readQuizAttempt(app, owner, attemptId);
+    const target = { id: 'F98-target', revision: 1, statement: '识别示例中的正确做法。' };
+    const courseObjective = '能选择正确例子。';
+    const evidenceRef = 'f98-observation';
+    const assistance = 'unknown';
+    const summary = '此次选项 B 正常评阅为答错，帮助条件未知。';
+    await app.withTransaction(async (tx) => {
+      const {
+        rows: [binding],
+      } = await tx.query<{ run_id: string }>(
+        'SELECT run_id FROM classroom_learner_profiles WHERE stage_id=$1',
+        [deep.stageId],
+      );
+      await tx.query(
+        `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+           VALUES($1,$2,$3,'completed',$4,$5)`,
+        [
+          binding.run_id,
+          owner,
+          { interactive: true },
+          deep.stageId,
+          {
+            courseObjective,
+            targets: [target],
+            taskEngineMode: false,
+          },
+        ],
+      );
+      const data = await readProfileMemorySource(
+        tx,
+        {
+          stage_id: deep.stageId,
+          profile_id: deep.profile!,
+          kind: 'quiz',
+          activity_id: quiz.attemptId,
+          record_id: quiz.submission!.id,
+          review_id: quiz.review!.id,
+        },
+        { owner_id: owner, title: deep.stageId },
+      );
+      expect(data?.basis.parts[0]).toMatchObject({ review: 'incorrect', help: 'unknown' });
+      await tx.query(
+        `INSERT INTO learner_profile_mastery(stage_id,target_id,target_revision,state,sources)
+           VALUES($1,$2,$3,$4,$5::jsonb)`,
+        [
+          deep.stageId,
+          target.id,
+          1,
+          {
+            targetStatement: target.statement,
+            summary,
+            unverified: ['待独立验证。'],
+            observations: [
+              { evidenceRef, coverage: 'direct', result: 'incorrect', assistance, text: summary },
+            ],
+          },
+          JSON.stringify([
+            {
+              evidenceRef,
+              kind: 'quiz',
+              activityId: quiz.attemptId,
+              recordId: quiz.submission!.id,
+              reviewId: quiz.review!.id,
+              digest: data!.digest,
+              parts: [0],
+              conditions: ['帮助情况未确认。'],
+            },
+          ]),
+        ],
+      );
+    });
+
+    const card = (identity = cookie) =>
+      GET_MASTERY(
+        new NextRequest(`http://localhost/api/learner-mastery/${deep.stageId}`, {
+          headers: { cookie: 'anonymous_id=' + identity },
+        }),
+        { params: Promise.resolve({ stageId: deep.stageId }) },
+      );
+    const response = await card();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      courseObjective,
+      cards: [
+        {
+          target,
+          status: 'ready',
+          summary,
+          observations: [
+            {
+              assistance,
+              source: {
+                kind: 'quiz',
+                questions: [{ prompt: 'Synthetic question V1', submitted: 'B' }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect((await card(foreign)).status).toBe(404);
+    const history = await readProfilePlannerMastery(owner, deep.profile!);
+    expect(history).toMatchObject([
+      { target, summary, observations: [{ assistance, conditions: ['帮助情况未确认。'] }] },
+    ]);
+    expect(JSON.stringify(history)).not.toContain('Synthetic question V1');
+    await expect(readProfilePlannerMastery(owner, other.profile!)).resolves.toEqual([]);
+    await expect(readProfilePlannerMastery('anon:' + foreign, deep.profile!)).rejects.toMatchObject(
+      { code: 'unavailable' },
+    );
+
+    await reviewQuiz(attemptId, quiz.submission!.id, true);
+    await expect(readProfilePlannerMastery(owner, deep.profile!)).resolves.toEqual([]);
+    expect(await (await card()).json()).toMatchObject({
+      cards: [{ target, status: 'unavailable' }],
+    });
+  });
+
+  it('provisions the formal Mastery schema when an existing classroom is opened after a v8 upgrade', async () => {
+    const classroom = await prepareClassroom('F98-upgrade', true, true);
+    const target = { id: 'F98-upgrade-target', revision: 1, statement: '说明密度的含义。' };
+    await app.withTransaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+         SELECT run_id,$2,$3,'completed',stage_id,$4 FROM classroom_learner_profiles
+          WHERE stage_id=$1`,
+        [classroom.stageId, owner, { interactive: true }, { targets: [target] }],
+      );
+      await tx.query('DROP TABLE learner_profile_mastery');
+      await tx.query('DROP INDEX classroom_learner_profiles_profile_idx');
+      await tx.query(
+        "DELETE FROM openmaic_schema_migrations WHERE store='generation-runs' AND version=9",
+      );
+    });
+    resetGenerationRunSchemaForTests();
+
+    const response = await GET_MASTERY(
+      new NextRequest(`http://localhost/api/learner-mastery/${classroom.stageId}`, {
+        headers: { cookie: 'anonymous_id=' + cookie },
+      }),
+      { params: Promise.resolve({ stageId: classroom.stageId }) },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ cards: [{ target, status: 'empty' }] });
   });
 });

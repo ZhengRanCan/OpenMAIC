@@ -29,6 +29,7 @@ import {
   buildInteractiveProfileMemory,
 } from './interactive-profile-memory';
 import { selectPlannerMastery } from '@/lib/learner-mastery/planning';
+import { readProfilePlannerMastery } from '@/lib/server/learner-profile-mastery';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
@@ -234,6 +235,7 @@ export interface RunStepServices {
   ): Promise<ProfileOutlineMemory>;
   validateProfileOutlineMemory?(ownerId: string, memory: ProfileOutlineMemory): Promise<void>;
   learnerMastery?(ownerId: string, student: SimulatedLearnerId): Promise<PlannerMastery[]>;
+  profileMastery?(ownerId: string, profileId: string): Promise<PlannerMastery[]>;
   selectLearnerMastery?(
     ownerId: string,
     candidates: PlannerMastery[],
@@ -512,6 +514,7 @@ export const defaultRunStepServices: RunStepServices = {
   },
 
   learnerMastery: (ownerId, student) => readPlannerMastery(ownerId, student, 12),
+  profileMastery: readProfilePlannerMastery,
 
   async selectLearnerMastery(ownerId, candidates, input, ctx) {
     return selectPlannerMastery(candidates, input, async (prompt) =>

@@ -135,6 +135,24 @@ describe('preview steps of a run', () => {
     ).toBe('learner-context');
     expect(steps).not.toContain('learner-context');
   });
+
+  it('shows objectives before formal profile context without moving the progress backwards', () => {
+    const formal = previewStepIds({
+      webSearch: false,
+      autoAgents: false,
+      formalLearnerContext: true,
+    });
+    expect(formal).toEqual([
+      'course-objectives',
+      'learner-context',
+      'outline',
+      'slide-content',
+      'actions',
+    ]);
+    expect(previewStepIndex({ state: 'outlining', step: 'course-objectives' }, formal)).toBe(0);
+    expect(previewStepIndex({ state: 'preparing', step: 'learner-context' }, formal)).toBe(1);
+    expect(previewStepIndex({ state: 'outlining', step: 'outline' }, formal)).toBe(2);
+  });
 });
 
 describe('the classroom of a run course', () => {

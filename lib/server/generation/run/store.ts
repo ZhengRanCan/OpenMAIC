@@ -24,7 +24,7 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { assertLearnerProfileIn, LearnerProfileError } from '@/lib/persistence/learner-profiles';
-import { interactiveOutlineProfileId } from '@/lib/learner-context/profile-outline-memory';
+import { outlineLearnerProfileId } from '@/lib/learner-context/profile-outline-memory';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { startOwnerMaterialExtractions } from '@/lib/persistence/owner-materials';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
@@ -1630,7 +1630,7 @@ export async function retryGenerationRun(
           ['LEARNER_MEMORY_SOURCE_INVALID', 'LEARNER_MEMORY_RECHECK_REQUIRED'].includes(
             run.error?.errorCode ?? '',
           )) ||
-          (interactiveOutlineProfileId(run.input) &&
+          (outlineLearnerProfileId(run.input) &&
             run.error?.errorCode === 'LEARNER_CONTEXT_INVALID'))
       ) {
         await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=ANY($2)', [

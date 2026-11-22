@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { OutlinesEditor } from '@/components/generation/outlines-editor';
 import { ProfileOutlineMemorySummary } from '@/components/generation/profile-outline-memory-summary';
-import { interactiveOutlineProfileId } from '@/lib/learner-context/profile-outline-memory';
+import { outlineLearnerProfileId } from '@/lib/learner-context/profile-outline-memory';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -99,7 +99,8 @@ function GenerationPreviewContent() {
     const ids = previewStepIds({
       webSearch: !!capabilities.webSearch,
       autoAgents: view.input.agents.mode === 'auto',
-      learnerContext: !!(view.input.simulatedLearner || interactiveOutlineProfileId(view.input)),
+      learnerContext: !!view.input.simulatedLearner,
+      formalLearnerContext: !!outlineLearnerProfileId(view.input),
     });
     return ids.map((id) =>
       id === 'learner-context'
@@ -110,7 +111,15 @@ function GenerationPreviewContent() {
             icon: Bot,
             type: 'analysis' as const,
           }
-        : ALL_STEPS.find((step) => step.id === id)!,
+        : id === 'course-objectives'
+          ? {
+              id,
+              title: 'generation.generatingCourseObjectives',
+              description: 'generation.generatingOutlinesDesc',
+              icon: Target,
+              type: 'analysis' as const,
+            }
+          : ALL_STEPS.find((step) => step.id === id)!,
     );
   }, [view, capabilities.webSearch]);
   const currentStepIndex = view

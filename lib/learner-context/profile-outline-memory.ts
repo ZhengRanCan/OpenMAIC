@@ -5,14 +5,11 @@ import type {
   ProfileMemorySource,
 } from '@/lib/learner-memory/profile-memory-contracts';
 
-export function interactiveOutlineProfileId(input: {
-  interactive?: boolean;
+export function outlineLearnerProfileId(input: {
   taskEngine?: boolean;
   learnerProfileSelection?: LearnerProfileSelection;
 }) {
-  return input.interactive &&
-    !input.taskEngine &&
-    input.learnerProfileSelection?.mode === 'existing'
+  return !input.taskEngine && input.learnerProfileSelection?.mode === 'existing'
     ? input.learnerProfileSelection.profileId
     : undefined;
 }

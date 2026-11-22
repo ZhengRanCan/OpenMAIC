@@ -14,7 +14,7 @@
 import { PERMANENT_MEDIA_FAILURE_CODES } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import type { SceneOutline } from '@/lib/types/generation';
-import { interactiveOutlineProfileId } from '@/lib/learner-context/profile-outline-memory';
+import { outlineLearnerProfileId } from '@/lib/learner-context/profile-outline-memory';
 
 import type { ExecutableRunState, GenerationRunInput, GenerationRunState } from './types';
 
@@ -66,11 +66,14 @@ export function preparationSteps(
       ? [{ id: 'material-analysis', kind: 'material-analysis' } as const]
       : []),
     { id: 'research', kind: 'research' },
-    ...(input.simulatedLearner || interactiveOutlineProfileId(input)
+    ...(input.simulatedLearner
       ? [{ id: 'learner-context', kind: 'learner-context' } as const]
       : []),
     ...(includeCourseObjectives
       ? [{ id: 'course-objectives', kind: 'course-objectives' } as const]
+      : []),
+    ...(outlineLearnerProfileId(input)
+      ? [{ id: 'learner-context', kind: 'learner-context' } as const]
       : []),
     { id: 'outline', kind: 'outline' },
   ];

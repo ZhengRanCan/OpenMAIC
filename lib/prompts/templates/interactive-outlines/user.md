@@ -37,12 +37,14 @@ Infer the course language directive by applying the decision rules from the syst
 
 ---
 
-## Distribution Target
+## Distribution Target for Exploratory Scenes
 
 - **70% interactive scenes** (widgets: simulation, diagram, code, game)
 - **30% slide scenes** (introductions, summaries, transitions)
 
-## Widget Type Constraints (MANDATORY)
+Apply this mix to exploratory teaching. Keep standard Quiz and planned independent Discussion when required by the goals or classroom request, even for a short course.
+
+## Widget Variety for Longer Courses
 
 | Widget Type | Constraint |
 |------------|-----------|

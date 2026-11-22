@@ -155,6 +155,8 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
   if (
     body.learnerContext !== undefined ||
     body.interactiveLearnerMemory !== undefined ||
+    body.profileLearnerMemory !== undefined ||
+    body.profileLearnerMastery !== undefined ||
     body.profileMemory !== undefined ||
     body.memory !== undefined ||
     body.namespace !== undefined ||

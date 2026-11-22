@@ -162,40 +162,68 @@ describe('outline step', () => {
     expect(requirements.userBio).toBe('Browser bio');
   });
 
-  it('passes the same accepted objectives to deep outlines, with Memory added only when selected', async () => {
-    streams(OUTLINE_TEXT, OUTLINE_TEXT);
-    const requirements = { ...body.requirements, interactiveMode: true };
-    const courseObjectives = {
-      courseObjective: '能计算密度并换算单位。',
-      targetStatements: ['用给定质量和体积计算密度。', '在 g/cm³ 和 kg/m³ 间换算。'],
-    };
-    const interactiveLearnerMemory = [
-      {
-        text: '有公式提示时算出 2.7 g/cm³。',
-        section: 'experiences' as const,
-        source: 'discussion' as const,
-        conditions: [{ help: 'prior-teacher-messages' as const }],
-      },
-    ];
-    await generateOutlines({ ...body, requirements, courseObjectives, model }, stepContext([]));
-    await generateOutlines(
-      { ...body, requirements, courseObjectives, interactiveLearnerMemory, model },
-      stepContext([]),
-    );
-    const control = mocks.streamLLM.mock.calls[0]![0];
-    const personalized = mocks.streamLLM.mock.calls[1]![0];
-    expect(control.system).toContain('Interactive Mode Outline Generator');
-    expect(personalized.system).toBe(control.system);
-    expect(personalized.prompt.startsWith(control.prompt)).toBe(true);
-    expect(control.prompt).not.toContain('## Selected learner Memory');
-    expect(personalized.prompt).toContain(
-      'The current classroom request and materials take priority',
-    );
-    expect(personalized.prompt).toContain(JSON.stringify(interactiveLearnerMemory));
-    expect(control.prompt).toContain('## Accepted course objectives');
-    expect(control.prompt).toContain(JSON.stringify(courseObjectives));
-    expect(personalized.prompt).toContain(JSON.stringify(courseObjectives));
-  });
+  it.each([false, true])(
+    'passes formal Memory and Mastery to outlines with interactive=%s',
+    async (interactiveMode) => {
+      streams(OUTLINE_TEXT, OUTLINE_TEXT);
+      const requirements = { ...body.requirements, interactiveMode };
+      const courseObjectives = {
+        courseObjective: '能计算密度并换算单位。',
+        targetStatements: ['用给定质量和体积计算密度。', '在 g/cm³ 和 kg/m³ 间换算。'],
+      };
+      const profileLearnerMemory = [
+        {
+          text: '有公式提示时算出 2.7 g/cm³。',
+          section: 'experiences' as const,
+          source: 'discussion' as const,
+          conditions: [{ help: 'prior-teacher-messages' as const }],
+        },
+      ];
+      const profileLearnerMastery = [
+        {
+          target: { statement: '在常用单位之间换算。' },
+          summary: '在公式提示下完成计算，独立换算待核。',
+          observations: [],
+          unverified: ['独立换算。'],
+        },
+      ];
+      await generateOutlines({ ...body, requirements, courseObjectives, model }, stepContext([]));
+      await generateOutlines(
+        {
+          ...body,
+          requirements,
+          courseObjectives,
+          profileLearnerMemory,
+          profileLearnerMastery,
+          model,
+        },
+        stepContext([]),
+      );
+      const control = mocks.streamLLM.mock.calls[0]![0];
+      const personalized = mocks.streamLLM.mock.calls[1]![0];
+      if (interactiveMode) {
+        expect(control.system).toContain('Interactive Mode Outline Generator');
+        expect(control.system).toContain('Use a standard `quiz` scene for scored checks');
+        expect(control.system).toContain('use a `slide` with a planned Discussion');
+        expect(control.system).toContain('Reserve the solution and task-specific hints');
+      } else {
+        expect(control.system).toContain('Independent process checks');
+      }
+      expect(personalized.system).toBe(control.system);
+      expect(personalized.prompt.startsWith(control.prompt)).toBe(true);
+      expect(control.prompt).not.toContain('## Selected learner Memory');
+      expect(personalized.prompt).toContain(
+        'The current classroom request and materials take priority',
+      );
+      expect(personalized.prompt).toContain(JSON.stringify(profileLearnerMemory));
+      expect(personalized.prompt).toContain('## Learner Mastery');
+      expect(personalized.prompt).toContain(JSON.stringify(profileLearnerMastery));
+      expect(control.prompt).not.toContain('## Learner Mastery');
+      expect(control.prompt).toContain('## Accepted course objectives');
+      expect(control.prompt).toContain(JSON.stringify(courseObjectives));
+      expect(personalized.prompt).toContain(JSON.stringify(courseObjectives));
+    },
+  );
 
   it('renders Mastery separately from Memory without replacing the current request', async () => {
     streams(OUTLINE_TEXT);

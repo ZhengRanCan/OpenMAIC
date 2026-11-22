@@ -157,6 +157,8 @@ describe('run input', () => {
     { learnerContext: 'forged selected record' },
     { learnerContext: '' },
     { interactiveLearnerMemory: [{ text: 'forged' }] },
+    { profileLearnerMemory: [{ text: 'forged' }] },
+    { profileLearnerMastery: [{ summary: 'forged' }] },
     { profileMemory: { selected: [] } },
     { memory: { pieces: [] } },
     { memory: null },

@@ -33,6 +33,8 @@ import {
   verifyDialogueBindingIn,
 } from './dialogue-evidence-provenance';
 import { readSimulatedLearningLoopConfig } from './quiz-learning-loop/config';
+import { readProfileMasteryCardIn } from './learner-profile-mastery';
+import { generationRunPersistence } from './generation/run/store';
 import type { CourseTarget } from './generation/run/types';
 import { QuizShortFactsService } from './quiz-short-facts';
 
@@ -68,7 +70,7 @@ export async function readPlannerMastery(
 
 export async function readClassroomMastery(ownerId: string, stageId: string) {
   const settings = await configuredMasterySettings();
-  const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  const provider = await generationRunPersistence();
   if (settings) return new LearnerMastery(provider, settings).readClassroom(ownerId, stageId);
   return readClassroomCards(provider, ownerId, stageId);
 }
@@ -331,15 +333,16 @@ async function readClassroomCards(
       id: string;
       targets: CourseTarget[];
       course_objective: string | null;
+      profile_id: string | null;
       student: string | null;
       state: string;
     }>(
       `SELECT r.id, r.outline->'targets' AS targets, r.outline->>'courseObjective' AS course_objective,
-              r.input->>'simulatedLearner' AS student, r.state
+              r.input->>'simulatedLearner' AS student, b.profile_id, r.state
          FROM generation_runs r JOIN stage_meta s ON s.stage_id=r.stage_id AND s.owner_id=r.owner_id
+         LEFT JOIN classroom_learner_profiles b ON b.stage_id=r.stage_id AND b.run_id=r.id
         WHERE r.stage_id=$1 AND r.owner_id=$2 AND s.deleted_at IS NULL
           AND r.state IN ('generating', 'paused', 'completed')
-          AND COALESCE(r.input->>'interactive', 'false')='false'
           AND COALESCE(r.outline->>'taskEngineMode', 'false')='false'
           AND jsonb_typeof(r.outline->'targets')='array'
         ORDER BY r.created_at DESC, r.id DESC LIMIT 1`,
@@ -349,7 +352,9 @@ async function readClassroomCards(
     if (!run?.targets.length) return null;
     const cards: MasteryCard[] = [];
     for (const target of run.targets) {
-      if (!isSimulatedStudent(run.student) || !readCard) {
+      if (run.profile_id) {
+        cards.push(await readProfileMasteryCardIn(tx, ownerId, run.profile_id, stageId, target));
+      } else if (!isSimulatedStudent(run.student) || !readCard) {
         cards.push({ target, status: 'untracked' });
       } else if (run.state !== 'completed') {
         cards.push({ target, status: 'empty' });

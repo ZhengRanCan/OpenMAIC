@@ -90,6 +90,10 @@ async function quizSource(
     if (!basis.parts.length) return null;
     return {
       basis,
+      quizQuestions: scene.content.questions.flatMap(({ id, question, type, options }) => {
+        const submitted = quiz.submission!.answers[id];
+        return submitted?.length ? [{ prompt: question, type, options, submitted }] : [];
+      }),
       reviewId: review.id,
       digest: digest({ version: quiz.version.id, review: review.id, parts: basis.parts }),
     };
@@ -145,6 +149,7 @@ export async function readProfileMemorySource(
   };
   return {
     basis,
+    quizQuestions: undefined,
     reviewId: null,
     digest: digest({
       kind: source.type,
