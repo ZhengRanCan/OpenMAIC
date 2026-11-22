@@ -112,8 +112,9 @@ export interface StageListItem {
   updatedAt: number;
   interactiveMode?: boolean;
   taskEngineMode?: boolean;
-  /** Folder this course belongs to; undefined = unfiled. Device-local only. */
+  /** Folder this course belongs to; undefined = unfiled. */
   folderId?: string;
+  folderPosition?: number;
 }
 
 function stampStage(stageId: string, stage: Stage, now: number): Stage {
@@ -760,7 +761,9 @@ export async function listStages(): Promise<StageListItem[]> {
           ...(item.interactiveMode !== undefined ? { interactiveMode: item.interactiveMode } : {}),
           ...(item.taskEngineMode !== undefined ? { taskEngineMode: item.taskEngineMode } : {}),
         };
-        return item.folderId ? { ...base, folderId: item.folderId } : base;
+        if (item.folderPosition !== undefined) base.folderPosition = item.folderPosition;
+        if (item.folderId) base.folderId = item.folderId;
+        return base;
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
@@ -1154,6 +1157,24 @@ function toFolderRecord(folder: FolderRecord): FolderRecord {
     createdAt: folder.createdAt,
     updatedAt: folder.updatedAt,
   };
+}
+
+export async function saveFolderMemberOrder(
+  folderId: string,
+  previous: readonly string[],
+  next: readonly string[],
+): Promise<'saved' | 'conflict'> {
+  const res = await fetch(`/api/folders/${encodeURIComponent(folderId)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ previous, next }),
+  });
+  if (res.ok) return 'saved';
+  const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+  if (body?.error?.code === 'FOLDER_ORDER_CONFLICT' || body?.error?.code === 'FOLDER_NOT_FOUND') {
+    return 'conflict';
+  }
+  throw folderRouteError(body);
 }
 
 /**

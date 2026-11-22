@@ -163,6 +163,8 @@ export interface DocumentSummary {
   sceneCount: number;
   /** Owner-scoped folder membership. Omitted when the document is unfiled. */
   folderId?: string;
+  /** Saved position in the owner's folder, when a manual order exists. */
+  folderPosition?: number;
 }
 
 /** A durable owner-scoped folder, including folders that currently have no documents. */
@@ -171,6 +173,8 @@ export interface DocumentFolder {
   name: string;
   /** Sort order within the owner's folder list (ascending; mirrors the local model's `FolderRecord.order`). */
   order: number;
+  /** Saved classroom order. Omitted for folders using the default order. */
+  memberOrder?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -226,6 +230,12 @@ export interface DocumentFolderStore {
    * unfiled).
    */
   setStageFolder(stageId: string, folderId: string | null): Promise<boolean>;
+  /** Reorder the given live members, preserving the positions of other members. */
+  saveFolderMemberOrder(
+    folderId: string,
+    previous: readonly string[],
+    next: readonly string[],
+  ): Promise<'saved' | 'conflict' | 'not_found'>;
   listDocuments(folderId?: string): Promise<DocumentSummary[]>;
 }
 

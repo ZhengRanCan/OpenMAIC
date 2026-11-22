@@ -205,6 +205,9 @@ export function createFakeDocumentStore(): FakeDocumentStore {
       stageFolder.set(stageId, folderId);
       return true;
     },
+    async saveFolderMemberOrder(): Promise<'saved' | 'conflict' | 'not_found'> {
+      throw new Error('Folder order persistence must be stubbed by the route test');
+    },
   } as OwnerScopedFakeStore;
 
   return {

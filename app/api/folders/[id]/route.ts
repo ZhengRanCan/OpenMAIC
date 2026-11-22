@@ -21,6 +21,8 @@ import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-sc
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
+import { isSameOriginJsonRequest } from '@/lib/persistence/owner-claim-http';
+import { readJsonBody } from '@/lib/server/generation/run/input';
 import { folderNameErrorResponse } from '@/lib/server/folder-name-errors';
 import { validateFolderName } from '@/lib/utils/folder-name-validation';
 
@@ -30,11 +32,58 @@ type Params = { params: Promise<{ id: string }> };
 
 /** The wire shape is the reference's `FolderItem`; see `app/api/folders/route.ts`. */
 function folderResponse(folder: DocumentFolder, userKey: string) {
-  return { ...folder, userKey };
+  const { memberOrder: _memberOrder, ...summary } = folder;
+  return { ...summary, userKey };
 }
 
 function jsonError(status: number, code: string, message: string, headers?: Headers): NextResponse {
   return NextResponse.json({ error: { code, message } }, { status, headers });
+}
+
+function isIdList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((id) => typeof id === 'string' && id.length > 0) &&
+    new Set(value).size === value.length
+  );
+}
+
+// PUT /api/folders/[id] — reorder the visible classrooms against the editor's snapshot.
+export async function PUT(req: NextRequest, { params }: Params) {
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
+  if (!isSameOriginJsonRequest(req)) {
+    return jsonError(403, 'FOLDER_ORDER_FORBIDDEN', 'same-origin JSON request required');
+  }
+  const parsed = await readJsonBody(req, 1024 * 1024);
+  if (!parsed.ok) return jsonError(parsed.status, 'INVALID_BODY', parsed.message);
+  const { previous, next } = (parsed.value ?? {}) as { previous?: unknown; next?: unknown };
+  if (!isIdList(previous) || !isIdList(next)) {
+    return jsonError(400, 'INVALID_FOLDER_ORDER', 'previous and next must be lists of unique ids');
+  }
+
+  return withRequestOwner(req, async ({ ownerId }, headers) => {
+    const { id } = await params;
+    try {
+      const store = await getOwnerScopedDocumentStore(ownerId);
+      const result = await store.saveFolderMemberOrder(id, previous, next);
+      if (result === 'not_found')
+        return jsonError(404, 'FOLDER_NOT_FOUND', 'folder not found', headers);
+      if (result === 'conflict') {
+        return jsonError(
+          409,
+          'FOLDER_ORDER_CONFLICT',
+          'folder contents or order have changed',
+          headers,
+        );
+      }
+      return ownerJson({ ok: true }, 200, headers);
+    } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, headers);
+      if (claimed) return claimed;
+      console.error('[Folders] Failed to save classroom order:', error);
+      return jsonError(500, 'FOLDER_ORDER_FAILED', 'Failed to save classroom order', headers);
+    }
+  });
 }
 
 // PATCH /api/folders/[id] — rename { name }.

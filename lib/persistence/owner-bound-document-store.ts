@@ -398,15 +398,13 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         await restrictDialogueMemoryIn(queryable, this.ownerId, { stageId });
         await restrictDialogueLoopIn(queryable, this.ownerId, { stageId });
         await deleteQuizTraceIn(queryable, this.ownerId, { stageId });
+        await this.pinnedToTransaction(queryable).setStageFolder(stageId, null);
         await tombstoneStageMeta(queryable, stageId);
         // A course that is still generating ends with its deletion, in this
         // transaction, whatever state its run is in.
         const { endGenerationRunsOfDeletedCourseIn } =
           await import('@/lib/server/generation/run/store');
         await endGenerationRunsOfDeletedCourseIn(queryable, stageId);
-        await queryable.query('UPDATE document_stages SET folder_id = NULL WHERE id = $1', [
-          stageId,
-        ]);
         // Pinned to this transaction rather than called on `this.inner`.
         //
         // `withdrawAssetReferences` opens its own write transaction through
@@ -505,6 +503,12 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   setStageFolder(stageId: string, folderId: string | null): Promise<boolean> {
     return this.tagged({ stageId, mode: 'mutate' }, () =>
       this.inner.setStageFolder(stageId, folderId),
+    );
+  }
+
+  saveFolderMemberOrder(folderId: string, previous: readonly string[], next: readonly string[]) {
+    return this.tagged({ mode: 'library' }, () =>
+      this.inner.saveFolderMemberOrder(folderId, previous, next),
     );
   }
 }

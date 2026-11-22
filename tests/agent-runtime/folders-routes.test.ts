@@ -22,7 +22,7 @@ vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
 }));
 
 import { GET, POST } from '@/app/api/folders/route';
-import { DELETE, PATCH } from '@/app/api/folders/[id]/route';
+import { DELETE, PATCH, PUT } from '@/app/api/folders/[id]/route';
 import { POST as postMembers } from '@/app/api/folders/members/route';
 
 function routeRequest(
@@ -173,6 +173,44 @@ describe('PATCH /api/folders/[id]', () => {
       params('folder-a'),
     );
     expect(clash.status).toBe(409);
+  });
+});
+
+describe('PUT /api/folders/[id]', () => {
+  const previous = ['one', 'two'];
+  const next = ['two', 'one'];
+
+  function put(body: unknown, site = 'same-origin') {
+    return PUT(
+      routeRequest('http://localhost/api/folders/folder-a', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Sec-Fetch-Site': site },
+        body: JSON.stringify(body),
+      }),
+      params('folder-a'),
+    );
+  }
+
+  it.each([
+    ['saved', 200],
+    ['conflict', 409],
+    ['not_found', 404],
+  ] as const)(
+    'maps %s and passes the full order through the owner boundary',
+    async (result, status) => {
+      const save = vi
+        .spyOn(mocks.fakeStore!.store, 'saveFolderMemberOrder')
+        .mockResolvedValue(result);
+      expect((await put({ previous, next })).status).toBe(status);
+      expect(save).toHaveBeenCalledWith('folder-a', previous, next);
+    },
+  );
+
+  it('refuses invalid lists and cross-origin writes before resolving the owner', async () => {
+    expect((await put({ previous, next: ['two', 'two'] })).status).toBe(400);
+    expect((await put({ previous: null, next })).status).toBe(400);
+    expect((await put({ previous, next }, 'cross-site')).status).toBe(403);
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
   });
 });
 

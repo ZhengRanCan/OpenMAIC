@@ -186,6 +186,59 @@ describe('library provider', () => {
     }
   });
 
+  it('reorders visible courses without disclosing or moving a hidden folder member', async () => {
+    const { getOwnerScopedDocumentStore } =
+      await import('@/lib/server/agent-runtime/owner-scoped-documents');
+    const alice = await getOwnerScopedDocumentStore(ALICE);
+    const bob = await getOwnerScopedDocumentStore(BOB);
+    await alice.saveDocument(courseDocument('stage-alice-c') as never);
+    await alice.setStageFolder('stage-alice-b', 'folder-alice');
+    await alice.setStageFolder('stage-alice-c', 'folder-alice');
+    await bob.saveFolderMemberOrder('folder-bob', ['stage-bob-live'], ['stage-bob-live']);
+    const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
+    const { resetPersistenceHooksForTests } =
+      await import('@/lib/server/persistence-hooks/registry');
+    resetPersistenceHooksForTests();
+    const visible = ['stage-alice-c', 'stage-alice-a'];
+    configurePersistenceHooks({
+      name: 'test-host',
+      library: { name: 'filtered', list: async () => [...visible, 'stage-bob-live'] },
+    });
+
+    const { PUT } = await import('@/app/api/folders/[id]/route');
+    const { GET } = await import('@/app/api/folders/route');
+    const params = { params: Promise.resolve({ id: 'folder-alice' }) };
+    const headers = { cookie: `anonymous_id=${ALICE_COOKIE}`, 'content-type': 'application/json' };
+    const save = (previous: string[], next: string[]) =>
+      PUT(
+        new NextRequest('http://localhost/api/folders/folder-alice', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ previous, next }),
+        }),
+        params,
+      );
+    expect((await listAsAlice()).body.stages.map((stage) => (stage as { id: string }).id)).toEqual([
+      ...visible,
+      'stage-bob-live',
+    ]);
+    const reversed = [...visible].reverse();
+    expect((await save(visible, reversed)).status).toBe(200);
+    expect((await save(reversed, visible)).status).toBe(200);
+    expect((await listAsAlice()).body.stages).toEqual([
+      expect.objectContaining({ id: 'stage-alice-c', folderPosition: 1 }),
+      expect.objectContaining({ id: 'stage-alice-a', folderPosition: 3 }),
+      expect.not.objectContaining({ folderPosition: expect.anything() }),
+    ]);
+    expect((await alice.listFolders())[0].memberOrder).toEqual([
+      'stage-alice-c',
+      'stage-alice-b',
+      'stage-alice-a',
+    ]);
+    const folders = await GET(new NextRequest('http://localhost/api/folders', { headers }));
+    expect(await folders.text()).not.toContain('stage-alice-b');
+  });
+
   it('drops ids the read path cannot address instead of failing the listing', async () => {
     const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
     configurePersistenceHooks({

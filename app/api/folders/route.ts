@@ -42,7 +42,8 @@ export const runtime = 'nodejs';
  * the request owner IS the folder's user key.
  */
 function folderResponse(folder: DocumentFolder, userKey: string) {
-  return { ...folder, userKey };
+  const { memberOrder: _memberOrder, ...summary } = folder;
+  return { ...summary, userKey };
 }
 
 /** The reference's error envelope: `{ error: { code, message } }`. */

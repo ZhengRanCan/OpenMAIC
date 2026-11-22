@@ -89,6 +89,7 @@ import type { FolderRecord } from '@/lib/types/folder';
 import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
+import { FolderOrderDialog } from '@/components/discovery/folder-order-dialog';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
 import { LibrarySkeleton } from '@/components/discovery/library-skeleton';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
@@ -250,11 +251,12 @@ function HomePage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Course folders — device-local grouping. `currentFolderId === undefined`
+  // Course folders — owner-scoped grouping. `currentFolderId === undefined`
   // is the root view (folders + unfiled courses); a folder id navigates into
   // that folder's course list. Searching flattens every course regardless of
   // folder and annotates each with its folder name.
   const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const classroomReadVersion = useRef(0);
   // True once the initial classroom + folder loads resolve. Guards layout
   // selection so the hero does not flip between full-screen and compact as the
   // two async reads land (avoids a visible layout shift on first paint).
@@ -282,8 +284,10 @@ function HomePage() {
   }, [themeOpen]);
 
   const loadClassrooms = async () => {
+    const version = ++classroomReadVersion.current;
     try {
       const list = await listStages();
+      if (version !== classroomReadVersion.current) return;
       setClassrooms(list);
       retainThumbnails(new Set(list.map((c) => c.id)));
     } catch (err) {
@@ -451,9 +455,16 @@ function HomePage() {
 
   const handleMoveCourse = async (stageId: string, folderId: string | undefined) => {
     // Optimistic update for snappy UI; the persistence call follows.
-    setClassrooms((prev) => prev.map((c) => (c.id === stageId ? { ...c, folderId } : c)));
+    setClassrooms((prev) =>
+      prev.map((course) =>
+        course.id === stageId && course.folderId !== folderId
+          ? { ...course, folderId, folderPosition: undefined }
+          : course,
+      ),
+    );
     try {
       await setStageFolder(stageId, folderId);
+      await loadClassrooms();
     } catch (err) {
       log.error('Failed to move course:', err);
       toast.error(t('classroom.moveFailed'));
@@ -488,20 +499,26 @@ function HomePage() {
   // that folder's members.
   const folderNameById = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
   const isSearching = deferredSearchQuery.trim().length > 0;
+  const currentFolder = folders.find((f) => f.id === currentFolderId);
+  const currentFolderClassrooms = useMemo(() => {
+    if (!currentFolderId) return [];
+    const members = classrooms.filter((course) => course.folderId === currentFolderId);
+    return members.sort(
+      (a, b) =>
+        (a.folderPosition ?? Number.MAX_SAFE_INTEGER) -
+        (b.folderPosition ?? Number.MAX_SAFE_INTEGER),
+    );
+  }, [classrooms, currentFolderId]);
   // The course tiles rendered in the active view: search flattens everything;
   // a folder shows only its members; the root shows unfiled courses (folder
   // tiles are rendered separately above them).
   const visibleClassrooms = useMemo(() => {
     if (isSearching) return filteredClassrooms;
-    if (currentFolderId) return filteredClassrooms.filter((c) => c.folderId === currentFolderId);
+    if (currentFolderId) return currentFolderClassrooms;
     return filteredClassrooms.filter(
       (c) => c.folderId === undefined || !folderNameById.has(c.folderId),
     );
-  }, [filteredClassrooms, isSearching, currentFolderId, folderNameById]);
-  const currentFolderClassrooms = useMemo(
-    () => (currentFolderId ? classrooms.filter((c) => c.folderId === currentFolderId) : []),
-    [classrooms, currentFolderId],
-  );
+  }, [filteredClassrooms, isSearching, currentFolderId, currentFolderClassrooms, folderNameById]);
   const courseCountByFolder = useMemo(() => {
     const counts = new Map<string, number>();
     for (const c of classrooms) {
@@ -529,7 +546,6 @@ function HomePage() {
     }
     return byFolder;
   }, [classrooms, thumbnails]);
-  const currentFolder = folders.find((f) => f.id === currentFolderId);
 
   const listedStageIds = useMemo(() => new Set(classrooms.map((c) => c.id)), [classrooms]);
   const runByStageId = useMemo(() => runsByCourse(runs), [runs]);
@@ -1189,6 +1205,42 @@ function HomePage() {
               transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
               className="w-full overflow-hidden"
             >
+              {currentFolder && !isSearching && (
+                <div className="mt-3 flex justify-end px-1">
+                  <FolderOrderDialog
+                    key={currentFolder.id}
+                    folderId={currentFolder.id}
+                    courses={currentFolderClassrooms}
+                    onSaved={(memberOrder) => {
+                      const positions = new Map(memberOrder.map((id, index) => [id, index + 1]));
+                      setClassrooms((prev) =>
+                        prev.map((course) =>
+                          course.folderId === currentFolder.id && positions.has(course.id)
+                            ? { ...course, folderPosition: positions.get(course.id) }
+                            : course,
+                        ),
+                      );
+                      void loadClassrooms();
+                      toast.success(t('classroom.folderOrderSaved'));
+                    }}
+                    reload={async () => {
+                      const version = ++classroomReadVersion.current;
+                      const [nextCourses, nextFolders] = await Promise.all([
+                        listStages(),
+                        listFolders(),
+                      ]);
+                      if (version === classroomReadVersion.current) {
+                        setClassrooms(nextCourses);
+                        retainThumbnails(new Set(nextCourses.map((course) => course.id)));
+                      }
+                      setFolders(nextFolders);
+                      if (!nextFolders.some((folder) => folder.id === currentFolder.id)) {
+                        setCurrentFolderId(undefined);
+                      }
+                    }}
+                  />
+                </div>
+              )}
               {!hydrated ? (
                 <LibrarySkeleton />
               ) : folders.length === 0 && classrooms.length === 0 && pendingRuns.length === 0 ? (

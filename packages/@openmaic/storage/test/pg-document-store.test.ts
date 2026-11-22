@@ -138,6 +138,56 @@ describe('owner-scoped document folders', () => {
     await expect(alice.listDocuments('folder-a')).resolves.toEqual([]);
   });
 
+  test('saves a full owned member order and appends moved and returning members', async () => {
+    await alice.createFolder('folder-a', 'Series');
+    await alice.createFolder('folder-b', 'Other');
+    await bob.createFolder('folder-a', 'Foreign');
+    await bob.saveDocument(makeDocument('foreign'));
+    await bob.setStageFolder('foreign', 'folder-a');
+    for (const id of ['one', 'two', 'three']) {
+      await alice.saveDocument(makeDocument(id));
+      await alice.setStageFolder(id, id === 'three' ? 'folder-b' : 'folder-a');
+    }
+    expect((await alice.listFolders())[0]).not.toHaveProperty('memberOrder');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['one', 'two'], ['foreign', 'one']),
+    ).resolves.toBe('conflict');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['one', 'two'], ['three', 'one']),
+    ).resolves.toBe('conflict');
+    await expect(bob.saveFolderMemberOrder('folder-b', [], [])).resolves.toBe('not_found');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['one', 'two'], ['two', 'one']),
+    ).resolves.toBe('saved');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['one', 'two'], ['two', 'one']),
+    ).resolves.toBe('saved');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['one', 'two'], ['one', 'two']),
+    ).resolves.toBe('conflict');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['foreign', 'two'], ['two', 'one']),
+    ).resolves.toBe('conflict');
+    await alice.setStageFolder('three', 'folder-a');
+    await alice.setStageFolder('two', 'folder-b');
+    await expect(
+      alice.saveFolderMemberOrder('folder-a', ['two', 'one'], ['one', 'two']),
+    ).resolves.toBe('conflict');
+    await alice.setStageFolder('two', 'folder-a');
+    await alice.setStageFolder('one', 'folder-a');
+    expect((await alice.listFolders())[0].memberOrder).toEqual(['one', 'three', 'two']);
+    expect(
+      (await alice.listDocuments('folder-a')).map((course) => [course.id, course.folderPosition]),
+    ).toEqual([
+      ['one', 1],
+      ['three', 2],
+      ['two', 3],
+    ]);
+    await alice.deleteDocument('three');
+    expect((await alice.listFolders())[0].memberOrder).toEqual(['one', 'two']);
+    expect((await bob.listFolders())[0]).not.toHaveProperty('memberOrder');
+  });
+
   test('moves idempotently and lists membership without changing the document body', async () => {
     await alice.createFolder('folder-a', 'Series');
     await alice.saveDocument(makeDocument('alice-stage'));
@@ -380,6 +430,30 @@ describe('reassignDocumentFolders', () => {
       'anon-reading-stage': 'user-only',
       'anon-idea': 'anon-only',
     });
+  });
+
+  test('preserves a custom order when a folder moves or merges during a claim', async () => {
+    await user.createFolder('account', 'Math');
+    await anon.createFolder('guest', 'Math');
+    await anon.createFolder('history', 'History');
+    for (const [store, folder, ids] of [
+      [user, 'account', ['account-a', 'account-b']],
+      [anon, 'guest', ['guest-a', 'guest-b']],
+      [anon, 'history', ['history-a', 'history-b']],
+    ] as const) {
+      for (const id of ids) {
+        await store.saveDocument(makeDocument(id));
+        await store.setStageFolder(id, folder);
+      }
+      await expect(store.saveFolderMemberOrder(folder, ids, [...ids].reverse())).resolves.toBe(
+        'saved',
+      );
+    }
+    await claim();
+    expect((await user.listFolders()).map((folder) => folder.memberOrder)).toEqual([
+      ['account-b', 'account-a', 'guest-b', 'guest-a'],
+      ['history-b', 'history-a'],
+    ]);
   });
 
   test('re-files from the old ids in one step when a new id equals another old id', async () => {

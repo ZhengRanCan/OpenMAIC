@@ -33,6 +33,7 @@ interface LibraryRow extends Record<string, unknown> {
   created_at: number | string;
   updated_at: number | string;
   folder_id: string | null;
+  folder_position: number | null;
   scene_count: string;
 }
 
@@ -59,10 +60,13 @@ export async function summarizeLibraryStages(
             stages.created_at,
             stages.updated_at,
             CASE WHEN meta.owner_id = $2 THEN stages.folder_id END AS folder_id,
+            array_position(folders.member_order, stages.id) AS folder_position,
             (SELECT COUNT(*) FROM document_scenes AS scenes
               WHERE scenes.stage_id = stages.id)::text AS scene_count
        FROM document_stages AS stages
        JOIN stage_meta AS meta ON meta.stage_id = stages.id
+       LEFT JOIN document_folders AS folders
+         ON folders.owner_id = $2 AND meta.owner_id = $2 AND folders.id = stages.folder_id
       WHERE stages.id = ANY($1::text[])
         AND meta.deleted_at IS NULL`,
     [ordered, ownerId],
@@ -82,6 +86,7 @@ export async function summarizeLibraryStages(
       updatedAt: Number(row.updated_at),
       sceneCount: Number(row.scene_count),
       ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
+      ...(row.folder_position === null ? {} : { folderPosition: row.folder_position }),
     });
   }
   return summaries;

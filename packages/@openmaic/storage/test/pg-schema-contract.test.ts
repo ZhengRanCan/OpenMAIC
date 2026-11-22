@@ -239,6 +239,8 @@ $document_stages_owner_retirement$;
 DROP INDEX IF EXISTS document_stages_owner_idx;
 
 DROP INDEX IF EXISTS document_stages_owner_folder_idx;
+
+ALTER TABLE document_folders ADD COLUMN IF NOT EXISTS member_order TEXT[];
 `;
 
 const EXPECTED_RUNTIME_PG_SCHEMA = `
