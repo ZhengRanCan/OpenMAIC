@@ -36,6 +36,7 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 import {
   LEARNER_PROFILE_MASTERY_SCHEMA,
+  LEARNER_PROFILE_MASTERY_JOBS_SCHEMA,
   LEARNER_PROFILE_MEMORY_SCHEMA,
   LEARNER_PROFILE_SCHEMA,
 } from './learner-profile-schema';
@@ -179,6 +180,12 @@ export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
       version: 9,
       name: 'learner_profile_mastery',
       up: LEARNER_PROFILE_MASTERY_SCHEMA,
+      transaction: true,
+    },
+    {
+      version: 10,
+      name: 'learner_profile_mastery_jobs',
+      up: LEARNER_PROFILE_MASTERY_JOBS_SCHEMA,
       transaction: true,
     },
   ],

@@ -356,11 +356,13 @@ Running OpenMAIC for other people, or embedding it in your own product? [Hosting
 - [owner identity](packages/docs/content/docs/hosting.mdx#owner-identity): [single-user mode](packages/docs/content/docs/hosting.mdx#single-user-mode), [registering auth methods](packages/docs/content/docs/hosting.mdx#registering-owner-auth-methods), a [signed-JWT gateway recipe](packages/docs/content/docs/hosting.mdx#recipe-accounts-through-an-identity-gateway-signed-jwt) and [claiming anonymous work](packages/docs/content/docs/hosting.mdx#claiming-anonymous-work);
 - [host extension hooks](packages/docs/content/docs/hosting.mdx#host-extension-hooks) for course creation, the library, uploads and asset byte stores.
 
-### Optional: automatic Mastery in an isolated simulation
+### Optional: automatic Mastery and Quiz feedback
 
-Set `OPENMAIC_AUTOMATIC_MASTERY=true` with an existing `OPENMAIC_SIMULATED_LEARNING_LOOP` configured for synthetic learners and a matching initialized `MEMORY_DATABASE_URL`. Enable the existing Dialogue loop to include QA and Discussion. The worker evaluates saved evidence from automatic learning-loop jobs created after first activation for that environment. It uses the server's `quiz-evidence` model route. Course targets are evaluated individually.
+For a saved learner profile, set `OPENMAIC_AUTOMATIC_MASTERY=true` to update course targets from reviewed standard Quiz attempts. This uses the application's `DATABASE_URL` and its server-managed `quiz-evidence` model route. Set `OPENMAIC_QUIZ_FEEDBACK=true` for personalized feedback and `OPENMAIC_QUIZ_PRACTICE=true` to let learners request a separately graded practice question. Both ordinary and deep-interaction classrooms support these settings.
 
-Course owners can inspect job states at `GET /api/mastery-learning-loop/{runId}`. Recover with a same-origin JSON `POST` to that URL with `job` and `action` query parameters. Use `retry` for a known failure or `reconcile` for an unknown job once its reply is recoverable. Use `discard_unknown` to release a target by abandoning the unconfirmed request. A captured reply is finalized from storage. Turn off the flag to pause discovery and new work.
+For simulated learners, configure `OPENMAIC_SIMULATED_LEARNING_LOOP` for synthetic learners and initialize the matching `MEMORY_DATABASE_URL`. Enable the existing Dialogue loop to include QA and Discussion in simulated Mastery. The simulated worker evaluates saved evidence from learning-loop jobs created after activation for that environment. Both workers evaluate course targets individually.
+
+For simulated jobs, course owners can inspect job states at `GET /api/mastery-learning-loop/{runId}`. Recover with a same-origin JSON `POST` to that URL with `job` and `action` query parameters. Use `retry` for a known failure or `reconcile` for an unknown job once its reply is recoverable. Use `discard_unknown` to release a target by abandoning the unconfirmed request. A captured reply is finalized from storage. Turn off the flag to pause discovery and new work in both workers.
 
 ### Optional: ACCESS_CODE (Shared Deployments)
 

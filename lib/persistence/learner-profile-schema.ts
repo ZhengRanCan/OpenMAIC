@@ -69,3 +69,25 @@ CREATE TABLE learner_profile_mastery (
 );
 CREATE INDEX classroom_learner_profiles_profile_idx ON classroom_learner_profiles(profile_id);
 `;
+
+export const LEARNER_PROFILE_MASTERY_JOBS_SCHEMA = `
+CREATE TABLE learner_profile_mastery_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stage_id TEXT NOT NULL REFERENCES classroom_learner_profiles(stage_id) ON DELETE CASCADE,
+  profile_id UUID NOT NULL REFERENCES learner_profiles(id),
+  target_id TEXT NOT NULL,
+  target_revision INTEGER NOT NULL CHECK (target_revision > 0),
+  kind TEXT NOT NULL CHECK (kind IN ('quiz','qa','discussion')),
+  activity_id TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  source_version TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','finished','failed')),
+  ready_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  claimed_at TIMESTAMPTZ,
+  claim_id UUID,
+  UNIQUE(stage_id,target_id,target_revision,kind,activity_id,record_id,source_version)
+);
+CREATE INDEX learner_profile_mastery_jobs_ready_idx ON learner_profile_mastery_jobs(ready_at,id)
+  WHERE state IN ('queued','running');
+`;

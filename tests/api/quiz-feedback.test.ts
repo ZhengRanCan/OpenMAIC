@@ -77,7 +77,7 @@ it('rejects cross-site and client-supplied feedback inputs before persistence', 
   expect(provider).not.toHaveBeenCalled();
 });
 
-it('accepts explicit retry and keeps non-synthetic deployments disabled', async () => {
+it('accepts explicit retry and never supplies a proxy environment as simulated history', async () => {
   generate.mockResolvedValue({ status: 'pending' });
   const retryToken = '00000000-0000-4000-8000-000000000001';
   const body = { ...locator, language: 'zh-CN', retryToken };
@@ -99,6 +99,9 @@ it('accepts explicit retry and keeps non-synthetic deployments disabled', async 
       memoryEnvironmentId: environment,
     }),
   );
-  expect(await (await post(body)).json()).toEqual({ status: 'disabled' });
-  expect(generate).toHaveBeenCalledTimes(1);
+  await post(body);
+  expect(generate).toHaveBeenLastCalledWith(
+    expect.objectContaining({ environment: '' }),
+    retryToken,
+  );
 });

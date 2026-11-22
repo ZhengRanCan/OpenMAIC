@@ -90,10 +90,14 @@ async function quizSource(
     if (!basis.parts.length) return null;
     return {
       basis,
+      sceneId: quiz.sceneId,
       quizQuestions: scene.content.questions.flatMap(({ id, question, type, options }) => {
         const submitted = quiz.submission!.answers[id];
         return submitted?.length ? [{ prompt: question, type, options, submitted }] : [];
       }),
+      quizAnswerKeys: scene.content.questions.flatMap(({ id, answer }) =>
+        quiz.submission!.answers[id]?.length ? [answer] : [],
+      ),
       reviewId: review.id,
       digest: digest({ version: quiz.version.id, review: review.id, parts: basis.parts }),
     };
@@ -149,7 +153,9 @@ export async function readProfileMemorySource(
   };
   return {
     basis,
+    sceneId: source.initialContext?.sceneId,
     quizQuestions: undefined,
+    quizAnswerKeys: undefined,
     reviewId: null,
     digest: digest({
       kind: source.type,

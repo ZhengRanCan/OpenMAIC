@@ -38,15 +38,13 @@ function handle(req: NextRequest, method: 'GET' | 'POST') {
       )
         return Response.json({ status: 'disabled' }, { headers });
       const config = readSimulatedLearningLoopConfig();
-      if (config?.sourceNature !== 'synthetic')
-        return Response.json({ status: 'disabled' }, { headers });
       const service = new QuizPracticeService(
         await getServerPersistenceProvider(process.env.DATABASE_URL ?? ''),
       );
       const options = (source: z.infer<typeof lookup>, language = 'en-US') => ({
         owner: principal.ownerId,
         locator: source,
-        environment: config.memoryEnvironmentId,
+        environment: config?.sourceNature === 'synthetic' ? config.memoryEnvironmentId : '',
         language,
       });
       if (method === 'GET') {

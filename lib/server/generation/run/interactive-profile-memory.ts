@@ -29,7 +29,7 @@ const selectionSchema = z.strictObject({
   selected: z.array(z.number().int().positive()).max(MAX_SELECTED),
 });
 
-async function readCandidates(
+export async function readProfileMemoryCandidates(
   ownerId: string,
   profileId: string,
   keys?: readonly string[],
@@ -90,7 +90,7 @@ export async function buildInteractiveProfileMemory(
   input: MemoryInput,
   select: (prompt: MemorySelectionPrompt) => Promise<string>,
 ): Promise<ProfileOutlineMemory> {
-  const candidates = await readCandidates(ownerId, input.profileId);
+  const candidates = await readProfileMemoryCandidates(ownerId, input.profileId);
   const task = {
     task: input.task,
     objectives: input.objectives,
@@ -136,7 +136,7 @@ export async function assertInteractiveProfileMemoryCurrent(
   ownerId: string,
   memory: ProfileOutlineMemory,
 ) {
-  const current = await readCandidates(
+  const current = await readProfileMemoryCandidates(
     ownerId,
     memory.profileId,
     memory.selected.map(({ key }) => key),

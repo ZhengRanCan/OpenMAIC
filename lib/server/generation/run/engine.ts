@@ -60,6 +60,7 @@ import type {
   QuizMemoryTask,
 } from '@/lib/learner-context/quiz-contracts';
 import { renderQuizLearnerContext } from '@/lib/learner-context/quiz-render';
+import { digest } from '@/lib/learner-memory/contracts';
 import { quizTaskDigest } from '@/lib/server/quiz-learner-context';
 
 import { pickNarratorAgent, resolveServerAgentVoiceOptions } from '@/lib/audio/agent-voice-options';
@@ -560,6 +561,71 @@ export async function executeGenerationRun(
     }
   };
 
+  const prepareProfileQuizHistory = async (sceneIndex: number, contentSignal: AbortSignal) => {
+    const profileId = outlineLearnerProfileId(input);
+    const confirmed = outline();
+    const item = confirmed.outlines[sceneIndex]!;
+    if (!profileId || item.type !== 'quiz' || !services.profileQuizHistory) return;
+    const task = {
+      requirement: input.requirement.slice(0, 4500),
+      courseTitle: confirmed.courseTitle,
+      courseObjective: confirmed.courseObjective,
+      targetStatements: confirmed.targets?.map(({ statement }) => statement),
+      scene: item,
+    };
+    const taskDigest = digest(task);
+    const id = `scene:${sceneIndex}:profile-quiz-context`;
+    type Snapshot = {
+      profileId: string;
+      taskDigest: string;
+      fingerprints: string[];
+      text?: string;
+    };
+    let history = output<Snapshot>(id);
+    if (history && (history.profileId !== profileId || history.taskDigest !== taskDigest))
+      throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+    if (!history) {
+      if (output(`${id}:calling`))
+        throw new PreclassLearnerContextError('LEARNER_CONTEXT_CALL_UNKNOWN');
+      const selected = await withDeadline(
+        id,
+        STEP_DEADLINES_MS.quizLearnerContext,
+        contentSignal,
+        (signal) =>
+          services.profileQuizHistory!(owner, profileId, task, {
+            log,
+            signal,
+            beforeSelect: async () => {
+              signal.throwIfAborted();
+              await commit({ step: { id: `${id}:calling`, output: { taskDigest } } });
+            },
+          }),
+      );
+      contentSignal.throwIfAborted();
+      history = { profileId, taskDigest, fingerprints: [], ...selected };
+      await commit({ step: { id, output: history } });
+    }
+    return { task, history };
+  };
+
+  const assertProfileQuizHistory = async (
+    sceneIndex: number,
+    history: { profileId: string; fingerprints: string[] },
+    contentSignal: AbortSignal,
+  ) => {
+    if (!history.fingerprints.length) return;
+    const valid = await withDeadline(
+      `scene:${sceneIndex}:profile-quiz-context-recheck`,
+      STEP_DEADLINES_MS.quizLearnerContextRecheck,
+      contentSignal,
+      () => services.checkProfileQuizHistory!(owner, history.profileId, history.fingerprints),
+    );
+    if (!valid)
+      throw Object.assign(new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID'), {
+        httpStatus: 400,
+      });
+  };
+
   const generateContent = async (
     sceneIndex: number,
     contentSignal: AbortSignal,
@@ -570,10 +636,15 @@ export async function executeGenerationRun(
     // Outside the native content retry loop: one successful choice is frozen
     // for this Quiz, including when this call is a parallel prewarm.
     const quiz = await prepareQuizContext(sceneIndex, contentSignal);
-    const quizLearnerContext = quiz && renderQuizLearnerContext(quiz.task, quiz.context);
+    const profileQuiz = await prepareProfileQuizHistory(sceneIndex, contentSignal);
+    const quizLearnerContext = profileQuiz
+      ? { task: JSON.stringify(profileQuiz.task), learner: profileQuiz.history.text ?? '[]' }
+      : quiz && renderQuizLearnerContext(quiz.task, quiz.context);
     return withRouteRetry(
       async () => {
         if (quiz) await recheckQuizContext(quiz.context, contentSignal);
+        if (profileQuiz)
+          await assertProfileQuizHistory(sceneIndex, profileQuiz.history, contentSignal);
         const generated = await withDeadline(
           stepId,
           STEP_DEADLINES_MS.sceneContent,
@@ -600,6 +671,8 @@ export async function executeGenerationRun(
             ),
         );
         if (quiz) await recheckQuizContext(quiz.context, contentSignal);
+        if (profileQuiz)
+          await assertProfileQuizHistory(sceneIndex, profileQuiz.history, contentSignal);
         return generated;
       },
       retryOptions(stepId, sceneIndex, 500, contentSignal),
@@ -1065,10 +1138,14 @@ export async function executeGenerationRun(
               : {}),
             ...(mastery.length && outlineProfileId
               ? {
-                  profileLearnerMastery: mastery.map(({ target, ...state }) => ({
-                    ...state,
-                    target: { statement: target.statement },
-                  })),
+                  profileLearnerMastery: mastery.map(
+                    ({ target, summary, observations, unverified }) => ({
+                      summary,
+                      observations,
+                      unverified,
+                      target: { statement: target.statement },
+                    }),
+                  ),
                 }
               : mastery.length
                 ? { learnerMastery: mastery }

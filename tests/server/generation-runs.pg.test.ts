@@ -932,6 +932,94 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     SLOW_TEST_MS,
   );
 
+  it(
+    'F99 freezes formal quiz history to each task and reselects an invalidated snapshot on explicit retry',
+    async () => {
+      const owner = `anon:${randomUUID()}`;
+      const { listLearnerProfiles } = await import('@/lib/server/learner-profiles');
+      const quiz = { ...OUTLINES[0]!, type: 'quiz' as const, title: 'Light quiz' };
+      const chosen = vi.fn<NonNullable<RunStepServices['profileQuizHistory']>>(
+        async (who, profileId, task, ctx) => {
+          expect(who).toBe(owner);
+          expect(task).toMatchObject({
+            targetStatements: ['Compare photosynthesis under different light.'],
+            scene: { title: quiz.title },
+          });
+          await ctx.beforeSelect();
+          return {
+            fingerprints: [`history:${profileId}`],
+            text: JSON.stringify([{ text: historyById.get(profileId) }]),
+          };
+        },
+      );
+      let invalid = false;
+      const historyById = new Map<string, string>();
+      const check = vi.fn<NonNullable<RunStepServices['checkProfileQuizHistory']>>(
+        async (who, id, history) => !invalid && who === owner && history[0] === `history:${id}`,
+      );
+      const { services, calls } = fakeServices({
+        outline: async () => ({
+          outlines: [quiz],
+          courseTitle: 'Light quiz classroom',
+          languageDirective: 'Use English.',
+          taskEngineMode: false,
+        }),
+        profileQuizHistory: chosen,
+        checkProfileQuizHistory: check,
+      });
+      for (const text of ['Prefer a comparison.', 'Use a diagram.']) {
+        const seeded = await start(
+          runInput({
+            outlineReview: 'auto',
+            learnerProfileSelection: { mode: 'blank', requestId: randomUUID() },
+          }),
+          owner,
+        );
+        expect(await drive(seeded.id, services)).toBe('completed');
+        const profile = (await listLearnerProfiles(owner)).find(({ id }) => !historyById.has(id))!;
+        historyById.set(profile.id, text);
+      }
+      expect(chosen).not.toHaveBeenCalled();
+      for (const [index, [profileId, history]] of [...historyById].entries()) {
+        const created = await start(
+          runInput({
+            interactive: index === 0,
+            outlineReview: 'auto',
+            learnerProfileSelection: { mode: 'existing', profileId },
+          }),
+          owner,
+        );
+        if (index === 0) {
+          invalid = true;
+          expect(await drive(created.id, services)).toBe('paused');
+          expect((await readGenerationRun(created.id, owner))?.error?.errorCode).toBe(
+            'LEARNER_CONTEXT_INVALID',
+          );
+          invalid = false;
+          await retryGenerationRun(created.id, owner, { commandId: 'f99-invalidate' });
+        }
+        expect(await drive(created.id, services)).toBe('completed');
+        expect(calls.sceneContent.at(-1)).toMatchObject({
+          quizLearnerContext: {
+            learner: JSON.stringify([{ text: history }]),
+          },
+        });
+      }
+      const control = await start(
+        runInput({
+          interactive: true,
+          outlineReview: 'auto',
+          learnerProfileSelection: { mode: 'none' },
+        }),
+        owner,
+      );
+      expect(await drive(control.id, services)).toBe('completed');
+      expect(calls.sceneContent.at(-1)?.quizLearnerContext).toBeUndefined();
+      expect(chosen).toHaveBeenCalledTimes(3);
+    },
+    SLOW_TEST_MS,
+  );
+
   describe('F65 frozen learner context', () => {
     type ContextInput = Parameters<NonNullable<RunStepServices['learnerContext']>>[1];
     function frozenContext(input: ContextInput, revision = 3): FrozenLearnerContext {

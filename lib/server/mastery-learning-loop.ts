@@ -11,6 +11,7 @@ import {
 } from '@/lib/persistence/server-provider';
 import { loadDialogueEvidenceSettings } from './dialogue-evidence-provenance';
 import { LearnerMastery } from './learner-mastery';
+import { startFormalMasteryLearningLoop } from './learner-profile-mastery-runner';
 import { readSimulatedLearningLoopConfig } from './quiz-learning-loop/config';
 import { resolveModel } from './resolve-model';
 
@@ -308,7 +309,7 @@ export class MasteryLearningLoop {
   }
 }
 
-export async function startMasteryLearningLoop() {
+async function startSimulatedMasteryLearningLoop() {
   const config = readAutomaticMasteryConfig();
   if (!config) return undefined;
   const app = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
@@ -371,6 +372,20 @@ export async function startMasteryLearningLoop() {
       stopped = true;
       clearInterval(timer);
       await running;
+    },
+  };
+}
+
+export async function startMasteryLearningLoop() {
+  if (process.env.OPENMAIC_AUTOMATIC_MASTERY !== 'true') return undefined;
+  const formal = startFormalMasteryLearningLoop();
+  const simulated = await startSimulatedMasteryLearningLoop().catch(() => {
+    console.error('[mastery-learning-loop] simulation could not start');
+    return undefined;
+  });
+  return {
+    async stop() {
+      await Promise.all([formal.stop(), simulated?.stop()]);
     },
   };
 }

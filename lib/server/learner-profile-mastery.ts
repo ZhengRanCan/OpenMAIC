@@ -1,5 +1,6 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { z } from 'zod';
+import { digest } from '@/lib/learner-memory/contracts';
 import type { MasteryCard, MasteryCardObservation } from '@/lib/learner-mastery/classroom';
 import {
   readProfileMemorySource,
@@ -17,7 +18,7 @@ const observation = z.strictObject({
   assistance: z.enum(['independent', 'assisted', 'unknown']),
   text: z.string().trim().min(1).max(1000),
 });
-const reference = z.strictObject({
+export const profileMasteryReferenceSchema = z.strictObject({
   evidenceRef: z.string().min(1),
   kind: z.enum(['quiz', 'discussion', 'qa']),
   activityId: z.string().min(1),
@@ -27,16 +28,49 @@ const reference = z.strictObject({
   parts: z.array(z.number().int().nonnegative()).min(1).max(24),
   conditions: z.array(z.string().trim().min(1).max(500)).max(8),
 });
-const stored = z.object({
+export type ProfileMasteryReference = z.infer<typeof profileMasteryReferenceSchema>;
+export const storedProfileMasterySchema = z.object({
   state: z.strictObject({
     targetStatement: z.string().min(1),
     summary: z.string().trim().min(1).max(1000),
     unverified: z.array(z.string().trim().min(1).max(1000)).max(2),
     observations: z.array(observation).min(1).max(24),
   }),
-  sources: z.array(reference).min(1).max(24),
+  sources: z.array(profileMasteryReferenceSchema).min(1).max(24),
 });
 type ProfileMasteryRow = Record<string, unknown> & { state: unknown; sources: unknown };
+
+export async function readVerifiedProfileMasterySource(
+  tx: Queryable,
+  ownerId: string,
+  profileId: string,
+  stageId: string,
+  ref: ProfileMasteryReference,
+) {
+  if ((ref.kind === 'quiz') !== (ref.reviewId !== null)) return;
+  const locator = {
+    stage_id: stageId,
+    profile_id: profileId,
+    kind: ref.kind,
+    activity_id: ref.activityId,
+    record_id: ref.recordId,
+    review_id: ref.reviewId,
+  };
+  const access = await readProfileSourceAccess(tx, locator);
+  if (access?.owner_id !== ownerId) return;
+  const source = await readProfileMemorySource(tx, locator, access).catch((error: unknown) => {
+    if (error instanceof Error && error.message === 'PROFILE_MEMORY_DIALOGUE_UNREADABLE')
+      return null;
+    throw error;
+  });
+  if (
+    source?.digest === ref.digest &&
+    !source.basis.historicalReview &&
+    new Set(ref.parts).size === ref.parts.length &&
+    ref.parts.every((index) => source.basis.parts[index])
+  )
+    return source;
+}
 
 async function readCard(
   tx: Queryable,
@@ -46,7 +80,7 @@ async function readCard(
   target: CourseTarget,
   row: ProfileMasteryRow,
 ): Promise<MasteryCard> {
-  const parsed = stored.safeParse(row);
+  const parsed = storedProfileMasterySchema.safeParse(row);
   const unavailable = { target, status: 'unavailable' } as const;
   if (!parsed.success || parsed.data.state.targetStatement !== target.statement) return unavailable;
   const { state, sources } = parsed.data;
@@ -62,30 +96,9 @@ async function readCard(
   const observations: MasteryCardObservation[] = [];
   for (const item of state.observations) {
     const ref = byRef.get(item.evidenceRef);
-    if (!ref || (ref.kind === 'quiz') !== (ref.reviewId !== null)) return unavailable;
-    const locator = {
-      stage_id: stageId,
-      profile_id: profileId,
-      kind: ref.kind,
-      activity_id: ref.activityId,
-      record_id: ref.recordId,
-      review_id: ref.reviewId,
-    };
-    const access = await readProfileSourceAccess(tx, locator);
-    if (access?.owner_id !== ownerId) return unavailable;
-    const source = await readProfileMemorySource(tx, locator, access).catch((error: unknown) => {
-      if (error instanceof Error && error.message === 'PROFILE_MEMORY_DIALOGUE_UNREADABLE')
-        return null;
-      throw error;
-    });
-    if (
-      source?.digest !== ref.digest ||
-      source.basis.historicalReview ||
-      new Set(ref.parts).size !== ref.parts.length ||
-      ref.parts.some((index) => !source.basis.parts[index])
-    ) {
-      return unavailable;
-    }
+    if (!ref) return unavailable;
+    const source = await readVerifiedProfileMasterySource(tx, ownerId, profileId, stageId, ref);
+    if (!source) return unavailable;
     const { title, occurredAt } = source.basis;
     if (source.quizQuestions) {
       observations.push({
@@ -140,13 +153,28 @@ export async function readProfileMasteryCardIn(
        WHERE m.stage_id=$1 AND b.profile_id=$2 AND m.target_id=$3 AND m.target_revision=$4`,
     [stageId, profileId, target.id, target.revision, ownerId],
   );
-  return row ? readCard(tx, ownerId, profileId, stageId, target, row) : { target, status: 'empty' };
+  const card: MasteryCard = row
+    ? await readCard(tx, ownerId, profileId, stageId, target, row)
+    : { target, status: 'empty' };
+  if (process.env.OPENMAIC_AUTOMATIC_MASTERY !== 'true') return card;
+  const {
+    rows: [job],
+  } = await tx.query<{ state: string }>(
+    `SELECT state FROM learner_profile_mastery_jobs
+       WHERE stage_id=$1 AND profile_id=$2 AND target_id=$3 AND target_revision=$4
+       ORDER BY CASE WHEN state IN ('queued','running') THEN 0 ELSE 1 END,ready_at DESC,id LIMIT 1`,
+    [stageId, profileId, target.id, target.revision],
+  );
+  if (job?.state === 'queued' || job?.state === 'running') return { ...card, update: 'pending' };
+  if (job?.state === 'failed') return { ...card, update: 'failed' };
+  return card;
 }
 
 export async function readProfilePlannerMastery(
   ownerId: string,
   profileId: string,
-): Promise<PlannerMastery[]> {
+  locator?: { stageId: string; targetId: string; revision: number },
+): Promise<Array<PlannerMastery & { sourceVersion: string; sourceStageId: string }>> {
   const provider = await generationRunPersistence();
   return provider.withTransaction(async (tx) => {
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
@@ -162,15 +190,24 @@ export async function readProfilePlannerMastery(
            THEN r.outline->'targets' ELSE '[]'::jsonb END) item
          WHERE b.profile_id=$2 AND item->>'id'=m.target_id
            AND item->>'revision'=m.target_revision::text AND item->>'statement' IS NOT NULL
+           AND ($3::text IS NULL OR (m.stage_id=$3 AND m.target_id=$4 AND m.target_revision=$5))
          ORDER BY m.updated_at DESC,m.stage_id,m.target_id LIMIT 12`,
-      [ownerId, profileId],
+      [
+        ownerId,
+        profileId,
+        locator?.stageId ?? null,
+        locator?.targetId ?? null,
+        locator?.revision ?? null,
+      ],
     );
-    const candidates: PlannerMastery[] = [];
+    const candidates: Array<PlannerMastery & { sourceVersion: string; sourceStageId: string }> = [];
     for (const row of rows) {
       const card = await readCard(tx, ownerId, profileId, row.stage_id, row.target, row);
       if (card.status !== 'ready' || !card.observations || !card.summary) continue;
       candidates.push({
         target: card.target,
+        sourceVersion: digest([row.stage_id, row.sources]),
+        sourceStageId: row.stage_id,
         summary: card.summary,
         unverified: card.unverified ?? [],
         observations: card.observations

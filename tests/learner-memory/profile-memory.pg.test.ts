@@ -22,9 +22,19 @@ import {
 } from '@/lib/server/generation/run/interactive-profile-memory';
 import { editProfileMemory, readProfileMemory } from '@/lib/server/learner-profile-memory';
 import { readProfilePlannerMastery } from '@/lib/server/learner-profile-mastery';
+import {
+  discoverProfileMastery,
+  processProfileMastery,
+} from '@/lib/server/learner-profile-mastery-runner';
+import {
+  checkProfileActivityHistory,
+  resolveProfileSceneScope,
+  selectProfileActivityHistory,
+} from '@/lib/server/learner-profile-mastery-context';
 import { GET as GET_MASTERY } from '@/app/api/learner-mastery/[stageId]/route';
 import { QuizFeedbackService } from '@/lib/server/quiz-feedback';
 import { QuizPracticeService } from '@/lib/server/quiz-practice';
+import type { ResolvedModel } from '@/lib/server/resolve-model';
 import {
   discoverProfileMemory,
   processProfileMemory,
@@ -798,6 +808,259 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     });
   });
 
+  it('maintains only relevant formal Mastery and replaces a regraded source without duplicating the answer', async () => {
+    const deep = await prepareClassroom('F99-deep-quiz', true, true);
+    const other = await prepareClassroom('F99-other', true);
+    const noProfile = await prepareClassroom('F99-no-profile', false, true);
+    const target = { id: 'F99-quiz-target', revision: 1, statement: '识别本题中的正确做法。' };
+    const unrelated = { id: 'F99-unrelated-target', revision: 1, statement: '用英语拼读 went。' };
+    await app.withTransaction(async (tx) => {
+      const {
+        rows: [binding],
+      } = await tx.query<{ run_id: string }>(
+        'SELECT run_id FROM classroom_learner_profiles WHERE stage_id=$1',
+        [deep.stageId],
+      );
+      await tx.query(
+        `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+        VALUES($1,$2,$3,'completed',$4,$5)`,
+        [
+          binding.run_id,
+          owner,
+          { interactive: true },
+          deep.stageId,
+          { targets: [target, unrelated] },
+        ],
+      );
+    });
+    const { attemptId } = await submitQuiz(deep);
+    const saved = await readQuizAttempt(app, owner, attemptId);
+    const options = (attempt: typeof saved, principal = owner) => ({
+      owner: principal,
+      environment: '',
+      language: 'zh-CN',
+      locator: {
+        attemptId: attempt.attemptId,
+        versionId: attempt.version.id,
+        submissionId: attempt.submission!.id,
+        reviewId: attempt.review!.id,
+      },
+    });
+    let feedbackCalls = 0;
+    const feedback = new QuizFeedbackService(app, {
+      scope: async () => null,
+      select: async () => undefined,
+      verify: async () => false,
+      formalScope: resolveProfileSceneScope,
+      formalSelect: async () => undefined,
+      formalVerify: async () => true,
+      model: async () => ({ serverManaged: true }) as ResolvedModel,
+      generate: async (_model, prompt) => {
+        feedbackCalls++;
+        expect(JSON.parse(prompt)).toMatchObject({
+          quiz: { help: 'unknown', items: [{ correct: false }] },
+        });
+        expect(JSON.parse(prompt)).not.toHaveProperty('history');
+        return JSON.stringify({ summary: '可再比较这两个选项。', practiceDirection: null });
+      },
+    });
+    expect(await feedback.generate(options(saved))).toMatchObject({ status: 'ready' });
+    expect(await feedback.generate(options(saved))).toMatchObject({ status: 'ready' });
+    await expect(feedback.read(options(saved, 'anon:' + foreign))).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(feedbackCalls).toBe(1);
+    const trace = new QuizTraceService(app);
+    const unreviewed = await trace.prepare(owner, {
+      operationId: randomUUID(),
+      mode: 'retry',
+      previousAttemptId: attemptId,
+      stageId: deep.stageId,
+      sceneId: deep.scene.id,
+    });
+    await trace.submit(owner, unreviewed.attemptId, {
+      operationId: randomUUID(),
+      submissionId: randomUUID(),
+      answers: { q: 'B' },
+    });
+    const control = await submitQuiz(noProfile);
+    expect(
+      await feedback.generate(options(await readQuizAttempt(app, owner, control.attemptId))),
+    ).toEqual({ status: 'disabled' });
+    await expect(feedback.read(options(saved))).rejects.toMatchObject({ status: 409 });
+    const invoke: Parameters<typeof processProfileMastery>[1] = async (principal, system, user) => {
+      expect(principal).toBe(owner);
+      expect(system).toContain('assistance 必须是 unknown');
+      const task = JSON.parse(user);
+      expect(task.evidence).toHaveLength(1);
+      const item = task.evidence[0];
+      expect(item.conditions).toContain('帮助情况未确认。');
+      expect(item.questions[0]).toMatchObject({ prompt: 'Synthetic question V1', submitted: 'B' });
+      const relevant = task.target === target.statement;
+      const result = item.text.includes('为正确') ? 'correct' : 'incorrect';
+      return JSON.stringify({
+        assessments: [
+          {
+            evidenceRef: item.evidenceRef,
+            coverage: relevant ? 'direct' : 'unrelated',
+            result: relevant ? result : 'ungraded',
+            assistance: 'unknown',
+            observation: '读取这道选择题的有效评阅。',
+          },
+        ],
+        candidateState: relevant
+          ? {
+              summary: '需继续核对独立能力。',
+              unverified: ['独立判断仍待验证。'],
+              adoptedEvidenceRefs: [item.evidenceRef],
+            }
+          : null,
+      });
+    };
+    const first = async () => {
+      for (let i = 0; i < 8 && (await processProfileMastery(app, invoke)); i++) {
+        // The same fixture schema includes a previously saved F98 classroom.
+      }
+      expect(await processProfileMastery(app, invoke)).toBe(false);
+    };
+    await discoverProfileMastery(app);
+    await first();
+    const initialJobs = await app.pool.query(
+      'SELECT kind,state FROM learner_profile_mastery_jobs WHERE stage_id=$1',
+      [deep.stageId],
+    );
+    expect(initialJobs.rows).toEqual(
+      Array.from({ length: 2 }, () => ({ kind: 'quiz', state: 'finished' })),
+    );
+    await discoverProfileMastery(app);
+    expect(await processProfileMastery(app, invoke)).toBe(false);
+    const firstHistory = await readProfilePlannerMastery(owner, deep.profile!);
+    expect(firstHistory).toMatchObject([
+      {
+        target,
+        observations: [{ result: 'incorrect', assistance: 'unknown' }],
+      },
+    ]);
+    expect(await readProfilePlannerMastery(owner, other.profile!)).toEqual([]);
+    await app.withTransaction(async (tx) => {
+      await tx.query(
+        `UPDATE learner_profile_mastery SET
+        state=jsonb_set(state,'{observations,0,evidenceRef}',to_jsonb('legacy-quiz-ref'::text)),
+        sources=jsonb_set(sources,'{0,evidenceRef}',to_jsonb('legacy-quiz-ref'::text))
+        WHERE stage_id=$1 AND target_id=$2`,
+        [deep.stageId, target.id],
+      );
+      await tx.query(
+        'DELETE FROM learner_profile_mastery_jobs WHERE stage_id=$1 AND target_id=$2',
+        [deep.stageId, target.id],
+      );
+    });
+    await discoverProfileMastery(app);
+    await first();
+    expect((await readProfilePlannerMastery(owner, deep.profile!))[0].observations).toHaveLength(1);
+    await saveDiscussionAndQA(deep.stageId);
+    await app.withTransaction(async (tx) => {
+      const source = await readProfileMemorySource(
+        tx,
+        {
+          stage_id: deep.stageId,
+          profile_id: deep.profile!,
+          kind: 'discussion',
+          activity_id: 'discussion',
+          record_id: 'learner-answer',
+        },
+        { owner_id: owner, title: deep.stageId },
+      );
+      expect(source?.basis.parts[0].help).toBe('prior-teacher-messages');
+      const evidenceRef = 'already-verified-discussion-basis';
+      await tx.query(
+        `UPDATE learner_profile_mastery SET state=jsonb_set(state,'{observations}',state->'observations' || $2::jsonb),
+        sources=sources || $3::jsonb WHERE stage_id=$1`,
+        [
+          deep.stageId,
+          JSON.stringify([
+            {
+              evidenceRef,
+              coverage: 'partial',
+              result: 'correct',
+              assistance: 'assisted',
+              text: '看过教师提示后完成列式。',
+            },
+          ]),
+          JSON.stringify([
+            {
+              evidenceRef,
+              kind: 'discussion',
+              activityId: 'discussion',
+              recordId: 'learner-answer',
+              reviewId: null,
+              digest: source!.digest,
+              parts: [0],
+              conditions: ['教师先提示了公式。'],
+            },
+          ]),
+        ],
+      );
+    });
+    await reviewQuiz(attemptId, saved.submission!.id, true);
+    expect(await readProfilePlannerMastery(owner, deep.profile!)).toEqual([]);
+    await discoverProfileMastery(app);
+    await first();
+    const regraded = await readProfilePlannerMastery(owner, deep.profile!);
+    expect(regraded).toMatchObject([
+      {
+        target,
+        observations: [
+          { result: 'correct', assistance: 'assisted' },
+          { result: 'correct', assistance: 'unknown' },
+        ],
+      },
+    ]);
+    expect(regraded[0].sourceVersion).not.toBe(firstHistory[0].sourceVersion);
+    const original = await readQuizAttempt(app, owner, attemptId);
+    expect(original.reviews.map((review) => review.id)).toContain(saved.review!.id);
+
+    const selected = await selectProfileActivityHistory(
+      {
+        owner,
+        profileId: deep.profile!,
+        system: '测试来源版本。',
+        task: target.statement,
+        resolvedModel: { serverManaged: true } as ResolvedModel,
+        beforeSelect: async () => {},
+        usageLabel: 'f99-fingerprint-fixture',
+      },
+      async () => '{"selected":["T1"]}',
+    );
+    expect(selected?.fingerprints).toHaveLength(1);
+    const newerTargets = Array.from({ length: 13 }, (_, index) => ({
+      id: `F99-extra-target-${index}`,
+      revision: 1,
+      statement: `对照目标 ${index}`,
+    }));
+    await app.withTransaction(async (tx) => {
+      await tx.query(
+        `UPDATE generation_runs SET outline=jsonb_set(outline,'{targets}',outline->'targets' || $2::jsonb)
+        WHERE stage_id=$1`,
+        [deep.stageId, JSON.stringify(newerTargets)],
+      );
+      for (const extra of newerTargets) {
+        await tx.query(
+          `INSERT INTO learner_profile_mastery(stage_id,target_id,target_revision,state,sources,updated_at)
+          SELECT stage_id,$3,1,jsonb_set(state,'{targetStatement}',to_jsonb($4::text)),sources,now()+interval '1 second'
+          FROM learner_profile_mastery WHERE stage_id=$1 AND target_id=$2`,
+          [deep.stageId, target.id, extra.id, extra.statement],
+        );
+      }
+    });
+    expect(
+      (await readProfilePlannerMastery(owner, deep.profile!)).map(({ target }) => target.id),
+    ).not.toContain(target.id);
+    expect(await checkProfileActivityHistory(owner, deep.profile!, selected!.fingerprints)).toBe(
+      true,
+    );
+  });
+
   it('provisions the formal Mastery schema when an existing classroom is opened after a v8 upgrade', async () => {
     const classroom = await prepareClassroom('F98-upgrade', true, true);
     const target = { id: 'F98-upgrade-target', revision: 1, statement: '说明密度的含义。' };
@@ -808,10 +1071,11 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
           WHERE stage_id=$1`,
         [classroom.stageId, owner, { interactive: true }, { targets: [target] }],
       );
+      await tx.query('DROP TABLE learner_profile_mastery_jobs');
       await tx.query('DROP TABLE learner_profile_mastery');
       await tx.query('DROP INDEX classroom_learner_profiles_profile_idx');
       await tx.query(
-        "DELETE FROM openmaic_schema_migrations WHERE store='generation-runs' AND version=9",
+        "DELETE FROM openmaic_schema_migrations WHERE store='generation-runs' AND version>8",
       );
     });
     resetGenerationRunSchemaForTests();

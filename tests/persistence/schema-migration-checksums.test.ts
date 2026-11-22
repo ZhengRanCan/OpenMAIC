@@ -229,6 +229,13 @@ const SHIPPED: readonly (readonly [
     'b74cb27e006c7756b17db02e525b1749e9e983b4ff332d68aca973376e425c07',
   ],
   [
+    'generation-runs',
+    10,
+    'learner_profile_mastery_jobs',
+    true,
+    'de59566bce4e6e6c9389b881b64739a8ac1fd4cfdcd93c691dc44949f66d6480',
+  ],
+  [
     'quiz-trace',
     1,
     'immutable_quiz_history',

@@ -35,8 +35,6 @@ function handle(req: NextRequest, method: 'GET' | 'POST') {
       if (process.env.OPENMAIC_QUIZ_FEEDBACK !== 'true')
         return Response.json({ status: 'disabled' }, { headers });
       const config = readSimulatedLearningLoopConfig();
-      if (config?.sourceNature !== 'synthetic')
-        return Response.json({ status: 'disabled' }, { headers });
       const parsed =
         method === 'GET'
           ? lookup.safeParse(Object.fromEntries(req.nextUrl.searchParams))
@@ -49,7 +47,7 @@ function handle(req: NextRequest, method: 'GET' | 'POST') {
       const options = {
         owner: principal.ownerId,
         locator: parsed.data,
-        environment: config.memoryEnvironmentId,
+        environment: config?.sourceNature === 'synthetic' ? config.memoryEnvironmentId : '',
         language:
           'language' in parsed.data && typeof parsed.data.language === 'string'
             ? parsed.data.language

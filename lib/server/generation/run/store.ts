@@ -1641,6 +1641,15 @@ export async function retryGenerationRun(
       // A run paused before it chose a step resumes where it was executing.
       const quizContentStep = /^scene:(\d+):content$/.exec(run.step ?? '');
       let retriedOutline: GenerationRunOutline | undefined;
+      if (quizContentStep && outlineLearnerProfileId(run.input)) {
+        const key = `scene:${Number(quizContentStep[1])}:profile-quiz-context`;
+        const remove = [`${key}:calling`];
+        if (run.error?.errorCode === 'LEARNER_CONTEXT_INVALID') remove.push(key);
+        await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=ANY($2)', [
+          runId,
+          remove,
+        ]);
+      }
       if (quizContentStep && run.input.simulatedLearner) {
         const key = `scene:${Number(quizContentStep[1])}`;
         // An explicit command may authorize a new call after an unknown or
