@@ -17,6 +17,8 @@ import {
   buildInteractiveProfileMemory,
 } from '@/lib/server/generation/run/interactive-profile-memory';
 import { editProfileMemory, readProfileMemory } from '@/lib/server/learner-profile-memory';
+import { QuizFeedbackService } from '@/lib/server/quiz-feedback';
+import { QuizPracticeService } from '@/lib/server/quiz-practice';
 import {
   discoverProfileMemory,
   processProfileMemory,
@@ -52,12 +54,24 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     await admin?.end();
   });
 
-  async function prepareClassroom(stageId: string, withProfile: boolean, interactiveMode = false) {
+  async function prepareClassroom(
+    stageId: string,
+    withProfile: boolean,
+    interactiveMode = false,
+    taskEngineMode = false,
+  ) {
     const store = await getOwnerScopedDocumentStore(owner);
     const now = Date.now();
     const scene = { ...testScene, stageId };
     await store.saveDocument({
-      stage: { id: stageId, name: stageId, createdAt: now, updatedAt: now, interactiveMode },
+      stage: {
+        id: stageId,
+        name: stageId,
+        createdAt: now,
+        updatedAt: now,
+        interactiveMode,
+        taskEngineMode,
+      },
       scenes: [scene],
     });
     const profile = withProfile
@@ -78,7 +92,10 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     return { stageId, scene, profile };
   }
 
-  async function submitQuiz(classroom: Awaited<ReturnType<typeof prepareClassroom>>) {
+  async function submitQuiz(
+    classroom: Awaited<ReturnType<typeof prepareClassroom>>,
+    reviewed = true,
+  ) {
     const quiz = new QuizTraceService(app);
     const attempt = await quiz.prepare(owner, {
       operationId: randomUUID(),
@@ -93,7 +110,13 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       submissionId,
       answers: { q: 'B' },
     });
-    const review = await quiz.beginReview(owner, attempt.attemptId, {
+    if (reviewed) await reviewQuiz(attempt.attemptId, submissionId, false);
+    return attempt;
+  }
+
+  async function reviewQuiz(attemptId: string, submissionId: string, correct: boolean) {
+    const quiz = new QuizTraceService(app);
+    const review = await quiz.beginReview(owner, attemptId, {
       operationId: randomUUID(),
       submissionId,
       language: 'zh-CN',
@@ -102,21 +125,21 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       results: [
         {
           questionId: 'q',
-          correct: false,
-          status: 'incorrect',
-          earned: 0,
+          correct,
+          status: correct ? 'correct' : 'incorrect',
+          earned: correct ? 2 : 0,
           evaluation: { state: 'normal', method: 'exact-key' },
         },
       ],
       summary: {
         status: 'complete',
-        usableEarned: 0,
+        usableEarned: correct ? 2 : 0,
         usablePossible: 2,
         quizPossible: 2,
         unusableQuestionCount: 0,
       },
     });
-    return attempt;
+    return review;
   }
 
   const preference = '以后学化学时，我希望先看一个具体例子。';
@@ -182,7 +205,6 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     const unboundQuiz = await submitQuiz(unbound);
     await saveDiscussionAndQA(chemistry.stageId);
     await saveDiscussionAndQA(unbound.stageId);
-    await submitQuiz(deep);
     await saveDiscussionAndQA(deep.stageId);
     await Promise.all([discoverProfileMemory(app), discoverProfileMemory(app)]);
     expect(
@@ -440,4 +462,211 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     expect((await GET_BASIS(request('GET', physicsId), itemContext(physicsId))).status).toBe(404);
     expect((await readProfileMemory(owner, physicsId)).items).toEqual([]);
   }, 30_000);
+
+  it('discovers a previously reviewed deep-interaction quiz for its bound profile', async () => {
+    const deep = await prepareClassroom('Deep-reviewed-quiz', true, true);
+    const { attemptId } = await submitQuiz(deep);
+    const original = await readQuizAttempt(app, owner, attemptId);
+    const profileId = deep.profile!;
+    const { fields, maintenance } = await readProfileMemory(owner, profileId);
+    expect(maintenance.pending).toBe(false);
+    expect(original.review?.results[0]).toMatchObject({ correct: false, status: 'incorrect' });
+    const edited = {
+      name: '深度课堂画像',
+      background: '正在复习',
+      goals: '练习换算',
+      preferences: '先做一道例题',
+    };
+    await editProfileMemory(owner, profileId, { revision: fields.revision, ...edited });
+
+    await Promise.all([discoverProfileMemory(app), discoverProfileMemory(app)]);
+    expect((await readProfileMemory(owner, profileId)).maintenance.pending).toBe(true);
+    expect(
+      await processProfileMemory(app, async () => {
+        throw new Error('Retryable model fixture failure');
+      }),
+    ).toBe(true);
+    expect(await readProfileMemory(owner, profileId)).toMatchObject({
+      items: [],
+      maintenance: { pending: true, failed: false },
+    });
+    await app.pool.query(
+      'UPDATE learner_profile_memory_jobs SET ready_at=now() WHERE stage_id=$1',
+      [deep.stageId],
+    );
+
+    const summary = '这次在选择题作答 B，正常评阅为错误，帮助情况未确认。';
+    const invoke: Parameters<typeof processProfileMemory>[1] = async (
+      sourceOwner,
+      _system,
+      input,
+    ) => {
+      expect(sourceOwner).toBe(owner);
+      expect(input).not.toContain(edited.preferences);
+      expect(JSON.parse(input)).toMatchObject({
+        kind: 'quiz',
+        parts: [
+          { question: 'Synthetic question V1', answer: 'B', review: 'incorrect', help: 'unknown' },
+        ],
+      });
+      return JSON.stringify({ records: [{ section: 'experiences', summary, refs: [0] }] });
+    };
+    expect(await processProfileMemory(app, invoke)).toBe(true);
+    const saved = await readProfileMemory(owner, profileId);
+    expect(saved).toMatchObject({
+      profile: { id: profileId, name: edited.name },
+      fields: {
+        background: edited.background,
+        goals: edited.goals,
+        preferences: edited.preferences,
+      },
+      items: [{ kind: 'quiz', section: 'experiences', summary }],
+      maintenance: { pending: false, failed: false },
+    });
+    const itemId = saved.items[0].id;
+    const basis = (identity = cookie) =>
+      GET_BASIS(
+        new NextRequest(`http://localhost/api/learner-profiles/${profileId}/memory/${itemId}`, {
+          headers: { cookie: 'anonymous_id=' + identity },
+        }),
+        { params: Promise.resolve({ profileId, itemId }) },
+      );
+    const response = await basis();
+    expect(response.status).toBe(200);
+    const source = await response.json();
+    expect(source).toMatchObject({
+      title: deep.stageId,
+      historicalReview: false,
+      parts: [
+        { question: 'Synthetic question V1', answer: 'B', review: 'incorrect', help: 'unknown' },
+      ],
+    });
+    expect((await basis(foreign)).status).toBe(404);
+
+    const newer = await reviewQuiz(attemptId, original.submission!.id, true);
+    const rereviewed = await readQuizAttempt(app, owner, attemptId);
+    expect(rereviewed.review?.id).toBe(newer.id);
+    expect(rereviewed.submission).toEqual(original.submission);
+    await discoverProfileMemory(app);
+    expect(await processProfileMemory(app, invoke)).toBe(false);
+    expect(await (await basis()).json()).toEqual({ ...source, historicalReview: true });
+    expect(await readProfileMemory(owner, profileId)).toEqual(saved);
+  });
+
+  it('distinguishes no eligible deep-interaction source from a finished run with no adopted records', async () => {
+    const vocational = await prepareClassroom('Deep-vocational', true, true, true);
+    const unbound = await prepareClassroom('Deep-unbound', false, true);
+    const unreviewed = await prepareClassroom('Deep-unreviewed', true, true);
+    const deleted = await prepareClassroom('Deep-deleted', true, true);
+    const differentOwner = await prepareClassroom('Deep-other-owner', true, true);
+    await submitQuiz(vocational);
+    await submitQuiz(unbound);
+    await submitQuiz(unreviewed, false);
+    await submitQuiz(deleted);
+    const staleAttempt = await submitQuiz(differentOwner);
+    await saveDiscussionAndQA(vocational.stageId);
+    await app.pool.query('UPDATE stage_meta SET deleted_at=now() WHERE stage_id=$1', [
+      deleted.stageId,
+    ]);
+    await app.pool.query('UPDATE quiz_trace_attempts SET owner_id=$2 WHERE id=$1', [
+      staleAttempt.attemptId,
+      'anon:' + foreign,
+    ]);
+
+    await discoverProfileMemory(app);
+    expect(
+      await processProfileMemory(app, async () => {
+        throw new Error('Excluded source entered the queue');
+      }),
+    ).toBe(false);
+    const eligible = await prepareClassroom('Deep-empty-result', true, true);
+    await submitQuiz(eligible);
+    await discoverProfileMemory(app);
+    expect((await readProfileMemory(owner, eligible.profile!)).maintenance.pending).toBe(true);
+    let calls = 0;
+    expect(
+      await processProfileMemory(app, async () => {
+        calls++;
+        return '{"records":[]}';
+      }),
+    ).toBe(true);
+    expect(calls).toBe(1);
+    expect(await readProfileMemory(owner, eligible.profile!)).toMatchObject({
+      items: [],
+      maintenance: { pending: false, failed: false },
+    });
+    await discoverProfileMemory(app);
+    expect(await processProfileMemory(app, async () => '{"records":[]}')).toBe(false);
+  });
+
+  it('keeps existing ordinary practice adoption and limits deep-interaction to standard Quiz', async () => {
+    const direction = 'Practice the same idea with a different example.';
+    const model = async () =>
+      ({ serverManaged: true }) as Awaited<
+        ReturnType<NonNullable<ConstructorParameters<typeof QuizPracticeService>[1]>['model']>
+      >;
+    const feedback = new QuizFeedbackService(app, {
+      model,
+      scope: async () => ({ runId: 'run', student: 'B', title: 'Synthetic' }),
+      select: async () => undefined,
+      verify: async () => true,
+      generate: async () =>
+        JSON.stringify({ summary: 'You chose B.', practiceDirection: direction }),
+    });
+
+    for (const [stageId, interactive] of [
+      ['Ordinary-practice', false],
+      ['Deep-practice', true],
+    ] as const) {
+      const course = await prepareClassroom(stageId, true, interactive);
+      const { attemptId } = await submitQuiz(course);
+      const quiz = await readQuizAttempt(app, owner, attemptId);
+      const options = {
+        owner,
+        locator: {
+          attemptId,
+          versionId: quiz.version.id,
+          submissionId: quiz.submission!.id,
+          reviewId: quiz.review!.id,
+        },
+        environment: randomUUID(),
+        language: 'en-US',
+      };
+      const practice = new QuizPracticeService(
+        app,
+        {
+          model,
+          generate: async () =>
+            JSON.stringify({
+              question: `${stageId} synthetic question`,
+              options: ['One', 'Two', 'Three'],
+              correctIndex: 1,
+              analysis: 'The correct value is Two.',
+            }),
+        },
+        feedback,
+      );
+      await feedback.generate(options);
+      expect(await practice.accept(options)).toMatchObject({ status: 'ready' });
+      expect(await practice.submit(options, 'B')).toMatchObject({
+        submitted: true,
+        review: { summary: { usableEarned: 1 } },
+      });
+    }
+
+    await discoverProfileMemory(app);
+    const questions: string[] = [];
+    const extract: Parameters<typeof processProfileMemory>[1] = async (_owner, _system, input) => {
+      questions.push(JSON.parse(input).parts[0].question);
+      return '{"records":[]}';
+    };
+    while (await processProfileMemory(app, extract)) {
+      // Collect all sources accepted by the real worker.
+    }
+    expect(questions.sort()).toEqual([
+      'Ordinary-practice synthetic question',
+      'Synthetic question V1',
+      'Synthetic question V1',
+    ]);
+  });
 });

@@ -23,8 +23,7 @@ type Invoke = (ownerId: string, system: string, prompt: string) => Promise<strin
 const INSERT_JOBS = `INSERT INTO learner_profile_memory_jobs (stage_id,profile_id,kind,activity_id,record_id)`;
 const BOUND_STAGE = `FROM classroom_learner_profiles b
   JOIN stage_meta s ON s.stage_id=b.stage_id AND s.deleted_at IS NULL
-  JOIN document_stages d ON d.id=s.stage_id
-    AND d.interactive_mode IS NOT TRUE AND d.task_engine_mode IS NOT TRUE`;
+  JOIN document_stages d ON d.id=s.stage_id AND d.task_engine_mode IS NOT TRUE`;
 
 export async function discoverProfileMemory(app: Provider) {
   await app.pool.query(
@@ -34,7 +33,9 @@ export async function discoverProfileMemory(app: Provider) {
      JOIN quiz_trace_attempts a ON a.stage_id=s.stage_id AND a.owner_id=s.owner_id
      JOIN quiz_trace_reviews r ON r.id=a.current_review_id AND r.submission_id=a.submission->>'id'
        AND r.result IS NOT NULL
-     WHERE NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id
+     WHERE (d.interactive_mode IS NOT TRUE OR NOT EXISTS (
+       SELECT 1 FROM quiz_optional_practice p WHERE p.attempt_id=a.id))
+     AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id
        AND j.kind='quiz' AND j.activity_id=a.id AND j.record_id=a.submission->>'id')
      ORDER BY a.created_at,a.id LIMIT 50 ON CONFLICT DO NOTHING`,
   );
@@ -56,7 +57,8 @@ export async function discoverProfileMemory(app: Provider) {
        AND message.data#>>'{payload,kind}'='chat_message'
        AND message.data#>>'{payload,message,role}'='user'
        AND view.message_ids ? (message.data#>>'{payload,message,id}')
-     WHERE view.kind IN ('qa','discussion') AND view.chat_id IS NOT NULL
+     WHERE d.interactive_mode IS NOT TRUE
+       AND view.kind IN ('qa','discussion') AND view.chat_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id
          AND j.kind=view.kind AND j.activity_id=view.chat_id
          AND j.record_id=message.data#>>'{payload,message,id}')
