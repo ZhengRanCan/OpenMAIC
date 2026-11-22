@@ -358,7 +358,9 @@ Running OpenMAIC for other people, or embedding it in your own product? [Hosting
 
 ### Optional: automatic Mastery and Quiz feedback
 
-For a saved learner profile, set `OPENMAIC_AUTOMATIC_MASTERY=true` to update course targets from reviewed standard Quiz attempts. This uses the application's `DATABASE_URL` and its server-managed `quiz-evidence` model route. Set `OPENMAIC_QUIZ_FEEDBACK=true` for personalized feedback and `OPENMAIC_QUIZ_PRACTICE=true` to let learners request a separately graded practice question. Both ordinary and deep-interaction classrooms support these settings.
+For a saved learner profile, set `OPENMAIC_AUTOMATIC_MASTERY=true` to update course targets from reviewed standard Quiz attempts and supported evidence in saved Discussion and QA sessions. This uses the application's `DATABASE_URL` and its server-managed `quiz-evidence` model route. Set `OPENMAIC_QUIZ_FEEDBACK=true` for personalized feedback and `OPENMAIC_QUIZ_PRACTICE=true` to let learners request a separately graded practice question.
+
+Set `OPENMAIC_DIALOGUE_LEARNER_CONTEXT=true` to let the server-managed classroom model use relevant history from the bound learner profile during QA and after the learner responds in a Discussion. These settings support both ordinary and deep-interaction classrooms.
 
 For simulated learners, configure `OPENMAIC_SIMULATED_LEARNING_LOOP` for synthetic learners and initialize the matching `MEMORY_DATABASE_URL`. Enable the existing Dialogue loop to include QA and Discussion in simulated Mastery. The simulated worker evaluates saved evidence from learning-loop jobs created after activation for that environment. Both workers evaluate course targets individually.
 

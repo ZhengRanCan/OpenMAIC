@@ -8,6 +8,11 @@ import { authorizeDialogueMemorySupports } from './dialogue-memory-context-autho
 import { readPlannerMastery, type PlannerMastery } from './learner-mastery';
 import { assertMemorySelectionCurrent } from './learner-memory-selection';
 import { invokeMemorySelectionModel } from './learner-memory-selection-model';
+import {
+  checkProfileActivityHistory,
+  resolveProfileSceneScope,
+  selectProfileActivityHistory,
+} from './learner-profile-mastery-context';
 import { readSimulatedLearningLoopConfig } from './quiz-learning-loop/config';
 import type { ResolvedModel } from './resolve-model';
 import { readSimulatedLearnerMemory } from './simulated-learner-memory';
@@ -27,7 +32,7 @@ type Scope = {
   runId: string;
   student: SimulatedLearnerId;
   title: string;
-  actions?: { type: string; topic?: string; prompt?: string }[];
+  actions?: { type: string; topic?: string; prompt?: string }[] | null;
 };
 type Candidate = {
   key: string;
@@ -70,7 +75,7 @@ export async function resolveSimulatedSceneScope(
   };
 }
 
-function taskFor(body: Body, scope: Scope) {
+function taskFor(body: Body, scope: Pick<Scope, 'title' | 'actions'>) {
   const mode = body.config.sessionType;
   const readText = (message: Body['messages'][number]) =>
     message.parts
@@ -143,12 +148,61 @@ function masteryCandidate(item: PlannerMastery): Candidate {
 }
 
 const defaultDeps = {
+  resolveFormalScope: async (owner: string, stageId: string, sceneId: string) =>
+    process.env.DATABASE_URL?.trim()
+      ? resolveProfileSceneScope(owner, stageId, sceneId)
+      : undefined,
+  selectFormal: selectProfileActivityHistory,
+  verifyFormal: checkProfileActivityHistory,
   resolveScope: resolveSimulatedSceneScope,
   readMemory: readSimulatedLearnerMemory,
   authorizeMemory: authorizeDialogueMemorySupports,
   readMastery: readPlannerMastery,
   select: invokeMemorySelectionModel,
 };
+
+async function selectFormalContext(input: Input, deps: typeof defaultDeps) {
+  const { owner, body, model, signal } = input;
+  const stageId = body.storeState.stage?.id;
+  const sceneId = body.storeState.currentSceneId;
+  if (
+    typeof stageId !== 'string' ||
+    typeof sceneId !== 'string' ||
+    !stageId ||
+    !sceneId ||
+    stageId.length > 160 ||
+    sceneId.length > 160
+  )
+    return;
+  const scope = await deps.resolveFormalScope(owner, stageId, sceneId);
+  if (!scope) return;
+  const task = taskFor(body, scope);
+  if (!task || signal.aborted) return { text: undefined };
+  // Withhold history from the opener until the learner has had a chance to answer.
+  if (task.mode === 'discussion' && !task.question) return { text: undefined };
+  const selected = await deps.selectFormal({
+    owner,
+    profileId: scope.profileId,
+    task,
+    signal,
+    resolvedModel: model,
+    system: SELECT_SYSTEM,
+    usageLabel: 'formal-dialogue-learner-context',
+    beforeSelect: async () => {},
+  });
+  if (!selected || signal.aborted) return { text: undefined };
+  const fresh = await deps.resolveFormalScope(owner, stageId, sceneId);
+  if (
+    !fresh ||
+    fresh.profileId !== scope.profileId ||
+    fresh.runId !== scope.runId ||
+    digest(taskFor(body, fresh)) !== digest(task) ||
+    !(await deps.verifyFormal(owner, scope.profileId, selected.fingerprints)) ||
+    signal.aborted
+  )
+    return { text: undefined };
+  return { text: selected.text };
+}
 
 async function readCandidates(
   deps: typeof defaultDeps,
@@ -371,21 +425,25 @@ export async function resolveDialogueLearnerContext(
   if (signal.aborted) return { status: 'unavailable' };
   let onAbort: () => void = () => {};
   try {
-    const config = readSimulatedLearningLoopConfig();
-    if (config?.sourceNature !== 'synthetic') return { status: 'disabled' };
     const abort = new Promise<undefined>((resolve) => {
       onAbort = () => resolve(undefined);
       signal.addEventListener('abort', onAbort, { once: true });
     });
-    const text = await Promise.race([
-      selectContext({ ...input, signal }, config.memoryEnvironmentId, {
-        ...defaultDeps,
-        ...overrides,
-      }),
+    const deps = { ...defaultDeps, ...overrides };
+    const scopedInput = { ...input, signal };
+    const result = await Promise.race([
+      (async () => {
+        const formal = await selectFormalContext(scopedInput, deps);
+        if (formal) return formal;
+        const config = readSimulatedLearningLoopConfig();
+        if (config?.sourceNature !== 'synthetic') return;
+        return { text: await selectContext(scopedInput, config.memoryEnvironmentId, deps) };
+      })(),
       abort,
     ]);
     if (signal.aborted) return { status: 'unavailable' };
-    return text ? { status: 'ready', text } : { status: 'empty' };
+    if (!result) return { status: 'disabled' };
+    return result.text ? { status: 'ready', text: result.text } : { status: 'empty' };
   } catch {
     return { status: 'unavailable' };
   } finally {

@@ -84,6 +84,7 @@ function view() {
 function fixture(mode: 'qa' | 'discussion' = 'qa') {
   const data = view();
   const deps = {
+    resolveFormalScope: vi.fn<Deps['resolveFormalScope']>().mockResolvedValue(undefined),
     resolveScope: vi.fn<Deps['resolveScope']>().mockResolvedValue({
       runId: 'run-1',
       student,
@@ -150,6 +151,47 @@ describe('F84 optional dialogue learner context', () => {
         memoryEnvironmentId: environment,
       }),
     );
+  });
+
+  it('F100 selects only the bound formal profile and withholds history from Discussion openers', async () => {
+    vi.stubEnv('OPENMAIC_SIMULATED_LEARNING_LOOP', '');
+    const { input, deps } = fixture();
+    const selectFormal = vi.fn<Deps['selectFormal']>(async ({ profileId, task }) => {
+      expect(task).toMatchObject({ question, scene: '正式课堂' });
+      return {
+        fingerprints: [],
+        text: JSON.stringify([
+          { kind: 'memory', text: profileId === 'alpha' ? '先看例题' : '先列步骤' },
+        ]),
+      };
+    });
+    const formal = (profileId: string) => ({
+      runId: 'bound',
+      profileId,
+      title: '正式课堂',
+      actions: null,
+    });
+    deps.resolveFormalScope.mockResolvedValue(formal('alpha'));
+    const overrides = { ...deps, selectFormal };
+    expect((await resolveDialogueLearnerContext(input, overrides)).text).toContain('先看例题');
+    deps.resolveFormalScope.mockResolvedValue(formal('beta'));
+    expect((await resolveDialogueLearnerContext(input, overrides)).text).toContain('先列步骤');
+    deps.resolveFormalScope.mockResolvedValueOnce(formal('alpha')).mockResolvedValueOnce(undefined);
+    expect(await resolveDialogueLearnerContext(input, overrides)).toEqual({ status: 'empty' });
+    deps.resolveFormalScope.mockResolvedValue(undefined);
+    expect(await resolveDialogueLearnerContext(input, overrides)).toEqual({ status: 'disabled' });
+    expect(selectFormal).toHaveBeenCalledTimes(3);
+
+    const opener = fixture('discussion');
+    deps.resolveFormalScope.mockResolvedValue(formal('alpha'));
+    expect(await resolveDialogueLearnerContext(opener.input, overrides)).toEqual({
+      status: 'empty',
+    });
+    expect(selectFormal).toHaveBeenCalledTimes(3);
+    deps.resolveFormalScope.mockRejectedValueOnce(new Error('unavailable'));
+    expect(await resolveDialogueLearnerContext(input, overrides)).toEqual({
+      status: 'unavailable',
+    });
   });
   afterEach(() => {
     vi.unstubAllEnvs();

@@ -8,6 +8,7 @@ import type {
 import {
   readProfileMemorySource,
   readProfileSourceAccess,
+  profileMemorySourceVersion,
   type ProfileSourceLocator,
 } from '@/lib/persistence/learner-profile-memory-source';
 import { assertLearnerProfileIn } from '@/lib/persistence/learner-profiles';
@@ -124,8 +125,11 @@ export async function readAuthorizedProfileMemoryBasisIn(
   if (!item) return null;
   const access = await readProfileSourceAccess(tx, item);
   if (access?.owner_id !== ownerId) return null;
-  const current = await readProfileMemorySource(tx, item, access);
-  if (!current || current.digest !== item.source_digest) return null;
+  const current = profileMemorySourceVersion(
+    await readProfileMemorySource(tx, item, access),
+    item.source_digest,
+  );
+  if (!current) return null;
   return { ...current.basis, parts: item.refs.map((index) => current.basis.parts[index]) };
 }
 

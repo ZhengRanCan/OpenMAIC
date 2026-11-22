@@ -5,6 +5,7 @@ import type { MasteryCard, MasteryCardObservation } from '@/lib/learner-mastery/
 import {
   readProfileMemorySource,
   readProfileSourceAccess,
+  profileMemorySourceVersion,
 } from '@/lib/persistence/learner-profile-memory-source';
 import { assertLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import { generationRunPersistence } from './generation/run/store';
@@ -58,11 +59,12 @@ export async function readVerifiedProfileMasterySource(
   };
   const access = await readProfileSourceAccess(tx, locator);
   if (access?.owner_id !== ownerId) return;
-  const source = await readProfileMemorySource(tx, locator, access).catch((error: unknown) => {
+  const raw = await readProfileMemorySource(tx, locator, access).catch((error: unknown) => {
     if (error instanceof Error && error.message === 'PROFILE_MEMORY_DIALOGUE_UNREADABLE')
       return null;
     throw error;
   });
+  const source = profileMemorySourceVersion(raw, ref.digest);
   if (
     source?.digest === ref.digest &&
     !source.basis.historicalReview &&
@@ -121,7 +123,13 @@ async function readCard(
           occurredAt,
           messages: ref.parts.flatMap((index) => {
             const part = source.basis.parts[index];
-            return [...(part.previous ?? []), { role: 'student', text: part.answer }];
+            return [
+              ...(part.previous ?? []).map(({ role, text }) => ({
+                role: role === 'teacher' ? 'agent' : role,
+                text,
+              })),
+              { role: 'student', text: part.answer },
+            ];
           }),
         },
       });

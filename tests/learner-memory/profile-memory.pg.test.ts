@@ -12,6 +12,7 @@ import { readProfileMemorySource } from '@/lib/persistence/learner-profile-memor
 import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { readQuizAttempt } from '@/lib/persistence/quiz-trace-read';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
+import { resolveDialogueLearnerContext } from '@/lib/server/dialogue-learner-context';
 import {
   generationRunPersistence,
   resetGenerationRunSchemaForTests,
@@ -40,7 +41,7 @@ import {
   processProfileMemory,
 } from '@/lib/server/learner-profile-memory-runner';
 import type { ChatSession } from '@/lib/types/chat';
-import { saveChatSessions } from '@/lib/utils/chat-storage';
+import { clearRuntimeChatSessions, saveChatSessions } from '@/lib/utils/chat-storage';
 import { testScene } from '../persistence/quiz-trace-fixture';
 
 const pgUrl = process.env.PG_CONTRACT_URL;
@@ -225,7 +226,15 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     await Promise.all([discoverProfileMemory(app), discoverProfileMemory(app)]);
     expect(
       (await app.pool.query('SELECT kind FROM learner_profile_memory_jobs ORDER BY kind')).rows,
-    ).toEqual([{ kind: 'discussion' }, { kind: 'qa' }, { kind: 'qa' }, { kind: 'quiz' }]);
+    ).toEqual([
+      { kind: 'discussion' },
+      { kind: 'discussion' },
+      { kind: 'qa' },
+      { kind: 'qa' },
+      { kind: 'qa' },
+      { kind: 'qa' },
+      { kind: 'quiz' },
+    ]);
 
     let quizCalls = 0;
     let observedEdit = false;
@@ -276,7 +285,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
             : [],
       });
     };
-    for (let i = 0; i < 4; i++) expect(await processProfileMemory(app, invoke)).toBe(true);
+    for (let i = 0; i < 7; i++) expect(await processProfileMemory(app, invoke)).toBe(true);
     expect(await processProfileMemory(app, invoke)).toBe(false);
     expect((await readProfileMemory(owner, physicsId)).items).toEqual([]);
     await app.pool.query("UPDATE learner_profile_memory_jobs SET ready_at=now() WHERE kind='quiz'");
@@ -330,14 +339,14 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     expect(saved.items).toHaveLength(1);
     const chemistryView = await readProfileMemory(owner, chemistryId);
     expect(chemistryView.items.map((i) => i.kind).sort()).toEqual(['discussion', 'qa']);
-    expect((await readProfileMemory(owner, deep.profile!)).items).toEqual([]);
+    expect(
+      (await readProfileMemory(owner, deep.profile!)).items.map(({ kind }) => kind).sort(),
+    ).toEqual(['discussion', 'qa']);
     expect(
       await buildInteractiveProfileMemory(
         owner,
         { profileId: deep.profile!, task: '密度', content: {} },
-        async () => {
-          throw new Error('An empty profile should not need a selector call');
-        },
+        async () => '{"selected":[]}',
       ),
     ).toEqual({ profileId: deep.profile, selected: [] });
     const selected = await buildInteractiveProfileMemory(
@@ -894,6 +903,21 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       const task = JSON.parse(user);
       expect(task.evidence).toHaveLength(1);
       const item = task.evidence[0];
+      if (item.type === 'learning_performance') {
+        return JSON.stringify({
+          assessments: [
+            {
+              evidenceRef: item.evidenceRef,
+              coverage: 'context',
+              result: 'ungraded',
+              assistance: 'unknown',
+              observation: '仅有个人偏好。',
+            },
+          ],
+          candidateState: null,
+          proof: [],
+        });
+      }
       expect(item.conditions).toContain('帮助情况未确认。');
       expect(item.questions[0]).toMatchObject({ prompt: 'Synthetic question V1', submitted: 'B' });
       const relevant = task.target === target.statement;
@@ -1059,6 +1083,357 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     expect(await checkProfileActivityHistory(owner, deep.profile!, selected!.fingerprints)).toBe(
       true,
     );
+    await app.withTransaction(async (tx) => {
+      await tx.query(
+        'DELETE FROM learner_profile_mastery WHERE stage_id=$1 AND target_id=ANY($2)',
+        [deep.stageId, newerTargets.map(({ id }) => id)],
+      );
+      await tx.query(
+        "UPDATE generation_runs SET outline=jsonb_set(outline,'{targets}',$2) WHERE stage_id=$1",
+        [deep.stageId, JSON.stringify([target, unrelated])],
+      );
+    });
+  });
+
+  it('F100 validates actual student dialogue, preserves assistance, and removes deleted sources from planning', async () => {
+    const classroom = await prepareClassroom('F100-deep', true, true);
+    const target = {
+      id: 'f100-density-target',
+      revision: 1,
+      statement: '用质量与体积列式计算密度。',
+    };
+    const other = { id: 'f100-other-target', revision: 1, statement: '识别英语过去式。' };
+    const topic = '密度目标独立作答';
+    const ask = '请独立列式并说明理由，提交前没有提示。';
+    const hint = '这里先把质量换算成 60 克。';
+    const answer = '我将 60 除以 30，算得密度是 2 克每立方厘米。';
+    const unknown = '质量为 10 克，体积为 5 立方厘米，我列式 10 除以 5。';
+    const onlyHelp = '这道题应该怎么做，请给我提示。';
+    const helpWithGiven = '这道题应该怎么做，请给我提示，题目说质量是 60 克。';
+    const helpAfterGiven = '已知质量=60克，能提示吗？';
+    const assistedProofIsInvitation = '我先计算两数相除并写出新的结果。';
+    const assistedProofIsGiven = '我用质量和体积相除，然后写出结果。';
+    const givenOnly = '已知质量=60克，体积=30立方厘米，请独立列式。';
+    const independentAfterCue = '我用 24 除以 6 得出 4。';
+    const hiddenCue = '独立试试，记得质量与体积的比值。';
+    const actions = [{ id: 'discussion', type: 'discussion' as const, topic, prompt: ask }];
+    const store = await getOwnerScopedDocumentStore(owner);
+    await store.putScene(classroom.stageId, { ...classroom.scene, actions });
+    await app.pool.query(
+      `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+      SELECT run_id,$2,$3,'completed',stage_id,$4 FROM classroom_learner_profiles WHERE stage_id=$1`,
+      [classroom.stageId, owner, { interactive: true }, { targets: [target, other] }],
+    );
+    const now = Date.now();
+    const chatOptions = {
+      store: app.runtimeStore,
+      learnerKey: owner,
+      legacyStore: { load: async () => [], clear: async () => undefined },
+    };
+    const session = (
+      id: string,
+      type: 'qa' | 'discussion',
+      messages: ChatSession['messages'],
+    ): ChatSession => ({
+      id,
+      title: type === 'discussion' ? topic : '密度 QA',
+      type,
+      status: 'completed',
+      messages,
+      config: { agentIds: ['teacher'] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: now,
+      updatedAt: now,
+      initialContext: {
+        stageId: classroom.stageId,
+        stageTitle: classroom.stageId,
+        sceneId: classroom.scene.id,
+        sceneTitle: classroom.scene.title,
+      },
+    });
+    const assistant = (id: string, text: string): ChatSession['messages'][number] => ({
+      id,
+      role: 'assistant',
+      parts: [{ type: 'text', text }],
+    });
+    const student = (id: string, text: string): ChatSession['messages'][number] => ({
+      id,
+      role: 'user',
+      parts: [{ type: 'text', text }],
+    });
+    await saveChatSessions(
+      classroom.stageId,
+      [
+        session('f100-independent', 'discussion', [
+          assistant('ask', ask),
+          student('independent', answer),
+        ]),
+        session('f100-assisted', 'discussion', [
+          assistant('hint', hint),
+          student('assisted', answer),
+        ]),
+        session('f100-unknown', 'qa', [student('unknown', unknown)]),
+        session('f100-false-assistance', 'discussion', [
+          assistant('task-again', ask),
+          student('false-assisted', assistedProofIsInvitation),
+        ]),
+        session('f100-false-given-assistance', 'discussion', [
+          assistant('give-task', givenOnly),
+          student('false-given-assisted', assistedProofIsGiven),
+        ]),
+        session('f100-false-independent', 'discussion', [
+          assistant('independent-with-help', hiddenCue),
+          student('false-independent', independentAfterCue),
+        ]),
+        session('f100-false-help-answer', 'qa', [student('help-with-given', helpWithGiven)]),
+        session('f100-false-help-after-given', 'qa', [student('help-after-given', helpAfterGiven)]),
+        session('f100-no-evidence', 'qa', [
+          assistant('answer-key', answer),
+          student('help', onlyHelp),
+          { ...student('spoof-student', answer), metadata: { originalRole: 'agent' } },
+        ]),
+      ],
+      chatOptions,
+    );
+    const invoke: Parameters<typeof processProfileMastery>[1] = async (
+      principal,
+      system,
+      input,
+    ) => {
+      expect(principal).toBe(owner);
+      expect(system).toContain('学生实际');
+      const request = JSON.parse(input);
+      const item = request.evidence[0];
+      const text = item.messages.at(-1).text;
+      const prior = item.messages.length > 1 ? item.messages[0].text : '';
+      const independent =
+        (prior === ask && text !== assistedProofIsInvitation) || prior === hiddenCue;
+      const adopted = request.target === target.statement && text !== onlyHelp;
+      const assistance = independent
+        ? 'independent'
+        : prior === hint || text === assistedProofIsInvitation || text === assistedProofIsGiven
+          ? 'assisted'
+          : 'unknown';
+      return JSON.stringify({
+        assessments: [
+          {
+            evidenceRef: item.evidenceRef,
+            coverage: adopted ? 'direct' : 'context',
+            result: adopted ? 'correct' : 'ungraded',
+            assistance: adopted ? assistance : 'unknown',
+            observation: adopted ? '提交了与目标相关的计算过程。' : '没有适用于当前目标的作答。',
+          },
+        ],
+        candidateState: adopted
+          ? {
+              summary: '已有一份可回查的学生列式。',
+              unverified: independent ? [] : ['继续核对换算。'],
+              adoptedEvidenceRefs: [item.evidenceRef],
+            }
+          : null,
+        proof: adopted
+          ? [
+              {
+                evidenceRef: item.evidenceRef,
+                studentQuote:
+                  text === helpWithGiven
+                    ? '质量是 60 克'
+                    : text === helpAfterGiven
+                      ? '质量=60克'
+                      : text,
+                teacherHelp:
+                  text === assistedProofIsGiven
+                    ? '已知质量=60克'
+                    : assistance === 'assisted'
+                      ? prior
+                      : null,
+              },
+            ]
+          : [],
+      });
+    };
+    await Promise.all([discoverProfileMastery(app), discoverProfileMastery(app)]);
+    for (let attempt = 0; attempt < 22 && (await processProfileMastery(app, invoke)); attempt++) {
+      // Drain the eligible saved records without relying on the interval timer.
+    }
+    await discoverProfileMastery(app);
+    expect(await processProfileMastery(app, invoke)).toBe(false);
+    const rejected = await app.pool.query(
+      `SELECT record_id,state FROM learner_profile_mastery_jobs
+      WHERE stage_id=$1 AND target_id=$2 AND record_id=ANY($3)`,
+      [
+        classroom.stageId,
+        target.id,
+        [
+          'false-assisted',
+          'false-given-assisted',
+          'false-independent',
+          'help-with-given',
+          'help-after-given',
+        ],
+      ],
+    );
+    expect(rejected.rows).toHaveLength(5);
+    expect(rejected.rows.every(({ state }) => state === 'queued')).toBe(true);
+    const history = await readProfilePlannerMastery(owner, classroom.profile!);
+    expect(history).toHaveLength(1);
+    expect(history[0].observations.map(({ assistance }) => assistance).sort()).toEqual([
+      'assisted',
+      'independent',
+      'unknown',
+    ]);
+    const raw = await GET_MASTERY(
+      new NextRequest(`http://localhost/api/learner-mastery/${classroom.stageId}`, {
+        headers: { cookie: 'anonymous_id=' + cookie },
+      }),
+      { params: Promise.resolve({ stageId: classroom.stageId }) },
+    );
+    expect(raw.status).toBe(200);
+    const { cards } = await raw.json();
+    expect(
+      cards[0].observations.find(
+        ({ assistance }: { assistance: string }) => assistance === 'assisted',
+      ).source.messages,
+    ).toEqual([
+      { role: 'agent', text: hint },
+      { role: 'student', text: answer },
+    ]);
+    expect(cards[1]).toMatchObject({ status: 'empty' });
+    await clearRuntimeChatSessions(classroom.stageId, chatOptions);
+    expect(await readProfilePlannerMastery(owner, classroom.profile!)).toEqual([]);
+  });
+
+  it('F100 maintains long ordinary QA and preserves the original source when the view reaches 200 messages', async () => {
+    const classroom = await prepareClassroom('F100-long-ordinary', true);
+    const answer = '以后复习物理时，请先列出易错点。';
+    const preceding = Array.from({ length: 8 }, (_, index): ChatSession['messages'][number] => ({
+      id: `long-before-${index}`,
+      role: 'assistant',
+      parts: [{ type: 'text', text: `资料 ${index} ` + 'a'.repeat(4000) }],
+    }));
+    const now = Date.now();
+    const chat: ChatSession = {
+      id: 'f100-long-qa',
+      type: 'qa',
+      title: '物理偏好',
+      status: 'active',
+      config: { agentIds: ['teacher'] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: now,
+      updatedAt: now,
+      initialContext: {
+        stageId: classroom.stageId,
+        stageTitle: classroom.stageId,
+        sceneId: classroom.scene.id,
+        sceneTitle: classroom.scene.title,
+      },
+      messages: [
+        ...preceding,
+        { id: 'f100-long-preference', role: 'user', parts: [{ type: 'text', text: answer }] },
+      ],
+    };
+    const options = {
+      store: app.runtimeStore,
+      learnerKey: owner,
+      legacyStore: { load: async () => [], clear: async () => undefined },
+    };
+    await saveChatSessions(classroom.stageId, [chat], options);
+    await discoverProfileMemory(app);
+    const invoke: Parameters<typeof processProfileMemory>[1] = async (_owner, _system, payload) => {
+      const { parts } = JSON.parse(payload);
+      if (parts[0].answer !== answer) return '{"records":[]}';
+      expect(parts[0].previous).toHaveLength(2);
+      return JSON.stringify({ records: [{ section: 'preferences', summary: answer, refs: [0] }] });
+    };
+    for (let step = 0; step < 30 && (await processProfileMemory(app, invoke)); step++) {
+      // Drain previously discovered fixture jobs independently of their order.
+    }
+    const view = await readProfileMemory(owner, classroom.profile!);
+    expect(view.items).toHaveLength(1);
+    const readBasis = async () =>
+      await (
+        await GET_BASIS(
+          new NextRequest(
+            'http://localhost/api/learner-profiles/' +
+              classroom.profile +
+              '/memory/' +
+              view.items[0].id,
+            { headers: { cookie: 'anonymous_id=' + cookie } },
+          ),
+          { params: Promise.resolve({ profileId: classroom.profile!, itemId: view.items[0].id }) },
+        )
+      ).json();
+    const basis = await readBasis();
+    expect(basis.parts[0].previous).toHaveLength(8);
+    const after = Array.from({ length: 191 }, (_, index): ChatSession['messages'][number] => ({
+      id: `long-after-${index}`,
+      role: 'assistant',
+      parts: [{ type: 'text', text: '已保存的后续教学发言。' }],
+    }));
+    await saveChatSessions(
+      classroom.stageId,
+      [{ ...chat, messages: [...chat.messages, ...after], updatedAt: now + 1000 }],
+      options,
+    );
+    expect(await readBasis()).toEqual(basis);
+    await app.pool.query(
+      `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+      SELECT run_id,$2,'{}'::jsonb,'completed',stage_id,'{"targets":[]}'::jsonb FROM classroom_learner_profiles WHERE stage_id=$1`,
+      [classroom.stageId, owner],
+    );
+    const enabled = process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT;
+    process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT = 'true';
+    try {
+      const result = await resolveDialogueLearnerContext(
+        {
+          owner,
+          signal: new AbortController().signal,
+          model: { serverManaged: true } as ResolvedModel,
+          body: {
+            config: { agentIds: ['teacher'], sessionType: 'qa' },
+            messages: [
+              {
+                id: 'current-question',
+                role: 'user',
+                parts: [{ type: 'text', text: '可以怎么复习物理？' }],
+              },
+            ],
+            storeState: {
+              stage: {
+                id: classroom.stageId,
+                name: classroom.stageId,
+                createdAt: now,
+                updatedAt: now,
+              },
+              scenes: [classroom.scene],
+              currentSceneId: classroom.scene.id,
+              mode: 'autonomous',
+              whiteboardOpen: false,
+            },
+          },
+        },
+        {
+          selectFormal: async (request) => {
+            const selected = await selectProfileActivityHistory(request, async ({ prompt }) => {
+              const candidate = JSON.parse(prompt.user).candidates.find(
+                (item: { value: { text?: string } }) => item.value.text === answer,
+              );
+              expect(candidate).toBeTruthy();
+              return JSON.stringify({ selected: [candidate.id] });
+            });
+            expect(selected?.text).toContain(answer);
+            await clearRuntimeChatSessions(classroom.stageId, options);
+            return selected;
+          },
+        },
+      );
+      expect(result).toEqual({ status: 'empty' });
+    } finally {
+      if (enabled === undefined) delete process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT;
+      else process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT = enabled;
+    }
   });
 
   it('provisions the formal Mastery schema when an existing classroom is opened after a v8 upgrade', async () => {

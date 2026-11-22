@@ -8,6 +8,8 @@ import {
 import { assertLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import {
   readProfileMemorySource,
+  PROFILE_DIALOGUE_MESSAGES,
+  profileMemorySourceVersion,
   readProfileSourceAccess,
   type ProfileSourceLocator,
 } from '@/lib/persistence/learner-profile-memory-source';
@@ -43,22 +45,8 @@ export async function discoverProfileMemory(app: Provider) {
     `${INSERT_JOBS}
      SELECT DISTINCT s.stage_id,b.profile_id,view.kind,view.chat_id,message.data#>>'{payload,message,id}'
      ${BOUND_STAGE}
-     JOIN runtime_sessions runtime ON runtime.stage_id=s.stage_id
-       AND runtime.learner_key=s.owner_id AND runtime.kind='chat'
-       AND runtime.status IN ('active','completed')
-     CROSS JOIN LATERAL (
-       SELECT state.data#>>'{payload,type}' AS kind, state.data#>>'{payload,chatSessionId}' AS chat_id,
-              state.data#>'{payload,messageIds}' AS message_ids, state.seq
-       FROM runtime_records state WHERE state.session_id=runtime.id
-         AND state.data#>>'{payload,kind}'='chat_session_state'
-       ORDER BY state.seq DESC LIMIT 1
-     ) view
-     JOIN runtime_records message ON message.session_id=runtime.id AND message.seq < view.seq
-       AND message.data#>>'{payload,kind}'='chat_message'
-       AND message.data#>>'{payload,message,role}'='user'
-       AND view.message_ids ? (message.data#>>'{payload,message,id}')
-     WHERE d.interactive_mode IS NOT TRUE
-       AND view.kind IN ('qa','discussion') AND view.chat_id IS NOT NULL
+     ${PROFILE_DIALOGUE_MESSAGES}
+     WHERE view.kind IN ('qa','discussion') AND view.chat_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id
          AND j.kind=view.kind AND j.activity_id=view.chat_id
          AND j.record_id=message.data#>>'{payload,message,id}')
@@ -97,14 +85,23 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
       const access = await readProfileSourceAccess(tx, job);
       if (!access) return null;
       await assertLearnerProfileIn(tx, access.owner_id, job.profile_id);
-      const evidence = await readProfileMemorySource(tx, job, access);
+      const evidence = profileMemorySourceVersion(await readProfileMemorySource(tx, job, access));
       return evidence ? { ...evidence, owner: access.owner_id } : null;
     });
     if (!source) {
       await finish('finished');
       return true;
     }
-    const prompt = profileMemoryInput(source.basis);
+    let prompt = profileMemoryInput(source.basis);
+    if (job.kind !== 'quiz' && Buffer.byteLength(prompt) > 24_000) {
+      prompt = profileMemoryInput({
+        ...source.basis,
+        parts: source.basis.parts.map(({ previous, ...part }) => ({
+          ...part,
+          previous: previous?.slice(-2),
+        })),
+      });
+    }
     if (Buffer.byteLength(prompt) > 24_000) {
       await finish('failed');
       return true;
@@ -117,7 +114,10 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
       const owner = await forwardOwnerWrite(tx, source.owner);
       const access = await readProfileSourceAccess(tx, job, true);
       if (!access || access.owner_id !== owner) throw new Error('PROFILE_MEMORY_SOURCE_MOVED');
-      const current = await readProfileMemorySource(tx, job, access);
+      const current = profileMemorySourceVersion(
+        await readProfileMemorySource(tx, job, access),
+        source.digest,
+      );
       if (current?.digest !== source.digest) throw new Error('PROFILE_MEMORY_SOURCE_CHANGED');
       const saved = await tx.query(
         `UPDATE learner_profile_memory_jobs SET state='finished',source_digest=$3,review_id=$4,

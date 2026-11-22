@@ -24,6 +24,21 @@ export type ProfileSourceAccess = {
   title: string;
 };
 
+/** Latest authoritatively saved dialogue view and its learner messages, scoped to stage alias s. */
+export const PROFILE_DIALOGUE_MESSAGES = `JOIN runtime_sessions runtime ON runtime.stage_id=s.stage_id
+  AND runtime.learner_key=s.owner_id AND runtime.kind='chat' AND runtime.status IN ('active','completed')
+  CROSS JOIN LATERAL (
+    SELECT state.data#>>'{payload,type}' AS kind, state.data#>>'{payload,chatSessionId}' AS chat_id,
+      state.data#>'{payload,messageIds}' AS message_ids, state.seq
+    FROM runtime_records state WHERE state.session_id=runtime.id
+      AND state.data#>>'{payload,kind}'='chat_session_state'
+    ORDER BY state.seq DESC LIMIT 1
+  ) view
+  JOIN runtime_records message ON message.session_id=runtime.id AND message.seq < view.seq
+    AND message.data#>>'{payload,kind}'='chat_message'
+    AND message.data#>>'{payload,message,role}'='user'
+    AND view.message_ids ? (message.data#>>'{payload,message,id}')`;
+
 export async function readProfileSourceAccess(
   tx: Queryable,
   locator: ProfileSourceLocator,
@@ -91,6 +106,7 @@ async function quizSource(
     return {
       basis,
       sceneId: quiz.sceneId,
+      dialogueMastery: undefined,
       quizQuestions: scene.content.questions.flatMap(({ id, question, type, options }) => {
         const submitted = quiz.submission!.answers[id];
         return submitted?.length ? [{ prompt: question, type, options, submitted }] : [];
@@ -136,6 +152,20 @@ export async function readProfileMemorySource(
     if (!text.trim() || role === 'unknown') return [];
     return [{ role: role === 'agent' ? ('teacher' as const) : ('student' as const), text }];
   });
+  const preceding = source.messages.slice(Math.max(0, index - 8), index);
+  const masteryContext = preceding.flatMap(({ message, text }) => {
+    const role = sourceIndex[message.id].role;
+    if (!text.trim() || message.metadata?.interrupted === true || role === 'unknown') return [];
+    return [{ role: role === 'agent' ? ('teacher' as const) : ('student' as const), text }];
+  });
+  const completePrefix =
+    index <= 8 &&
+    source.messages.length < source.window.maxMessages &&
+    preceding.every(
+      ({ message, text }) =>
+        !text.trim() ||
+        (sourceIndex[message.id].role !== 'unknown' && message.metadata?.interrupted !== true),
+    );
   const basis: ProfileMemorySource = {
     stageId: source.stageId,
     title: access.title,
@@ -154,6 +184,16 @@ export async function readProfileMemorySource(
   return {
     basis,
     sceneId: source.initialContext?.sceneId,
+    dialogueMastery: {
+      topic: source.title,
+      completePrefix,
+      messages: masteryContext,
+      digest: digest({
+        context: source.initialContext,
+        topic: source.title,
+        messages: [...preceding, original].map(({ message }) => messageVersions[message.id]),
+      }),
+    },
     quizQuestions: undefined,
     quizAnswerKeys: undefined,
     reviewId: null,
@@ -162,4 +202,34 @@ export async function readProfileMemorySource(
       messages: [...prior, original].map(({ message }) => messageVersions[message.id]),
     }),
   };
+}
+
+type ResolvedProfileSource = NonNullable<Awaited<ReturnType<typeof readProfileMemorySource>>>;
+
+/** Use the expanded, versioned teaching prefix for new Dialogue records. */
+export function profileMemorySourceVersion(
+  source: ResolvedProfileSource | null,
+  recordedDigest?: string,
+) {
+  if (!source) return null;
+  const dialogue = source.dialogueMastery;
+  if (dialogue && (recordedDigest === undefined || recordedDigest === dialogue.digest)) {
+    return {
+      ...source,
+      digest: dialogue.digest,
+      basis: {
+        ...source.basis,
+        parts: [
+          {
+            ...source.basis.parts[0],
+            previous: dialogue.messages,
+            help: dialogue.messages.some(({ role }) => role === 'teacher')
+              ? ('prior-teacher-messages' as const)
+              : ('unknown' as const),
+          },
+        ],
+      },
+    };
+  }
+  return recordedDigest === undefined || recordedDigest === source.digest ? source : null;
 }
