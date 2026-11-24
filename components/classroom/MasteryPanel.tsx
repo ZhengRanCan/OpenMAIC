@@ -97,8 +97,9 @@ function TargetCard({
               className="rounded-md border bg-background px-3 py-2"
             >
               <summary className="cursor-pointer rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                {t('mastery.evidence')} · {t(`mastery.result.${observation.result}`)} ·{' '}
-                {t(`mastery.assistance.${observation.assistance}`)}
+                {t('mastery.evidence')} · {t(`mastery.result.${observation.result}`)}
+                {observation.assistance !== 'unknown' &&
+                  ` · ${t(`mastery.assistance.${observation.assistance}`)}`}
               </summary>
               <div className="mt-2 space-y-2 break-words">
                 <p className="text-xs text-muted-foreground">
