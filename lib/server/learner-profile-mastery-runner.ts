@@ -6,6 +6,7 @@ import { isAutomaticMasteryEnabled } from '@/lib/config/feature-flags';
 import {
   MASTERY_QUIZ_RULES,
   MASTERY_SYSTEM,
+  masteryEvidenceForPrompt,
   synthesizeMastery,
   type MasteryEvidence,
   type MasteryState,
@@ -470,7 +471,11 @@ async function capture(tx: Queryable, job: Job, lock: boolean) {
       [...retained.slice(-8), ...fresh.slice(0, 16)].map((item) => [item.source.evidenceRef, item]),
     ).values(),
   ].slice(-(24 - dialogueObservations.length));
-  while (Buffer.byteLength(JSON.stringify(evidence.map(({ input }) => input))) > 30_000) {
+  while (
+    Buffer.byteLength(
+      JSON.stringify(evidence.map(({ input }) => masteryEvidenceForPrompt(input))),
+    ) > 30_000
+  ) {
     if (evidence.length <= 1) return;
     evidence.shift();
   }
@@ -529,11 +534,10 @@ export async function processProfileMastery(app: Provider, invoke: Invoke, activ
       `${MASTERY_SYSTEM}\n${MASTERY_QUIZ_RULES}\n本次输入中的每条 Quiz 证据都没有确定的帮助记录，assistance 必须是 unknown。仅采用直接或部分覆盖当前目标的有效作答。以最新提供的有效评阅为准。${job.kind === 'quiz' ? '' : '\n' + DIALOGUE_MASTERY_RULES}`,
       JSON.stringify({
         target: frozen.target.statement,
-        previous: frozen.preserved?.state.observations.map(({ evidenceRef, ...item }) => ({
-          ...item,
-          conditions: frozen.dialogue.get(evidenceRef)!.conditions,
-        })),
-        evidence: inputs,
+        previous: frozen.preserved?.state.observations.map(
+          ({ coverage, result, assistance, text }) => ({ coverage, result, assistance, text }),
+        ),
+        evidence: inputs.map(masteryEvidenceForPrompt),
       }),
     );
     if (Buffer.byteLength(raw) > 64 * 1024) throw new Error('MASTERY_REPLY_LIMIT');

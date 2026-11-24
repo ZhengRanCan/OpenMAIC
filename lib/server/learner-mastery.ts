@@ -13,6 +13,7 @@ import type {
 import {
   MASTERY_QUIZ_RULES,
   MASTERY_SYSTEM,
+  masteryEvidenceForPrompt,
   synthesizeMastery,
   type MasteryEvidence,
   type MasteryObservation,
@@ -602,10 +603,13 @@ export class LearnerMastery {
       });
       if (!next.length) return { state: row.state };
       const evidence = next.map((entry) => entry.evidence);
+      const previous = row.state?.state;
       const user = JSON.stringify({
         target: course.target,
-        previous: row.state?.state ?? null,
-        evidence,
+        previous: previous
+          ? { summary: previous.summary, observations: previous.observations }
+          : null,
+        evidence: evidence.map(masteryEvidenceForPrompt),
       });
       if (evidence.length > 24 || Buffer.byteLength(user) > 64 * 1024)
         throw new Error('MASTERY_INPUT_LIMIT');

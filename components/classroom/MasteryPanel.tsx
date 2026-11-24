@@ -91,18 +91,6 @@ function TargetCard({
       {card.status === 'ready' ? (
         <>
           <p className="break-words text-muted-foreground">{card.summary}</p>
-          {!!card.unverified?.length && (
-            <div className="space-y-1">
-              <p className="font-medium">{t('mastery.unverified')}</p>
-              <ul className="list-disc space-y-1 pl-5">
-                {card.unverified.map((item) => (
-                  <li key={item} className="break-words">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           {card.observations?.map((observation) => (
             <details
               key={observation.evidenceRef}
@@ -117,16 +105,6 @@ function TargetCard({
                   {t(`mastery.coverage.${observation.coverage}`)}
                 </p>
                 <p>{observation.text}</p>
-                {!!observation.conditions.length && (
-                  <div>
-                    <p className="font-medium">{t('mastery.conditions')}</p>
-                    <ul className="list-disc pl-5">
-                      {observation.conditions.map((condition, index) => (
-                        <li key={index}>{condition}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 <SourceContent source={observation.source} />
               </div>
             </details>

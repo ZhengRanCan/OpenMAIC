@@ -921,7 +921,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
           proof: [],
         });
       }
-      expect(item.conditions).toContain('帮助情况未确认。');
+      expect(item).not.toHaveProperty('conditions');
       expect(item.questions[0]).toMatchObject({ prompt: 'Synthetic question V1', submitted: 'B' });
       const relevant = task.target === target.statement;
       const result = item.text.includes('为正确') ? 'correct' : 'incorrect';
@@ -1208,6 +1208,12 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       expect(system).toContain('学生实际');
       const request = JSON.parse(input);
       const item = request.evidence[0];
+      expect(item).not.toHaveProperty('conditions');
+      expect(request).not.toHaveProperty('unverified');
+      for (const previous of request.previous ?? []) {
+        expect(previous).not.toHaveProperty('conditions');
+        expect(previous).not.toHaveProperty('unverified');
+      }
       const text = item.messages.at(-1).text;
       const prior = item.messages.length > 1 ? item.messages[0].text : '';
       const independent =

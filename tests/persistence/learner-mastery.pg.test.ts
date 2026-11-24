@@ -197,10 +197,13 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
     const second = await saveEvidence(true);
     const independent = synthesis('independent');
     const after = await service.maintain(locator, [first, second], independent);
-    expect(JSON.parse(independent.mock.calls[0]![1])).toMatchObject({
-      previous: before?.state,
+    const request = JSON.parse(independent.mock.calls[0]![1]);
+    expect(request).toMatchObject({
+      previous: { summary: before?.state.summary, observations: before?.state.observations },
       evidence: [{ messages: [{ role: 'agent' }, { role: 'student' }] }],
     });
+    expect(request.previous).not.toHaveProperty('unverified');
+    expect(request.evidence[0]).not.toHaveProperty('conditions');
     expect(after?.state.unverified).toEqual([]);
     expect(after?.state.observations).toEqual([
       before?.state.observations[0],
@@ -991,13 +994,17 @@ describe.skipIf(!url)('F80 course target Mastery in PostgreSQL', () => {
       vi.fn(async (system: string, user: string) => {
         const { evidence, previous } = JSON.parse(user);
         expect(system).toContain('仅凭选项至多判为 partial');
-        expect(previous).toEqual(before?.state);
+        expect(previous).toEqual({
+          summary: before?.state.summary,
+          observations: before?.state.observations,
+        });
         expect(evidence).toMatchObject([
           {
             type: 'quiz_performance',
             questions: [{ type: 'single', submitted: 'B', answerKey: ['A'] }],
           },
         ]);
+        expect(evidence[0]).not.toHaveProperty('conditions');
         const evidenceRef = evidence[0].evidenceRef;
         return JSON.stringify({
           assessments: [
