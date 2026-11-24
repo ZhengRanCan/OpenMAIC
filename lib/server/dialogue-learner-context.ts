@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isDialogueLearnerContextConfigured } from '@/lib/config/feature-flags';
 import type { SimulatedLearnerId } from '@/lib/learner-context/contracts';
 import { digest, type MemoryPiece } from '@/lib/learner-memory/contracts';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -416,7 +417,7 @@ export async function resolveDialogueLearnerContext(
   overrides: Partial<typeof defaultDeps> = {},
 ): Promise<{ text?: string; status: 'disabled' | 'empty' | 'ready' | 'unavailable' }> {
   if (
-    process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT !== 'true' ||
+    !isDialogueLearnerContextConfigured() ||
     !input.model.serverManaged ||
     (input.body.config.sessionType !== 'qa' && input.body.config.sessionType !== 'discussion')
   )

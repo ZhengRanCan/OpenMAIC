@@ -1539,6 +1539,20 @@
     "keyboardShortcuts": "键盘快捷键",
     "generalSettings": "常规设置",
     "systemSettings": "系统设置",
+    "learningStatus": {
+      "title": "学习功能状态",
+      "description": "这里显示当前服务端的开关。修改启动配置后，重启 OpenMAIC 并刷新。课堂能否使用这些功能还取决于画像绑定、模型和可用学习记录。",
+      "loading": "正在读取学习功能状态…",
+      "failed": "暂时无法读取学习功能状态，请刷新重试。",
+      "automaticMastery": "自动掌握维护",
+      "quizFeedback": "Quiz 个性化反馈",
+      "quizPractice": "可选补充练习",
+      "dialogueLearnerContext": "问答与讨论读取画像",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "requiresFeedback": "需先启用 Quiz 反馈",
+      "requiresPi": "需先启用 Pi 对话"
+    },
     "importFromClipboard": "从剪贴板导入",
     "baseUrlRegion": {
       "china": "国内站",

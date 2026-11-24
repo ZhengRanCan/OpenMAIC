@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { isQuizFeedbackEnabled } from '@/lib/config/feature-flags';
 import { isSameOriginJsonRequest } from '@/lib/persistence/owner-claim-http';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { QuizTraceError } from '@/lib/quiz/trace-validation';
@@ -32,8 +33,7 @@ function handle(req: NextRequest, method: 'GET' | 'POST') {
     try {
       if (method === 'POST' && !isSameOriginJsonRequest(req))
         return Response.json({ error: 'INVALID_ORIGIN' }, { status: 403, headers });
-      if (process.env.OPENMAIC_QUIZ_FEEDBACK !== 'true')
-        return Response.json({ status: 'disabled' }, { headers });
+      if (!isQuizFeedbackEnabled()) return Response.json({ status: 'disabled' }, { headers });
       const config = readSimulatedLearningLoopConfig();
       const parsed =
         method === 'GET'

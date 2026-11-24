@@ -1539,6 +1539,20 @@
     "keyboardShortcuts": "Shortcuts",
     "generalSettings": "General",
     "systemSettings": "System",
+    "learningStatus": {
+      "title": "Learning feature status",
+      "description": "These are the current server settings. After changing startup configuration, restart OpenMAIC and refresh. Classroom use also depends on the learner profile, model, and available learning records.",
+      "loading": "Checking learning feature status…",
+      "failed": "Learning feature status is unavailable. Refresh to try again.",
+      "automaticMastery": "Automatic mastery updates",
+      "quizFeedback": "Personalized quiz feedback",
+      "quizPractice": "Optional practice",
+      "dialogueLearnerContext": "Learner profiles in Q&A and discussions",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "requiresFeedback": "Requires quiz feedback",
+      "requiresPi": "Requires Pi chat"
+    },
     "importFromClipboard": "Import from Clipboard",
     "baseUrlRegion": {
       "china": "China",

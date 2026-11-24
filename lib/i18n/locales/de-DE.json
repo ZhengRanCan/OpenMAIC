@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "Tastenkürzel",
     "generalSettings": "Allgemein",
     "systemSettings": "System",
+    "learningStatus": {
+      "title": "Status der Lernfunktionen",
+      "description": "Hier stehen die aktuellen Servereinstellungen. Starte OpenMAIC nach einer Änderung der Startkonfiguration neu und aktualisiere die Anzeige. Die Nutzung im Kurs hängt auch vom Lernprofil, Modell und den verfügbaren Lernaufzeichnungen ab.",
+      "loading": "Status der Lernfunktionen wird geprüft…",
+      "failed": "Der Status ist nicht verfügbar. Aktualisiere die Anzeige und versuche es erneut.",
+      "automaticMastery": "Lernstand automatisch aktualisieren",
+      "quizFeedback": "Personalisiertes Quiz-Feedback",
+      "quizPractice": "Optionale Übung",
+      "dialogueLearnerContext": "Lernprofil bei Fragen und Diskussionen",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "requiresFeedback": "Erfordert Quiz-Feedback",
+      "requiresPi": "Erfordert Pi-Chat"
+    },
     "importFromClipboard": "Aus Zwischenablage importieren",
     "baseUrlRegion": {
       "china": "China",

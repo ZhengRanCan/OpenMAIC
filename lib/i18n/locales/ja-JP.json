@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "ショートカット",
     "generalSettings": "一般",
     "systemSettings": "システム",
+    "learningStatus": {
+      "title": "学習機能の状態",
+      "description": "現在のサーバー設定です。起動設定を変更したら、OpenMAIC を再起動して更新してください。授業での利用は、学習者プロフィール、モデル、利用可能な学習記録にも依存します。",
+      "loading": "学習機能の状態を確認中…",
+      "failed": "学習機能の状態を取得できません。更新して再試行してください。",
+      "automaticMastery": "習熟度の自動更新",
+      "quizFeedback": "クイズの個別フィードバック",
+      "quizPractice": "任意の追加練習",
+      "dialogueLearnerContext": "質疑応答とディスカッションでプロフィールを使用",
+      "enabled": "有効",
+      "disabled": "無効",
+      "requiresFeedback": "クイズのフィードバックが必要",
+      "requiresPi": "Pi チャットが必要"
+    },
     "importFromClipboard": "クリップボードからインポート",
     "baseUrlRegion": {
       "china": "中国",

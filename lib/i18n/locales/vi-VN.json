@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "Phím tắt",
     "generalSettings": "Chung",
     "systemSettings": "Hệ thống",
+    "learningStatus": {
+      "title": "Trạng thái tính năng học tập",
+      "description": "Đây là cấu hình hiện tại của máy chủ. Sau khi đổi cấu hình khởi động, hãy khởi động lại OpenMAIC và làm mới. Việc sử dụng trong lớp còn phụ thuộc vào hồ sơ người học, mô hình và dữ liệu học tập hiện có.",
+      "loading": "Đang kiểm tra trạng thái tính năng học tập…",
+      "failed": "Không thể đọc trạng thái tính năng. Hãy làm mới để thử lại.",
+      "automaticMastery": "Tự động cập nhật mức độ thành thạo",
+      "quizFeedback": "Phản hồi bài kiểm tra cá nhân hóa",
+      "quizPractice": "Bài luyện tập tùy chọn",
+      "dialogueLearnerContext": "Hồ sơ trong hỏi đáp và thảo luận",
+      "enabled": "Đã bật",
+      "disabled": "Đã tắt",
+      "requiresFeedback": "Cần bật phản hồi bài kiểm tra",
+      "requiresPi": "Cần bật trò chuyện Pi"
+    },
     "importFromClipboard": "Nhập từ bộ nhớ tạm",
     "baseUrlRegion": {
       "china": "Trung Quốc",

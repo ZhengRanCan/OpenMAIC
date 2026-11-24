@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { callLLM } from '@/lib/ai/llm';
+import { isAutomaticMasteryEnabled } from '@/lib/config/feature-flags';
 import type { DialogueEvidenceSettings } from '@/lib/dialogue/evidence-contracts';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
@@ -37,7 +38,7 @@ type JobStatus = Pick<
 >;
 
 export function readAutomaticMasteryConfig() {
-  if (process.env.OPENMAIC_AUTOMATIC_MASTERY !== 'true') return null;
+  if (!isAutomaticMasteryEnabled()) return null;
   const config = readSimulatedLearningLoopConfig();
   return config?.sourceNature === 'synthetic' ? config : null;
 }
@@ -377,7 +378,7 @@ async function startSimulatedMasteryLearningLoop() {
 }
 
 export async function startMasteryLearningLoop() {
-  if (process.env.OPENMAIC_AUTOMATIC_MASTERY !== 'true') return undefined;
+  if (!isAutomaticMasteryEnabled()) return undefined;
   const formal = startFormalMasteryLearningLoop();
   const simulated = await startSimulatedMasteryLearningLoop().catch(() => {
     console.error('[mastery-learning-loop] simulation could not start');

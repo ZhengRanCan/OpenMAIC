@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "Atalhos",
     "generalSettings": "Geral",
     "systemSettings": "Sistema",
+    "learningStatus": {
+      "title": "Status dos recursos de aprendizagem",
+      "description": "Estas são as configurações atuais do servidor. Após alterar a configuração de inicialização, reinicie o OpenMAIC e atualize. O uso em aula também depende do perfil, do modelo e dos registros de aprendizagem disponíveis.",
+      "loading": "Verificando os recursos de aprendizagem…",
+      "failed": "Não foi possível ler o status. Atualize para tentar novamente.",
+      "automaticMastery": "Atualização automática do domínio",
+      "quizFeedback": "Feedback personalizado do quiz",
+      "quizPractice": "Prática opcional",
+      "dialogueLearnerContext": "Perfil em perguntas e discussões",
+      "enabled": "Ativado",
+      "disabled": "Desativado",
+      "requiresFeedback": "Requer feedback do quiz",
+      "requiresPi": "Requer chat Pi"
+    },
     "importFromClipboard": "Importar da Área de Transferência",
     "baseUrlRegion": {
       "china": "China",

@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { UsageDashboard } from './usage-dashboard';
+import { LearningFeatureStatus } from './learning-feature-status';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -101,6 +102,8 @@ export function GeneralSettings() {
 
   return (
     <div className="flex flex-col gap-8">
+      <LearningFeatureStatus />
+
       {/* Usage statistics dashboard */}
       <UsageDashboard />
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { z } from 'zod';
 import { callLLM } from '@/lib/ai/llm';
+import { isAutomaticMasteryEnabled } from '@/lib/config/feature-flags';
 import {
   MASTERY_QUIZ_RULES,
   MASTERY_SYSTEM,
@@ -591,7 +592,7 @@ async function generate(owner: string, system: string, prompt: string) {
 export function startFormalMasteryLearningLoop() {
   let stopped = false;
   let running: Promise<void> | undefined;
-  const active = () => !stopped && process.env.OPENMAIC_AUTOMATIC_MASTERY === 'true';
+  const active = () => !stopped && isAutomaticMasteryEnabled();
   const tick = async () => {
     const app = await generationRunPersistence();
     await discoverProfileMastery(app);

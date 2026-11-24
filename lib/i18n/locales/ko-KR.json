@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "단축키",
     "generalSettings": "일반",
     "systemSettings": "시스템",
+    "learningStatus": {
+      "title": "학습 기능 상태",
+      "description": "현재 서버 설정입니다. 시작 설정을 바꾼 뒤 OpenMAIC를 재시작하고 새로고침하세요. 수업에서의 사용 여부는 학습자 프로필, 모델, 사용 가능한 학습 기록에도 달려 있습니다.",
+      "loading": "학습 기능 상태를 확인하는 중…",
+      "failed": "학습 기능 상태를 불러올 수 없습니다. 새로고침하여 다시 시도하세요.",
+      "automaticMastery": "숙달도 자동 업데이트",
+      "quizFeedback": "맞춤형 퀴즈 피드백",
+      "quizPractice": "선택형 추가 연습",
+      "dialogueLearnerContext": "질의응답과 토론에서 학습자 프로필 사용",
+      "enabled": "사용",
+      "disabled": "사용 안 함",
+      "requiresFeedback": "퀴즈 피드백 필요",
+      "requiresPi": "Pi 채팅 필요"
+    },
     "importFromClipboard": "클립보드에서 가져오기",
     "baseUrlRegion": {
       "china": "중국",

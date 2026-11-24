@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "Atajos",
     "generalSettings": "General",
     "systemSettings": "Sistema",
+    "learningStatus": {
+      "title": "Estado de las funciones de aprendizaje",
+      "description": "Estos son los ajustes actuales del servidor. Tras cambiar la configuración de inicio, reinicia OpenMAIC y actualiza. Su uso en clase también depende del perfil, el modelo y los registros de aprendizaje disponibles.",
+      "loading": "Comprobando el estado de las funciones de aprendizaje…",
+      "failed": "No se pudo consultar el estado. Actualiza para reintentar.",
+      "automaticMastery": "Actualización automática del dominio",
+      "quizFeedback": "Comentarios personalizados del cuestionario",
+      "quizPractice": "Práctica opcional",
+      "dialogueLearnerContext": "Perfil en preguntas y conversaciones",
+      "enabled": "Activado",
+      "disabled": "Desactivado",
+      "requiresFeedback": "Requiere comentarios del cuestionario",
+      "requiresPi": "Requiere el chat Pi"
+    },
     "importFromClipboard": "Importar del portapapeles",
     "baseUrlRegion": {
       "china": "China",

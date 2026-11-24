@@ -1500,6 +1500,20 @@
     "keyboardShortcuts": "鍵盤快速鍵",
     "generalSettings": "一般設定",
     "systemSettings": "系統設定",
+    "learningStatus": {
+      "title": "學習功能狀態",
+      "description": "這裡顯示目前的伺服器開關。修改啟動設定後，重新啟動 OpenMAIC 並重新整理。課堂能否使用這些功能還取決於學習者檔案綁定、模型和可用的學習記錄。",
+      "loading": "正在讀取學習功能狀態…",
+      "failed": "暫時無法讀取學習功能狀態，請重新整理後再試。",
+      "automaticMastery": "自動更新掌握情況",
+      "quizFeedback": "Quiz 個人化回饋",
+      "quizPractice": "選用補充練習",
+      "dialogueLearnerContext": "問答與討論讀取學習者檔案",
+      "enabled": "已啟用",
+      "disabled": "未啟用",
+      "requiresFeedback": "須先啟用 Quiz 回饋",
+      "requiresPi": "須先啟用 Pi 對話"
+    },
     "importFromClipboard": "從剪貼簿匯入",
     "baseUrlRegion": {
       "china": "中國",

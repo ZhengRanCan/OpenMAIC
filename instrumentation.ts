@@ -1,3 +1,5 @@
+import { isAutomaticMasteryEnabled } from '@/lib/config/feature-flags';
+
 /**
  * Process-scoped startup work.
  *
@@ -94,7 +96,7 @@ export async function register(): Promise<void> {
   const { startProfileMemoryRunner } = await import('@/lib/server/learner-profile-memory-runner');
   const profileMemoryRunner = startProfileMemoryRunner();
   try {
-    if (process.env.OPENMAIC_AUTOMATIC_MASTERY === 'true') {
+    if (isAutomaticMasteryEnabled()) {
       const { startMasteryLearningLoop } = await import('@/lib/server/mastery-learning-loop');
       masteryLearningLoop = await startMasteryLearningLoop();
     }

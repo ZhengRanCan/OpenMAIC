@@ -1461,6 +1461,20 @@
     "keyboardShortcuts": "Raccourcis",
     "generalSettings": "Général",
     "systemSettings": "Système",
+    "learningStatus": {
+      "title": "État des fonctions d’apprentissage",
+      "description": "Voici les réglages actuels du serveur. Après avoir modifié la configuration de démarrage, redémarrez OpenMAIC et actualisez. Leur utilisation en classe dépend aussi du profil, du modèle et des traces d’apprentissage disponibles.",
+      "loading": "Vérification de l’état des fonctions d’apprentissage…",
+      "failed": "Impossible de lire l’état des fonctions. Actualisez pour réessayer.",
+      "automaticMastery": "Mise à jour automatique de la maîtrise",
+      "quizFeedback": "Retour personnalisé du quiz",
+      "quizPractice": "Exercice facultatif",
+      "dialogueLearnerContext": "Profil dans les questions et discussions",
+      "enabled": "Activé",
+      "disabled": "Désactivé",
+      "requiresFeedback": "Nécessite le retour du quiz",
+      "requiresPi": "Nécessite le chat Pi"
+    },
     "importFromClipboard": "Importer depuis le presse-papiers",
     "baseUrlRegion": {
       "china": "Chine",

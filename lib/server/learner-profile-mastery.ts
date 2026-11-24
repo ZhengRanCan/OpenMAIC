@@ -1,5 +1,6 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { z } from 'zod';
+import { isAutomaticMasteryEnabled } from '@/lib/config/feature-flags';
 import { digest } from '@/lib/learner-memory/contracts';
 import type { MasteryCard, MasteryCardObservation } from '@/lib/learner-mastery/classroom';
 import {
@@ -164,7 +165,7 @@ export async function readProfileMasteryCardIn(
   const card: MasteryCard = row
     ? await readCard(tx, ownerId, profileId, stageId, target, row)
     : { target, status: 'empty' };
-  if (process.env.OPENMAIC_AUTOMATIC_MASTERY !== 'true') return card;
+  if (!isAutomaticMasteryEnabled()) return card;
   const {
     rows: [job],
   } = await tx.query<{ state: string }>(

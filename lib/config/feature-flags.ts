@@ -3,8 +3,8 @@
  * Next.js inlines at build time so they are safe to read from client
  * components. Server-only flags must not use the `NEXT_PUBLIC_` prefix.
  *
- * Truthy values: `'true'` or `'1'`. Unless a flag documents a different
- * default, anything else (including unset) is treated as disabled.
+ * General flags accept `'true'` or `'1'`. Learning maintenance and
+ * personalization flags keep their existing exact `'true'` requirement.
  */
 
 function readBoolean(envValue: string | undefined): boolean {
@@ -98,6 +98,30 @@ export function isEditorRendererEnabled(): boolean {
  */
 export function isPiChatEnabled(): boolean {
   return readDefaultOnBoolean(process.env.NEXT_PUBLIC_PI_CHAT_ENABLED);
+}
+
+export function isAutomaticMasteryEnabled(): boolean {
+  return process.env.OPENMAIC_AUTOMATIC_MASTERY === 'true';
+}
+
+export function isQuizFeedbackEnabled(): boolean {
+  return process.env.OPENMAIC_QUIZ_FEEDBACK === 'true';
+}
+
+export function isQuizPracticeConfigured(): boolean {
+  return process.env.OPENMAIC_QUIZ_PRACTICE === 'true';
+}
+
+export function isQuizPracticeEnabled(): boolean {
+  return isQuizPracticeConfigured() && isQuizFeedbackEnabled();
+}
+
+export function isDialogueLearnerContextConfigured(): boolean {
+  return process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT === 'true';
+}
+
+export function isDialogueLearnerContextEnabled(): boolean {
+  return isDialogueLearnerContextConfigured() && isPiChatEnabled();
 }
 
 /**
