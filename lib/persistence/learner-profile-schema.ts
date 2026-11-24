@@ -57,6 +57,14 @@ CREATE INDEX learner_profile_memory_jobs_profile ON learner_profile_memory_jobs(
 CREATE INDEX learner_profile_memory_items_job ON learner_profile_memory_items(job_id);
 `;
 
+export const LEARNER_PROFILE_MEMORY_IMPORT_SCHEMA = `
+ALTER TABLE learner_profile_memory_jobs
+  ADD COLUMN manually_added BOOLEAN NOT NULL DEFAULT false,
+  DROP CONSTRAINT learner_profile_memory_jobs_stage_id_kind_activity_id_recor_key,
+  ADD CONSTRAINT learner_profile_memory_jobs_source_key
+    UNIQUE (stage_id,profile_id,kind,activity_id,record_id);
+`;
+
 export const LEARNER_PROFILE_MASTERY_SCHEMA = `
 CREATE TABLE learner_profile_mastery (
   stage_id TEXT NOT NULL REFERENCES classroom_learner_profiles(stage_id) ON DELETE CASCADE,

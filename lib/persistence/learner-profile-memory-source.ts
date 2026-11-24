@@ -18,6 +18,7 @@ export type ProfileSourceLocator = {
   activity_id: string;
   record_id: string;
   review_id?: string | null;
+  manually_added?: boolean;
 };
 export type ProfileSourceAccess = {
   owner_id: string;
@@ -39,6 +40,11 @@ export const PROFILE_DIALOGUE_MESSAGES = `JOIN runtime_sessions runtime ON runti
     AND message.data#>>'{payload,message,role}'='user'
     AND view.message_ids ? (message.data#>>'{payload,message,id}')`;
 
+/** For queries with learner_profile_memory_jobs aliased as j. */
+export const PROFILE_MEMORY_JOB_AUTHORIZED = `COALESCE((
+  SELECT b.profile_id=j.profile_id FROM classroom_learner_profiles b WHERE b.stage_id=j.stage_id
+),j.manually_added)`;
+
 export async function readProfileSourceAccess(
   tx: Queryable,
   locator: ProfileSourceLocator,
@@ -46,11 +52,12 @@ export async function readProfileSourceAccess(
 ): Promise<ProfileSourceAccess | undefined> {
   const { rows } = await tx.query<ProfileSourceAccess>(
     `SELECT s.owner_id, d.name AS title
-       FROM classroom_learner_profiles b
-       JOIN stage_meta s ON s.stage_id=b.stage_id AND s.deleted_at IS NULL
+       FROM stage_meta s
        JOIN document_stages d ON d.id=s.stage_id
-       WHERE b.stage_id=$1 AND b.profile_id=$2${lock ? ' FOR UPDATE OF s' : ''}`,
-    [locator.stage_id, locator.profile_id],
+       WHERE s.stage_id=$1 AND s.deleted_at IS NULL AND COALESCE((
+         SELECT b.profile_id=$2 FROM classroom_learner_profiles b WHERE b.stage_id=s.stage_id
+       ),$3::boolean)${lock ? ' FOR UPDATE OF s' : ''}`,
+    [locator.stage_id, locator.profile_id, locator.manually_added === true],
   );
   return rows[0];
 }

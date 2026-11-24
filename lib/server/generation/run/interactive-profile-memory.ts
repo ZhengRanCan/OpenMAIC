@@ -13,6 +13,7 @@ import type { MemorySelectionPrompt } from '@/lib/learner-context/selection-cont
 import { canonicalJson } from '@/lib/learner-memory/contracts';
 import type { ProfileMemoryItem } from '@/lib/learner-memory/profile-memory-contracts';
 import { assertLearnerProfileIn } from '@/lib/persistence/learner-profiles';
+import { PROFILE_MEMORY_JOB_AUTHORIZED } from '@/lib/persistence/learner-profile-memory-source';
 import { readAuthorizedProfileMemoryBasisIn } from '@/lib/server/learner-profile-memory';
 import { generationRunPersistence } from './store';
 
@@ -54,9 +55,9 @@ export async function readProfileMemoryCandidates(
       `SELECT i.id,i.section,i.summary,j.kind
        FROM learner_profile_memory_items i
        JOIN learner_profile_memory_jobs j ON j.id=i.job_id AND j.profile_id=$1 AND j.state='finished'
-       JOIN classroom_learner_profiles b ON b.stage_id=j.stage_id AND b.profile_id=j.profile_id
        JOIN stage_meta s ON s.stage_id=j.stage_id AND s.owner_id=$2 AND s.deleted_at IS NULL
-       WHERE i.flagged_at IS NULL AND ($3::text[] IS NULL OR i.id::text=ANY($3))
+       WHERE ${PROFILE_MEMORY_JOB_AUTHORIZED} AND i.flagged_at IS NULL
+         AND ($3::text[] IS NULL OR i.id::text=ANY($3))
        ORDER BY i.created_at DESC,i.id LIMIT 16`,
       [profileId, ownerId, keys ?? null],
     );

@@ -10,6 +10,20 @@
     "close": "关闭"
   },
   "profileMemory": {
+    "importClassroom": {
+      "open": "从课堂导入",
+      "select": "选择课堂",
+      "placeholder": "请选择一堂课",
+      "description": "从已保存的测验评阅和学生对话中提取学习记录，加入当前画像。",
+      "submit": "导入课堂轨迹",
+      "none": "暂无可导入的课堂。",
+      "empty": "这堂课暂无可导入的轨迹。",
+      "pending": "正在提取课堂轨迹。",
+      "done": "课堂轨迹已处理，符合条件的记录已加入画像。",
+      "partialFailure": "部分课堂轨迹处理失败，可以重试。",
+      "requestFailed": "暂时无法导入或查询进度，请重试。",
+      "listFailed": "暂时无法加载课堂列表。"
+    },
     "title": "学习画像",
     "pending": "课堂记录正在整理。稍后可刷新查看。",
     "maintenanceFailed": "部分课堂记录未能整理，原始课堂记录仍可回看。",

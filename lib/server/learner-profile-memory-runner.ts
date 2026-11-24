@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import { callLLM } from '@/lib/ai/llm';
 import {
   parseProfileMemoryResult,
@@ -22,36 +23,52 @@ type Provider = Pick<ServerPersistenceProvider, 'pool' | 'withTransaction'>;
 type Job = ProfileSourceLocator & { id: string; claim_id: string; attempts: number };
 type Invoke = (ownerId: string, system: string, prompt: string) => Promise<string>;
 
-const INSERT_JOBS = `INSERT INTO learner_profile_memory_jobs (stage_id,profile_id,kind,activity_id,record_id)`;
+const INSERT_JOBS = `INSERT INTO learner_profile_memory_jobs (stage_id,profile_id,kind,activity_id,record_id,manually_added)`;
 const BOUND_STAGE = `FROM classroom_learner_profiles b
   JOIN stage_meta s ON s.stage_id=b.stage_id AND s.deleted_at IS NULL
   JOIN document_stages d ON d.id=s.stage_id AND d.task_engine_mode IS NOT TRUE`;
 
 export async function discoverProfileMemory(app: Provider) {
-  await app.pool.query(
+  await enqueueProfileMemory(app.pool);
+}
+
+export async function enqueueProfileMemory(
+  queryable: Queryable,
+  manual?: { stageId: string; ownerId: string; profileId: string },
+) {
+  const params = manual ? [manual.stageId, manual.ownerId, manual.profileId] : [];
+  const stages = manual
+    ? 'FROM stage_meta s JOIN document_stages d ON d.id=s.stage_id AND d.task_engine_mode IS NOT TRUE'
+    : BOUND_STAGE;
+  const scope = manual ? 's.stage_id=$1 AND s.owner_id=$2 AND s.deleted_at IS NULL' : 'TRUE';
+  const target = manual ? '$3::uuid' : 'b.profile_id';
+  const limit = manual ? '' : 'LIMIT 50';
+  await queryable.query(
     `${INSERT_JOBS}
-     SELECT s.stage_id,b.profile_id,'quiz',a.id,a.submission->>'id'
-     ${BOUND_STAGE}
+     SELECT s.stage_id,${target},'quiz',a.id,a.submission->>'id',${!!manual}
+     ${stages}
      JOIN quiz_trace_attempts a ON a.stage_id=s.stage_id AND a.owner_id=s.owner_id
      JOIN quiz_trace_reviews r ON r.id=a.current_review_id AND r.submission_id=a.submission->>'id'
        AND r.result IS NOT NULL
-     WHERE (d.interactive_mode IS NOT TRUE OR NOT EXISTS (
+     WHERE ${scope} AND (d.interactive_mode IS NOT TRUE OR NOT EXISTS (
        SELECT 1 FROM quiz_optional_practice p WHERE p.attempt_id=a.id))
-     AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id
+     AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id AND j.profile_id=${target}
        AND j.kind='quiz' AND j.activity_id=a.id AND j.record_id=a.submission->>'id')
-     ORDER BY a.created_at,a.id LIMIT 50 ON CONFLICT DO NOTHING`,
+     ORDER BY a.created_at,a.id ${limit} ON CONFLICT DO NOTHING`,
+    params,
   );
-  await app.pool.query(
+  await queryable.query(
     `${INSERT_JOBS}
-     SELECT DISTINCT s.stage_id,b.profile_id,view.kind,view.chat_id,message.data#>>'{payload,message,id}'
-     ${BOUND_STAGE}
+     SELECT DISTINCT s.stage_id,${target},view.kind,view.chat_id,message.data#>>'{payload,message,id}',${!!manual}
+     ${stages}
      ${PROFILE_DIALOGUE_MESSAGES}
-     WHERE view.kind IN ('qa','discussion') AND view.chat_id IS NOT NULL
+     WHERE ${scope} AND view.kind IN ('qa','discussion') AND view.chat_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id
-         AND j.kind=view.kind AND j.activity_id=view.chat_id
+         AND j.profile_id=${target} AND j.kind=view.kind AND j.activity_id=view.chat_id
          AND j.record_id=message.data#>>'{payload,message,id}')
-     ORDER BY s.stage_id,view.chat_id,message.data#>>'{payload,message,id}' LIMIT 50
+     ORDER BY s.stage_id,view.chat_id,message.data#>>'{payload,message,id}' ${limit}
      ON CONFLICT DO NOTHING`,
+    params,
   );
 }
 

@@ -19,6 +19,16 @@ export const profileMemoryEdit = z.strictObject({
 });
 export type ProfileMemoryEdit = z.infer<typeof profileMemoryEdit>;
 
+export const profileMemoryClassroom = z.strictObject({
+  stageId: z
+    .string()
+    .min(1)
+    .max(256)
+    .refine((value) => !value.includes('\0')),
+});
+export type ProfileMemoryClassroom = { stageId: string; title: string };
+export type ProfileMemoryImportStatus = { total: number; pending: number; failed: number };
+
 export const PROFILE_MEMORY_SECTIONS = [
   'background',
   'goals',

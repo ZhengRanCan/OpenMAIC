@@ -10,6 +10,20 @@
     "close": "關閉"
   },
   "profileMemory": {
+    "importClassroom": {
+      "open": "從課堂匯入",
+      "select": "選擇課堂",
+      "placeholder": "請選擇一堂課",
+      "description": "從已儲存的測驗評閱和學生對話中擷取學習記錄，加入目前的學習畫像。",
+      "submit": "匯入課堂軌跡",
+      "none": "暫無可匯入的課堂。",
+      "empty": "這堂課暫無可匯入的軌跡。",
+      "pending": "正在擷取課堂軌跡。",
+      "done": "課堂軌跡已處理，符合條件的記錄已加入畫像。",
+      "partialFailure": "部分課堂軌跡處理失敗，可以重試。",
+      "requestFailed": "暫時無法匯入或查詢進度，請重試。",
+      "listFailed": "暫時無法載入課堂清單。"
+    },
     "title": "學習畫像",
     "pending": "課堂記錄正在整理，稍後可重新整理查看。",
     "maintenanceFailed": "部分課堂記錄未能整理，仍可查看原始課堂記錄。",

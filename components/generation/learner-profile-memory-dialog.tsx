@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,7 +19,9 @@ import {
 import {
   PROFILE_MEMORY_FIELDS_MAX,
   PROFILE_MEMORY_SECTIONS,
+  type ProfileMemoryClassroom,
   type ProfileMemoryEdit,
+  type ProfileMemoryImportStatus,
   type ProfileMemoryItem,
   type ProfileMemorySource,
   type ProfileMemoryView,
@@ -44,6 +46,7 @@ export function LearnerProfileMemoryDialog({
   const [readFailed, setReadFailed] = useState(false);
   const [saveError, setSaveError] = useState<'conflict' | 'saveFailed'>();
   const [saving, setSaving] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const endpoint = `/api/learner-profiles/${encodeURIComponent(profile.id)}/memory`;
 
@@ -61,10 +64,10 @@ export function LearnerProfileMemoryDialog({
     return () => abort.abort();
   }, [endpoint, refresh]);
 
-  function reload() {
+  const reload = useCallback(() => {
     setReadFailed(false);
     setRefresh((n) => n + 1);
-  }
+  }, []);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -182,6 +185,14 @@ export function LearnerProfileMemoryDialog({
           ) : (
             <>
               <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-expanded={showImport}
+                  onClick={() => setShowImport((open) => !open)}
+                >
+                  {t('profileMemory.importClassroom.open')}
+                </Button>
                 <Button variant="ghost" size="sm" onClick={reload}>
                   {t('profileMemory.refresh')}
                 </Button>
@@ -196,6 +207,9 @@ export function LearnerProfileMemoryDialog({
                   {t('profileMemory.edit')}
                 </Button>
               </div>
+              {showImport && (
+                <ClassroomMemoryImport endpoint={`${endpoint}/classrooms`} onComplete={reload} />
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 {PROFILE_MEMORY_SECTIONS.map((section) => {
                   const personal = section === 'experiences' ? '' : view.fields[section];
@@ -247,6 +261,172 @@ export function LearnerProfileMemoryDialog({
           ))}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ClassroomMemoryImport({
+  endpoint,
+  onComplete,
+}: {
+  endpoint: string;
+  onComplete: () => void;
+}) {
+  const { t } = useI18n();
+  const classroomSelectId = useId();
+  const [classrooms, setClassrooms] = useState<ProfileMemoryClassroom[]>();
+  const [stageId, setStageId] = useState('');
+  const [status, setStatus] = useState<ProfileMemoryImportStatus>();
+  const [submitting, setSubmitting] = useState(false);
+  const [failure, setFailure] = useState(false);
+  const [listAttempt, setListAttempt] = useState(0);
+  const pending = !!status?.pending;
+
+  useEffect(() => {
+    const abort = new AbortController();
+    void fetch(endpoint, { cache: 'no-store', signal: abort.signal })
+      .then(async (reply) => {
+        if (!reply.ok) throw new Error('Importable classrooms unavailable');
+        const data: { classrooms: ProfileMemoryClassroom[] } = await reply.json();
+        if (!abort.signal.aborted) setClassrooms(data.classrooms);
+      })
+      .catch(() => {
+        if (!abort.signal.aborted) setFailure(true);
+      });
+    return () => abort.abort();
+  }, [endpoint, listAttempt]);
+
+  useEffect(() => {
+    if (!stageId || !pending || failure) return;
+    const abort = new AbortController();
+    let timer: number;
+    async function poll() {
+      try {
+        const reply = await fetch(`${endpoint}?stageId=${encodeURIComponent(stageId)}`, {
+          cache: 'no-store',
+          signal: abort.signal,
+        });
+        if (!reply.ok) throw new Error('Import status unavailable');
+        const latest: ProfileMemoryImportStatus = await reply.json();
+        if (abort.signal.aborted) return;
+        setStatus(latest);
+        if (latest.pending) timer = window.setTimeout(poll, 2500);
+        else onComplete();
+      } catch {
+        if (!abort.signal.aborted) setFailure(true);
+      }
+    }
+    timer = window.setTimeout(poll, 2500);
+    return () => {
+      abort.abort();
+      window.clearTimeout(timer);
+    };
+  }, [endpoint, onComplete, stageId, pending, failure]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!stageId || submitting || (pending && !failure)) return;
+    setSubmitting(true);
+    setFailure(false);
+    try {
+      const reply = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId }),
+      });
+      if (!reply.ok) throw new Error('Import request failed');
+      const latest: ProfileMemoryImportStatus = await reply.json();
+      setStatus(latest);
+      if (!latest.pending) onComplete();
+    } catch {
+      setFailure(true);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!classrooms) {
+    return failure ? (
+      <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
+        {t('profileMemory.importClassroom.listFailed')}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setFailure(false);
+            setListAttempt((n) => n + 1);
+          }}
+        >
+          {t('common.retry')}
+        </Button>
+      </div>
+    ) : (
+      <p role="status" className="text-sm">
+        {t('common.loading')}
+      </p>
+    );
+  }
+  if (!classrooms.length) {
+    return (
+      <p className="text-sm text-muted-foreground">{t('profileMemory.importClassroom.none')}</p>
+    );
+  }
+  const statusKey = status
+    ? status.pending
+      ? 'pending'
+      : status.failed
+        ? 'partialFailure'
+        : status.total
+          ? 'done'
+          : 'empty'
+    : undefined;
+  return (
+    <form onSubmit={submit} className="grid gap-2 rounded-xl border bg-muted/25 p-3">
+      <label htmlFor={classroomSelectId} className="text-sm font-medium">
+        {t('profileMemory.importClassroom.select')}
+      </label>
+      <select
+        id={classroomSelectId}
+        className="min-w-0 rounded-md border bg-background px-3 py-2 text-sm"
+        value={stageId}
+        disabled={submitting || pending}
+        onChange={(event) => {
+          setStageId(event.target.value);
+          setStatus(undefined);
+          setFailure(false);
+        }}
+      >
+        <option value="" disabled>
+          {t('profileMemory.importClassroom.placeholder')}
+        </option>
+        {classrooms.map((classroom) => (
+          <option key={classroom.stageId} value={classroom.stageId}>
+            {classroom.title}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-muted-foreground">
+        {t('profileMemory.importClassroom.description')}
+      </p>
+      <Button
+        size="sm"
+        className="justify-self-end"
+        type="submit"
+        disabled={!stageId || submitting || (pending && !failure)}
+      >
+        {t(failure || status?.failed ? 'common.retry' : 'profileMemory.importClassroom.submit')}
+      </Button>
+      {failure ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('profileMemory.importClassroom.requestFailed')}
+        </p>
+      ) : (
+        statusKey && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t(`profileMemory.importClassroom.${statusKey}`)}
+          </p>
+        )
+      )}
+    </form>
   );
 }
 

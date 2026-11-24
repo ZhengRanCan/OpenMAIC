@@ -10,6 +10,20 @@
     "close": "Close"
   },
   "profileMemory": {
+    "importClassroom": {
+      "open": "Import from classroom",
+      "select": "Choose a classroom",
+      "placeholder": "Select a classroom",
+      "description": "Add learning records from saved quiz reviews and learner conversations to this profile.",
+      "submit": "Import classroom activity",
+      "none": "There are no classrooms available to import.",
+      "empty": "This classroom has no activity to import yet.",
+      "pending": "Extracting learning records from this classroom.",
+      "done": "Classroom activity processed. Eligible records are now in this profile.",
+      "partialFailure": "Some classroom activity could not be processed. You can retry.",
+      "requestFailed": "Unable to import or check progress. Try again.",
+      "listFailed": "Unable to load classrooms."
+    },
     "title": "Learning profile",
     "pending": "Classroom records are being processed. Refresh to check again.",
     "maintenanceFailed": "Some classroom records could not be summarized. The original records remain available.",

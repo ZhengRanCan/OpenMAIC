@@ -4,6 +4,10 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET, PUT } from '@/app/api/learner-profiles/[profileId]/memory/route';
 import {
+  GET as GET_IMPORT,
+  POST as POST_IMPORT,
+} from '@/app/api/learner-profiles/[profileId]/memory/classrooms/route';
+import {
   GET as GET_BASIS,
   PATCH,
 } from '@/app/api/learner-profiles/[profileId]/memory/[itemId]/route';
@@ -1144,7 +1148,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       for (const extra of newerTargets) {
         await tx.query(
           `INSERT INTO learner_profile_mastery(stage_id,target_id,target_revision,state,sources,updated_at)
-          SELECT stage_id,$3,1,jsonb_set(state,'{targetStatement}',to_jsonb($4::text)),sources,now()+interval '1 second'
+          SELECT stage_id,$3,1,jsonb_set(state,'{targetStatement}',to_jsonb($4::text)),sources,now()+interval '1 hour'
           FROM learner_profile_mastery WHERE stage_id=$1 AND target_id=$2`,
           [deep.stageId, target.id, extra.id, extra.statement],
         );
@@ -1528,6 +1532,11 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       await tx.query('DROP TABLE learner_profile_mastery_jobs');
       await tx.query('DROP TABLE learner_profile_mastery');
       await tx.query('DROP INDEX classroom_learner_profiles_profile_idx');
+      await tx.query(`ALTER TABLE learner_profile_memory_jobs
+        DROP CONSTRAINT learner_profile_memory_jobs_source_key,
+        DROP COLUMN manually_added,
+        ADD CONSTRAINT learner_profile_memory_jobs_stage_id_kind_activity_id_recor_key
+          UNIQUE(stage_id,kind,activity_id,record_id)`);
       await tx.query(
         "DELETE FROM openmaic_schema_migrations WHERE store='generation-runs' AND version>8",
       );
@@ -1683,5 +1692,156 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       if (savedFlag === undefined) delete process.env.OPENMAIC_AUTOMATIC_MASTERY;
       else process.env.OPENMAIC_AUTOMATIC_MASTERY = savedFlag;
     }
+  });
+
+  it('imports owned unbound classroom records once and preserves their original basis', async () => {
+    const target = await prepareClassroom('f110-profile', true);
+    const old = await prepareClassroom('f110-unbound', false, true);
+    const empty = await prepareClassroom('f110-empty', false);
+    const unfinished = await prepareClassroom('f110-in-progress', false);
+    const otherProfile = await prepareClassroom('f110-other-profile', true);
+    const vocational = await prepareClassroom('f110-vocational', false, false, true);
+    const profileId = target.profile!;
+    await app.pool.query(
+      `INSERT INTO generation_runs(id,owner_id,input,state,stage_id)
+         VALUES($1,$2,'{}','generating',$3)`,
+      [randomUUID(), owner, unfinished.stageId],
+    );
+    await submitQuiz(old);
+    await saveDiscussionAndQA(old.stageId);
+    const context = { params: Promise.resolve({ profileId }) };
+    const request = (stageId?: string, method = 'GET', identity = cookie, site = 'same-origin') =>
+      new NextRequest(
+        'http://localhost/api/learner-profiles/' +
+          profileId +
+          '/memory/classrooms' +
+          (method === 'GET' && stageId ? '?stageId=' + encodeURIComponent(stageId) : ''),
+        {
+          method,
+          headers: {
+            cookie: 'anonymous_id=' + identity,
+            'sec-fetch-site': site,
+            ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+          },
+          ...(method === 'POST' ? { body: JSON.stringify({ stageId }) } : {}),
+        },
+      );
+    const list = await GET_IMPORT(request(), context);
+    expect(list.status).toBe(200);
+    const { classrooms } = await list.json();
+    expect(classrooms).toContainEqual({ stageId: old.stageId, title: old.stageId });
+    expect(classrooms).toContainEqual({ stageId: target.stageId, title: target.stageId });
+    expect(classrooms.map(({ stageId }: { stageId: string }) => stageId)).not.toContain(
+      otherProfile.stageId,
+    );
+    expect(classrooms.map(({ stageId }: { stageId: string }) => stageId)).not.toContain(
+      vocational.stageId,
+    );
+    expect(classrooms.map(({ stageId }: { stageId: string }) => stageId)).not.toContain(
+      unfinished.stageId,
+    );
+    expect((await GET_IMPORT(request(undefined, 'GET', foreign), context)).status).toBe(404);
+    expect((await POST_IMPORT(request(old.stageId, 'POST', foreign), context)).status).toBe(404);
+    expect(
+      (await POST_IMPORT(request(old.stageId, 'POST', cookie, 'cross-site'), context)).status,
+    ).toBe(403);
+    expect((await POST_IMPORT(request(otherProfile.stageId, 'POST'), context)).status).toBe(404);
+    expect((await POST_IMPORT(request(unfinished.stageId, 'POST'), context)).status).toBe(404);
+    expect(await (await POST_IMPORT(request(empty.stageId, 'POST'), context)).json()).toEqual({
+      total: 0,
+      pending: 0,
+      failed: 0,
+    });
+    const startImport = () => POST_IMPORT(request(old.stageId, 'POST'), context);
+    for (const response of await Promise.all([startImport(), startImport()])) {
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ total: 4, pending: 4, failed: 0 });
+    }
+    await app.pool.query(
+      "UPDATE learner_profile_memory_jobs SET state='failed', attempts=3 WHERE stage_id=$1 AND kind='quiz'",
+      [old.stageId],
+    );
+    expect(await (await GET_IMPORT(request(old.stageId), context)).json()).toEqual({
+      total: 4,
+      pending: 3,
+      failed: 1,
+    });
+    expect(await (await startImport()).json()).toEqual({ total: 4, pending: 4, failed: 0 });
+    await app.pool.query(
+      "UPDATE learner_profile_memory_jobs SET ready_at='2000-01-01' WHERE stage_id=$1",
+      [old.stageId],
+    );
+    const invoke: Parameters<typeof processProfileMemory>[1] = async (who, _system, body) => {
+      expect(who).toBe(owner);
+      const { kind, parts } = JSON.parse(body);
+      if (kind === 'quiz') {
+        return JSON.stringify({
+          records: [{ section: 'experiences', summary: '选 B，正常评阅为错误。', refs: [0] }],
+        });
+      }
+      if (kind === 'qa' && parts[0].answer === preference) {
+        return JSON.stringify({
+          records: [{ section: 'preferences', summary: preference, refs: [0] }],
+        });
+      }
+      return JSON.stringify({ records: [] });
+    };
+    for (let i = 0; i < 4; i++) expect(await processProfileMemory(app, invoke)).toBe(true);
+    expect(await (await startImport()).json()).toEqual({ total: 4, pending: 0, failed: 0 });
+    const view = await readProfileMemory(owner, profileId);
+    expect(view.items.map(({ kind }) => kind).sort()).toEqual(['qa', 'quiz']);
+    expect(view.fields.preferences).toBe('');
+    const item = view.items.find(({ kind }) => kind === 'quiz')!;
+    const itemContext = { params: Promise.resolve({ profileId, itemId: item.id }) };
+    const basisRequest = new NextRequest(
+      'http://localhost/api/learner-profiles/' + profileId + '/memory/' + item.id,
+      {
+        headers: {
+          cookie: 'anonymous_id=' + cookie,
+          'sec-fetch-site': 'same-origin',
+          'content-type': 'application/json',
+        },
+      },
+    );
+    expect(await (await GET_BASIS(basisRequest, itemContext)).json()).toMatchObject({
+      stageId: old.stageId,
+      kind: 'quiz',
+      parts: [{ answer: 'B', review: 'incorrect' }],
+    });
+    const { selected } = await buildInteractiveProfileMemory(
+      owner,
+      { profileId, task: '复习', content: {} },
+      async ({ user }) => {
+        expect(user).toContain(item.summary);
+        return JSON.stringify({
+          selected: [
+            JSON.parse(user).memory.find((entry: { source: string }) => entry.source === 'quiz').id,
+          ],
+        });
+      },
+    );
+    expect(selected[0]?.key).toBe(item.id);
+    expect(
+      (
+        await app.pool.query('SELECT 1 FROM classroom_learner_profiles WHERE stage_id=$1', [
+          old.stageId,
+        ])
+      ).rowCount,
+    ).toBe(0);
+    await app.withTransaction((tx) =>
+      bindLearnerProfileIn(tx, {
+        stageId: old.stageId,
+        runId: randomUUID(),
+        selection: { mode: 'existing', profileId: otherProfile.profile! },
+      }),
+    );
+    expect((await startImport()).status).toBe(404);
+    expect((await GET_BASIS(basisRequest, itemContext)).status).toBe(404);
+    expect((await readProfileMemory(owner, profileId)).items).toEqual([]);
+    const select = vi.fn(async () => '{"selected":[]}');
+    expect(
+      await buildInteractiveProfileMemory(owner, { profileId, task: '复习', content: {} }, select),
+    ).toEqual({ profileId, selected: [] });
+    expect(select).not.toHaveBeenCalled();
   });
 });
