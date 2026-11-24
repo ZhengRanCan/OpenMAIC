@@ -364,6 +364,26 @@ describe('outline validation', () => {
     expect(quiz({ ...usable, questionCount: 101 })).toBeUndefined();
   });
 
+  it.each([
+    [['short_answer'], ['text']],
+    [
+      ['single', 'short_answer'],
+      ['single', 'text'],
+    ],
+    [
+      ['single', 'short_answer', 'text', 'multiple'],
+      ['single', 'text', 'multiple'],
+    ],
+  ])('preserves planned short answers in %j', (questionTypes, expectedTypes) => {
+    const quizConfig = { questionCount: 2, difficulty: 'hard', questionTypes };
+    const parsed = parseOutlines([outline({ type: 'quiz', quizConfig })]);
+    expect(parsed.ok && parsed.value[0]!.quizConfig).toEqual({
+      ...quizConfig,
+      questionTypes: expectedTypes,
+    });
+    expect(parsed.ok && parseOutlines(parsed.value)).toEqual(parsed);
+  });
+
   it('keeps at most 20 media requests per scene', () => {
     const media = Array.from({ length: 25 }, (_, i) => ({
       type: 'image',

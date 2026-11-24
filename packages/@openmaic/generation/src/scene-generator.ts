@@ -886,7 +886,9 @@ async function generateQuizContent(
     keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
     questionCount: quizConfig.questionCount,
     difficulty: quizConfig.difficulty,
-    questionTypes: quizConfig.questionTypes.join(', '),
+    questionTypes: quizConfig.questionTypes
+      .map((type) => (type === 'text' ? 'short_answer' : type))
+      .join(', '),
     languageDirective: languageDirective || '',
     hasQuizLearnerContext: !!learnerContext,
     quizTask: learnerContext?.task ?? '',

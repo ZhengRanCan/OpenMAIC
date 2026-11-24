@@ -115,10 +115,14 @@ function quizConfig(value: unknown): SceneOutline['quizConfig'] {
   const questionCount = finite(quiz.questionCount);
   const difficulty = oneOf(quiz.difficulty, ['easy', 'medium', 'hard'] as const);
   const questionTypes = Array.isArray(quiz.questionTypes)
-    ? quiz.questionTypes.flatMap((type) => {
-        const known = oneOf(type, QUESTION_TYPES);
-        return known ? [known] : [];
-      })
+    ? [
+        ...new Set(
+          quiz.questionTypes.flatMap((type) => {
+            const known = oneOf(type === 'short_answer' ? 'text' : type, QUESTION_TYPES);
+            return known ? [known] : [];
+          }),
+        ),
+      ]
     : [];
   if (
     questionCount === undefined ||

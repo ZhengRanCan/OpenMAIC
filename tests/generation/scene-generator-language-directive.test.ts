@@ -90,6 +90,29 @@ describe('scene-generator language directive threading (issue #472)', () => {
     });
   });
 
+  it('uses the model short_answer type when a saved outline requests text questions', async () => {
+    const question = {
+      id: 'density',
+      type: 'short_answer',
+      question: 'Explain how to convert 2.7 g/cm³ to kg/m³.',
+      commentPrompt: 'Check the conversion factor and units.',
+      analysis: 'Multiply the value by 1,000.',
+      points: 5,
+    };
+    const { aiCall, lastUser } = makeCapturingAiCall(JSON.stringify([question]));
+    const content = await generateSceneContent(
+      baseOutline({
+        type: 'quiz',
+        quizConfig: { questionCount: 1, difficulty: 'hard', questionTypes: ['text'] },
+      }),
+      aiCall,
+    );
+    expect(lastUser()).toContain(
+      'Question Count: 1, Difficulty: hard, Question Types: short_answer',
+    );
+    expect(content).toMatchObject({ questions: [{ ...question, hasAnswer: false }] });
+  });
+
   describe('actions generation', () => {
     it('threads languageDirective into slide actions prompt', async () => {
       const { aiCall, lastUser } = makeCapturingAiCall('[]');
