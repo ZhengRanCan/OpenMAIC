@@ -75,7 +75,15 @@ function SourceContent({ source }: { source: MasteryCardSource }) {
   );
 }
 
-function TargetCard({ card }: { card: MasteryCard }) {
+function TargetCard({
+  card,
+  updating,
+  retry,
+}: {
+  card: MasteryCard;
+  updating: boolean;
+  retry?: () => void;
+}) {
   const { t } = useI18n();
   return (
     <article className="min-w-0 space-y-3 rounded-lg border bg-muted/20 p-4">
@@ -132,6 +140,11 @@ function TargetCard({ card }: { card: MasteryCard }) {
           {t(`mastery.update.${card.update}`)}
         </p>
       )}
+      {retry && card.update === 'failed' && (
+        <Button type="button" size="sm" variant="outline" disabled={updating} onClick={retry}>
+          {t('mastery.update.retry')}
+        </Button>
+      )}
     </article>
   );
 }
@@ -141,6 +154,9 @@ export function MasteryPanel({ stageId }: { stageId: string }) {
   const [open, setOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [view, setView] = useState<PanelState>({ status: 'loading' });
+  const [updating, setUpdating] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<'queued' | 'unchanged' | 'disabled' | 'error'>();
+  const endpoint = `/api/learner-mastery/${encodeURIComponent(stageId)}`;
 
   useEffect(() => {
     if (!open) return;
@@ -148,7 +164,7 @@ export function MasteryPanel({ stageId }: { stageId: string }) {
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
       try {
-        const response = await fetch(`/api/learner-mastery/${encodeURIComponent(stageId)}`, {
+        const response = await fetch(endpoint, {
           cache: 'no-store',
           signal: controller.signal,
         });
@@ -170,13 +186,41 @@ export function MasteryPanel({ stageId }: { stageId: string }) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [open, refresh, stageId]);
+  }, [open, refresh, endpoint]);
+
+  async function requestUpdate(target?: Pick<MasteryCard['target'], 'id' | 'revision'>) {
+    setUpdating(true);
+    setUpdateNotice(undefined);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ target }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error('Mastery update request failed');
+      const { status } = await response.json();
+      if (status !== 'queued' && status !== 'unchanged' && status !== 'disabled')
+        throw new Error('Unexpected mastery update status');
+      setUpdateNotice(status);
+      setRefresh((previous) => previous + 1);
+    } catch {
+      setUpdateNotice('error');
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  const canUpdate = view.status === 'ready' && view.data.canUpdate;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (next) setView({ status: 'loading' });
+        if (next) {
+          setView({ status: 'loading' });
+          setUpdateNotice(undefined);
+        }
         setOpen(next);
       }}
     >
@@ -220,7 +264,16 @@ export function MasteryPanel({ stageId }: { stageId: string }) {
               <p className="break-words font-medium">{view.data.courseObjective}</p>
             )}
             {view.data.cards.map((card) => (
-              <TargetCard card={card} key={`${card.target.id}:${card.target.revision}`} />
+              <TargetCard
+                card={card}
+                key={`${card.target.id}:${card.target.revision}`}
+                updating={updating}
+                retry={
+                  canUpdate
+                    ? () => requestUpdate({ id: card.target.id, revision: card.target.revision })
+                    : undefined
+                }
+              />
             ))}
           </div>
         ) : (
@@ -228,20 +281,38 @@ export function MasteryPanel({ stageId }: { stageId: string }) {
             {view.status === 'loading' ? t('common.loading') : t(`mastery.${view.status}`)}
           </p>
         )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="justify-self-start"
-          disabled={view.status === 'loading'}
-          onClick={() => {
-            if (view.status === 'error') setView({ status: 'loading' });
-            setRefresh((previous) => previous + 1);
-          }}
-        >
-          <RefreshCw aria-hidden="true" className="size-4" />
-          {view.status === 'error' ? t('common.retry') : t('mastery.refresh')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canUpdate && (
+            <Button type="button" size="sm" disabled={updating} onClick={() => requestUpdate()}>
+              {t('mastery.update.manual')}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={view.status === 'loading'}
+            onClick={() => {
+              if (view.status === 'error') setView({ status: 'loading' });
+              setRefresh((previous) => previous + 1);
+            }}
+          >
+            <RefreshCw aria-hidden="true" className="size-4" />
+            {view.status === 'error' ? t('common.retry') : t('mastery.refresh')}
+          </Button>
+        </div>
+        {(updating || updateNotice) && (
+          <p
+            className={
+              updateNotice === 'error'
+                ? 'text-sm text-destructive'
+                : 'text-sm text-muted-foreground'
+            }
+            role={updateNotice === 'error' ? 'alert' : 'status'}
+          >
+            {t(`mastery.update.${updating ? 'submitting' : updateNotice}`)}
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );

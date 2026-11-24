@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { isAutomaticMasteryEnabled } from '@/lib/config/feature-flags';
 import { buildDialogueEvidenceContext } from '@/lib/dialogue/evidence-context';
 import type { DialogueEvidenceSettings } from '@/lib/dialogue/evidence-contracts';
 import { shortFactSources } from '@/lib/evidence/short-facts';
@@ -368,7 +369,13 @@ async function readClassroomCards(
         );
       }
     }
-    return { ...(run.course_objective ? { courseObjective: run.course_objective } : {}), cards };
+    return {
+      ...(run.course_objective ? { courseObjective: run.course_objective } : {}),
+      ...(run.profile_id && run.state === 'completed' && isAutomaticMasteryEnabled()
+        ? { canUpdate: true as const }
+        : {}),
+      cards,
+    };
   });
 }
 

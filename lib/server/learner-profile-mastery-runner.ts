@@ -74,8 +74,23 @@ const BOUND_RUN = `FROM classroom_learner_profiles b
 const TARGETS = `CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r.outline->'targets')='array'
   THEN r.outline->'targets' ELSE '[]'::jsonb END) target`;
 
-export async function discoverProfileMastery(app: Provider) {
-  await app.pool.query(`INSERT INTO learner_profile_mastery_jobs
+const SCOPED_TARGET = `AND ($1::text IS NULL OR (s.owner_id=$1 AND b.stage_id=$2))
+  AND ($3::text IS NULL OR (target->>'id'=$3 AND target->>'revision'=$4))`;
+type TargetSelection = Pick<CourseTarget, 'id' | 'revision'>;
+type DiscoveryScope = [
+  ownerId: string | null,
+  stageId: string | null,
+  targetId: string | null,
+  revision: string | null,
+];
+
+export function discoverProfileMastery(app: Provider) {
+  return discoverProfileMasteryIn(app.pool, [null, null, null, null]);
+}
+
+async function discoverProfileMasteryIn(tx: Queryable, scope: DiscoveryScope) {
+  await tx.query(
+    `INSERT INTO learner_profile_mastery_jobs
     (stage_id,profile_id,target_id,target_revision,kind,activity_id,record_id,source_version)
     SELECT b.stage_id,b.profile_id,target->>'id',(target->>'revision')::int,
       'quiz',a.id,a.submission->>'id',review.id
@@ -86,6 +101,7 @@ export async function discoverProfileMastery(app: Provider) {
       AND review.submission_id=a.submission->>'id'
     ${TARGETS}
     WHERE review.result#>>'{summary,status}' IN ('complete','partial')
+      ${SCOPED_TARGET}
       AND NOT EXISTS (SELECT 1 FROM quiz_optional_practice practice WHERE practice.attempt_id=a.id)
       AND NOT EXISTS (SELECT 1 FROM learner_profile_mastery_jobs j WHERE j.stage_id=b.stage_id
         AND j.target_id=target->>'id' AND j.target_revision::text=target->>'revision'
@@ -93,18 +109,61 @@ export async function discoverProfileMastery(app: Provider) {
         AND j.source_version=review.id)
       AND target->>'id' IS NOT NULL AND target->>'revision' ~ '^[1-9][0-9]{0,8}$'
     ORDER BY a.created_at,a.id,target->>'id' LIMIT 50
-    ON CONFLICT DO NOTHING`);
-  await app.pool.query(`INSERT INTO learner_profile_mastery_jobs
+    ON CONFLICT DO NOTHING`,
+    scope,
+  );
+  await tx.query(
+    `INSERT INTO learner_profile_mastery_jobs
     (stage_id,profile_id,target_id,target_revision,kind,activity_id,record_id,source_version)
     SELECT DISTINCT b.stage_id,b.profile_id,target->>'id',(target->>'revision')::int,
       view.kind,view.chat_id,${dialogueRecord},'saved-message'
     ${BOUND_RUN} ${PROFILE_DIALOGUE_MESSAGES} ${TARGETS}
     WHERE view.kind IN ('discussion','qa') AND view.chat_id IS NOT NULL AND ${dialogueRecord} IS NOT NULL
+      ${SCOPED_TARGET}
       AND target->>'id' IS NOT NULL AND target->>'revision' ~ '^[1-9][0-9]{0,8}$'
       AND NOT EXISTS (SELECT 1 FROM learner_profile_mastery_jobs j WHERE j.stage_id=b.stage_id
         AND j.target_id=target->>'id' AND j.target_revision::text=target->>'revision'
         AND j.kind=view.kind AND j.activity_id=view.chat_id AND j.record_id=${dialogueRecord})
-    ORDER BY 1,4,5,6,7 LIMIT 50 ON CONFLICT DO NOTHING`);
+    ORDER BY 1,4,5,6,7 LIMIT 50 ON CONFLICT DO NOTHING`,
+    scope,
+  );
+}
+
+export async function requestProfileMasteryUpdate(
+  ownerId: string,
+  stageId: string,
+  target?: TargetSelection,
+) {
+  if (!isAutomaticMasteryEnabled()) return 'disabled';
+  const app = await generationRunPersistence();
+  const scope: DiscoveryScope = [
+    ownerId,
+    stageId,
+    target?.id ?? null,
+    target ? String(target.revision) : null,
+  ];
+  const eligible = `SELECT b.profile_id, target->>'id' AS id, target->>'revision' AS revision
+    ${BOUND_RUN} ${TARGETS}
+    WHERE target->>'id' IS NOT NULL AND target->>'revision' ~ '^[1-9][0-9]{0,8}$' ${SCOPED_TARGET}`;
+  const matches = `j.stage_id=$2 AND j.profile_id=e.profile_id
+    AND j.target_id=e.id AND j.target_revision::text=e.revision`;
+  return app.withTransaction(async (tx) => {
+    await fenceOwnerWrite(tx, ownerId, stageId);
+    if (!(await tx.query(`${eligible} LIMIT 1`, scope)).rows.length) return 'unavailable';
+    await tx.query(
+      `UPDATE learner_profile_mastery_jobs j
+       SET state='queued', attempts=0, ready_at=now(), claim_id=NULL, claimed_at=NULL
+       FROM (${eligible}) e WHERE ${matches} AND j.state='failed'`,
+      scope,
+    );
+    await discoverProfileMasteryIn(tx, scope);
+    const pending = await tx.query(
+      `SELECT 1 FROM learner_profile_mastery_jobs j JOIN (${eligible}) e ON ${matches}
+        WHERE j.state IN ('queued','running') LIMIT 1`,
+      scope,
+    );
+    return pending.rows.length ? 'queued' : 'unchanged';
+  });
 }
 
 function locator(job: Job, ref?: ProfileMasteryReference) {

@@ -37,5 +37,6 @@ export interface MasteryCard {
 
 export interface ClassroomMastery {
   courseObjective?: string;
+  canUpdate?: true;
   cards: MasteryCard[];
 }

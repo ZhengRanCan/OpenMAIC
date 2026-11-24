@@ -1106,6 +1106,13 @@
       "unavailable": "A evidência original mudou ou está indisponível."
     },
     "update": {
+      "manual": "Atualizar domínio",
+      "retry": "Tentar atualização novamente",
+      "submitting": "Solicitando atualização…",
+      "queued": "Atualização solicitada. O resultado aparecerá aqui.",
+      "unchanged": "Sem novos registros ou atualizações para repetir.",
+      "disabled": "Ative primeiro a atualização automática do domínio.",
+      "error": "Não foi possível solicitar a atualização. Tente novamente.",
       "pending": "Atualizando o nível de domínio",
       "failed": "A última atualização não foi concluída"
     },

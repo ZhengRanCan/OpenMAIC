@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GET, PUT } from '@/app/api/learner-profiles/[profileId]/memory/route';
 import {
   GET as GET_BASIS,
@@ -32,7 +32,10 @@ import {
   resolveProfileSceneScope,
   selectProfileActivityHistory,
 } from '@/lib/server/learner-profile-mastery-context';
-import { GET as GET_MASTERY } from '@/app/api/learner-mastery/[stageId]/route';
+import {
+  GET as GET_MASTERY,
+  POST as UPDATE_MASTERY,
+} from '@/app/api/learner-mastery/[stageId]/route';
 import { QuizFeedbackService } from '@/lib/server/quiz-feedback';
 import { QuizPracticeService } from '@/lib/server/quiz-practice';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
@@ -1463,5 +1466,146 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ cards: [{ target, status: 'empty' }] });
+  });
+
+  it('discovers this classroom’s evidence and retries a failed target without reprocessing finished jobs', async () => {
+    const classroom = await prepareClassroom('F104-manual', true, true);
+    const other = await prepareClassroom('F104-other', true);
+    const unbound = await prepareClassroom('F104-unbound', false);
+    const targets = [
+      { id: 'F104-first', revision: 1, statement: '识别正确选项。' },
+      { id: 'F104-second', revision: 1, statement: '区分选项表达。' },
+    ];
+    const [target, second] = targets;
+    for (const course of [classroom, other]) {
+      await app.pool.query(
+        `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+         SELECT run_id,$2,'{}'::jsonb,'completed',stage_id,$3 FROM classroom_learner_profiles
+          WHERE stage_id=$1`,
+        [course.stageId, owner, { targets }],
+      );
+    }
+    const { attemptId } = await submitQuiz(classroom);
+    const original = await readQuizAttempt(app, owner, attemptId);
+    await submitQuiz(other);
+    const url = (stageId: string) => `http://localhost/api/learner-mastery/${stageId}`;
+    const context = (stageId: string) => ({ params: Promise.resolve({ stageId }) });
+    const update = (
+      body: object,
+      stageId = classroom.stageId,
+      identity = cookie,
+      site = 'same-origin',
+    ) =>
+      UPDATE_MASTERY(
+        new NextRequest(url(stageId), {
+          method: 'POST',
+          headers: {
+            cookie: 'anonymous_id=' + identity,
+            'content-type': 'application/json',
+            'sec-fetch-site': site,
+          },
+          body: JSON.stringify(body),
+        }),
+        context(stageId),
+      );
+    const read = async () =>
+      (
+        await GET_MASTERY(
+          new NextRequest(url(classroom.stageId), {
+            headers: { cookie: 'anonymous_id=' + cookie },
+          }),
+          context(classroom.stageId),
+        )
+      ).json();
+    const jobs = async () =>
+      (
+        await app.pool.query(
+          'SELECT target_id,state,attempts FROM learner_profile_mastery_jobs WHERE stage_id=$1 ORDER BY target_id',
+          [classroom.stageId],
+        )
+      ).rows;
+    const savedFlag = process.env.OPENMAIC_AUTOMATIC_MASTERY;
+    try {
+      process.env.OPENMAIC_AUTOMATIC_MASTERY = 'false';
+      expect(await (await update({})).json()).toEqual({ status: 'disabled' });
+      expect(await read()).not.toHaveProperty('canUpdate');
+      expect(await jobs()).toEqual([]);
+      process.env.OPENMAIC_AUTOMATIC_MASTERY = 'true';
+      expect(await read()).toHaveProperty('canUpdate', true);
+      expect((await update({}, classroom.stageId, foreign)).status).toBe(404);
+      expect((await update({}, classroom.stageId, cookie, 'cross-site')).status).toBe(403);
+      expect((await update({}, unbound.stageId)).status).toBe(404);
+      expect((await update({ target: { id: target.id, revision: 2 } })).status).toBe(404);
+      expect(await jobs()).toEqual([]);
+      expect(await (await update({})).json()).toEqual({ status: 'queued' });
+      expect(await jobs()).toHaveLength(2);
+      expect(
+        (
+          await app.pool.query('SELECT id FROM learner_profile_mastery_jobs WHERE stage_id=$1', [
+            other.stageId,
+          ])
+        ).rows,
+      ).toHaveLength(0);
+      await app.pool.query(
+        "UPDATE learner_profile_mastery_jobs SET state='failed', attempts=3 WHERE stage_id=$1",
+        [classroom.stageId],
+      );
+      expect(await read()).toMatchObject({
+        cards: targets.map((item) => ({ target: item, update: 'failed' })),
+      });
+      const request = { target: { id: target.id, revision: target.revision } };
+      const responses = await Promise.all([update(request), update(request)]);
+      for (const response of responses) expect(await response.json()).toEqual({ status: 'queued' });
+      expect(await jobs()).toEqual([
+        { target_id: target.id, state: 'queued', attempts: 0 },
+        { target_id: second.id, state: 'failed', attempts: 3 },
+      ]);
+      const invoke = vi.fn<Parameters<typeof processProfileMastery>[1]>(
+        async (principal, _system, prompt) => {
+          expect(principal).toBe(owner);
+          const task = JSON.parse(prompt);
+          expect(task.target).toBe(target.statement);
+          const ref = task.evidence[0].evidenceRef;
+          return JSON.stringify({
+            assessments: [
+              {
+                evidenceRef: ref,
+                coverage: 'direct',
+                result: 'incorrect',
+                assistance: 'unknown',
+                observation: '选择结果与评阅一致。',
+              },
+            ],
+            candidateState: {
+              summary: '需再核对选项。',
+              unverified: ['独立判断仍待验证。'],
+              adoptedEvidenceRefs: [ref],
+            },
+          });
+        },
+      );
+      expect(await processProfileMastery(app, invoke)).toBe(true);
+      expect(invoke).toHaveBeenCalledOnce();
+      expect(await read()).toMatchObject({
+        cards: [
+          {
+            target,
+            status: 'ready',
+            observations: [{ source: { kind: 'quiz', questions: [{ submitted: 'B' }] } }],
+          },
+          { target: second, status: 'empty', update: 'failed' },
+        ],
+      });
+      expect(await (await update(request)).json()).toEqual({ status: 'unchanged' });
+      expect(await (await update({})).json()).toEqual({ status: 'queued' });
+      expect(await jobs()).toEqual([
+        { target_id: target.id, state: 'finished', attempts: 1 },
+        { target_id: second.id, state: 'queued', attempts: 0 },
+      ]);
+      expect((await readQuizAttempt(app, owner, attemptId)).review).toEqual(original.review);
+    } finally {
+      if (savedFlag === undefined) delete process.env.OPENMAIC_AUTOMATIC_MASTERY;
+      else process.env.OPENMAIC_AUTOMATIC_MASTERY = savedFlag;
+    }
   });
 });

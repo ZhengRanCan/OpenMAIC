@@ -1106,6 +1106,13 @@
       "unavailable": "La preuve originale a changé ou est indisponible."
     },
     "update": {
+      "manual": "Mettre à jour la maîtrise",
+      "retry": "Relancer la mise à jour",
+      "submitting": "Envoi de la demande…",
+      "queued": "Mise à jour demandée. Les résultats s’afficheront ici.",
+      "unchanged": "Aucune nouvelle trace ni mise à jour à relancer.",
+      "disabled": "Activez d’abord la mise à jour automatique de la maîtrise.",
+      "error": "La mise à jour n’a pas pu être demandée. Réessayez.",
       "pending": "Mise à jour du niveau de maîtrise",
       "failed": "La dernière mise à jour a échoué"
     },

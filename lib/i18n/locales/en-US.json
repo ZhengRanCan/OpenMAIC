@@ -1181,6 +1181,13 @@
       "unavailable": "The original evidence has changed or is unavailable."
     },
     "update": {
+      "manual": "Update mastery",
+      "retry": "Retry update",
+      "submitting": "Submitting update…",
+      "queued": "Update requested. Results will appear here.",
+      "unchanged": "No new records or failed updates to retry.",
+      "disabled": "Enable automatic mastery updates first.",
+      "error": "Could not request the update. Try again.",
       "pending": "Updating mastery",
       "failed": "The latest update did not finish"
     },

@@ -1106,6 +1106,13 @@
       "unavailable": "Der ursprüngliche Nachweis wurde geändert oder ist nicht verfügbar."
     },
     "update": {
+      "manual": "Lernstand aktualisieren",
+      "retry": "Aktualisierung wiederholen",
+      "submitting": "Aktualisierung wird angefordert…",
+      "queued": "Aktualisierung angefordert. Die Ergebnisse erscheinen hier.",
+      "unchanged": "Keine neuen Aufzeichnungen oder Aktualisierungen zum Wiederholen.",
+      "disabled": "Aktiviere zuerst die automatische Lernstandsaktualisierung.",
+      "error": "Die Aktualisierung konnte nicht angefordert werden. Versuche es erneut.",
       "pending": "Lernstand wird aktualisiert",
       "failed": "Die letzte Aktualisierung wurde nicht abgeschlossen"
     },

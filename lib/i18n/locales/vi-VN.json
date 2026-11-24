@@ -1106,6 +1106,13 @@
       "unavailable": "Bằng chứng gốc đã thay đổi hoặc không có sẵn."
     },
     "update": {
+      "manual": "Cập nhật mức độ thành thạo",
+      "retry": "Thử cập nhật lại",
+      "submitting": "Đang gửi yêu cầu…",
+      "queued": "Đã yêu cầu cập nhật. Kết quả sẽ hiển thị tại đây.",
+      "unchanged": "Không có dữ liệu mới hoặc bản cập nhật cần thử lại.",
+      "disabled": "Trước tiên, hãy bật tự động cập nhật mức độ thành thạo.",
+      "error": "Không thể gửi yêu cầu cập nhật. Hãy thử lại.",
       "pending": "Đang cập nhật mức độ nắm vững",
       "failed": "Lần cập nhật gần nhất chưa hoàn tất"
     },
