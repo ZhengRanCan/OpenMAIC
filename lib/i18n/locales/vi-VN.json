@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "Không xóa được thư mục",
     "moveFailed": "Không chuyển được bài học",
     "folderOrderTitle": "Sắp xếp lại bài học",
-    "folderOrderHint": "Di chuyển bài học lên hoặc xuống rồi lưu thứ tự.",
+    "folderOrderHint": "Kéo bài học bằng tay nắm hoặc dùng mũi tên lên xuống, rồi lưu thứ tự.",
     "folderOrderTooFew": "Thêm ít nhất hai bài học để thay đổi thứ tự.",
     "folderOrderUp": "Di chuyển {{name}} lên",
     "folderOrderDown": "Di chuyển {{name}} xuống",

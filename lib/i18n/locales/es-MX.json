@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "Error al eliminar la carpeta",
     "moveFailed": "Error al mover el curso",
     "folderOrderTitle": "Reordenar cursos",
-    "folderOrderHint": "Mueve los cursos hacia arriba o abajo y guarda el orden.",
+    "folderOrderHint": "Arrastra los cursos por sus asas o usa las flechas para subirlos o bajarlos. Luego guarda el orden.",
     "folderOrderTooFew": "Agrega al menos dos cursos para cambiar su orden.",
     "folderOrderUp": "Subir {{name}}",
     "folderOrderDown": "Bajar {{name}}",

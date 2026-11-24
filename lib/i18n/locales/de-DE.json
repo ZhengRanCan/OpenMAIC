@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "Ordner konnte nicht gelöscht werden",
     "moveFailed": "Kurs konnte nicht verschoben werden",
     "folderOrderTitle": "Kurse sortieren",
-    "folderOrderHint": "Verschiebe Kurse nach oben oder unten und speichere die Reihenfolge.",
+    "folderOrderHint": "Ziehe Kurse am Griff oder verschiebe sie mit den Pfeilen. Speichere anschließend die Reihenfolge.",
     "folderOrderTooFew": "Füge mindestens zwei Kurse hinzu, um ihre Reihenfolge zu ändern.",
     "folderOrderUp": "{{name}} nach oben verschieben",
     "folderOrderDown": "{{name}} nach unten verschieben",

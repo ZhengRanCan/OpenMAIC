@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "Falha ao excluir a pasta",
     "moveFailed": "Falha ao mover o curso",
     "folderOrderTitle": "Reordenar aulas",
-    "folderOrderHint": "Mova as aulas para cima ou para baixo e salve a ordem.",
+    "folderOrderHint": "Arraste as aulas pela alça ou use as setas para cima e para baixo. Depois, salve a ordem.",
     "folderOrderTooFew": "Adicione pelo menos duas aulas para alterar a ordem.",
     "folderOrderUp": "Mover {{name}} para cima",
     "folderOrderDown": "Mover {{name}} para baixo",

@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "フォルダの削除に失敗しました",
     "moveFailed": "コースの移動に失敗しました",
     "folderOrderTitle": "授業の順序を変更",
-    "folderOrderHint": "授業を上下に移動し、順序を保存してください。",
+    "folderOrderHint": "ハンドルをドラッグするか上下の矢印で授業を移動し、順序を保存してください。",
     "folderOrderTooFew": "順序を変更するには、授業を2つ以上追加してください。",
     "folderOrderUp": "{{name}}を上へ移動",
     "folderOrderDown": "{{name}}を下へ移動",

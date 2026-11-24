@@ -1247,7 +1247,7 @@
     "folderDeleteFailed": "删除文件夹失败",
     "moveFailed": "移动课程失败",
     "folderOrderTitle": "调整课序",
-    "folderOrderHint": "用上移、下移调整课堂顺序，然后保存。",
+    "folderOrderHint": "拖动左侧手柄或使用上下箭头调整课序，然后保存。",
     "folderOrderTooFew": "文件夹内至少有两堂课时可以调整顺序。",
     "folderOrderUp": "上移 {{name}}",
     "folderOrderDown": "下移 {{name}}",

@@ -1172,7 +1172,7 @@
     "folderWidth": "Largeur {{width}}/{{max}}",
     "moveFailed": "Échec du déplacement du cours",
     "folderOrderTitle": "Réorganiser les cours",
-    "folderOrderHint": "Déplacez les cours vers le haut ou le bas, puis enregistrez l’ordre.",
+    "folderOrderHint": "Faites glisser les cours par leur poignée ou utilisez les flèches, puis enregistrez l’ordre.",
     "folderOrderTooFew": "Ajoutez au moins deux cours pour modifier leur ordre.",
     "folderOrderUp": "Monter {{name}}",
     "folderOrderDown": "Descendre {{name}}",

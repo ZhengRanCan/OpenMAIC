@@ -1208,7 +1208,7 @@
     "folderDeleteFailed": "刪除資料夾失敗",
     "moveFailed": "移動課程失敗",
     "folderOrderTitle": "調整課序",
-    "folderOrderHint": "以上移、下移調整課堂順序，然後儲存。",
+    "folderOrderHint": "拖曳左側把手或使用上下箭頭調整課序，然後儲存。",
     "folderOrderTooFew": "資料夾內至少有兩堂課時可以調整順序。",
     "folderOrderUp": "上移 {{name}}",
     "folderOrderDown": "下移 {{name}}",

@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "فشل حذف المجلد",
     "moveFailed": "فشل نقل الدورة",
     "folderOrderTitle": "إعادة ترتيب الدروس",
-    "folderOrderHint": "انقل الدروس لأعلى أو لأسفل ثم احفظ الترتيب.",
+    "folderOrderHint": "اسحب الدروس من مقابضها أو استخدم سهمَي الأعلى والأسفل، ثم احفظ الترتيب.",
     "folderOrderTooFew": "أضف درسين على الأقل لتغيير ترتيبهما.",
     "folderOrderUp": "نقل {{name}} لأعلى",
     "folderOrderDown": "نقل {{name}} لأسفل",

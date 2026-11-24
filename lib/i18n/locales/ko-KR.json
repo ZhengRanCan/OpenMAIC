@@ -1172,7 +1172,7 @@
     "folderDeleteFailed": "폴더 삭제에 실패했습니다",
     "moveFailed": "강의 이동에 실패했습니다",
     "folderOrderTitle": "수업 순서 변경",
-    "folderOrderHint": "수업을 위아래로 이동한 뒤 순서를 저장하세요.",
+    "folderOrderHint": "손잡이를 드래그하거나 위아래 화살표로 수업을 이동한 뒤 순서를 저장하세요.",
     "folderOrderTooFew": "순서를 변경하려면 수업을 두 개 이상 추가하세요.",
     "folderOrderUp": "{{name}} 위로 이동",
     "folderOrderDown": "{{name}} 아래로 이동",

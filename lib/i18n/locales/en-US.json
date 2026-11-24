@@ -1247,7 +1247,7 @@
     "folderDeleteFailed": "Failed to delete folder",
     "moveFailed": "Failed to move course",
     "folderOrderTitle": "Reorder courses",
-    "folderOrderHint": "Move courses up or down, then save the order.",
+    "folderOrderHint": "Drag courses by their handles or use the up and down arrows, then save the order.",
     "folderOrderTooFew": "Add at least two courses to change their order.",
     "folderOrderUp": "Move {{name}} up",
     "folderOrderDown": "Move {{name}} down",
