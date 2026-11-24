@@ -136,21 +136,21 @@ describe('preview steps of a run', () => {
     expect(steps).not.toContain('learner-context');
   });
 
-  it('shows objectives before formal profile context without moving the progress backwards', () => {
+  it('shows formal profile context before objectives without moving the progress backwards', () => {
     const formal = previewStepIds({
       webSearch: false,
       autoAgents: false,
       formalLearnerContext: true,
     });
     expect(formal).toEqual([
-      'course-objectives',
       'learner-context',
+      'course-objectives',
       'outline',
       'slide-content',
       'actions',
     ]);
-    expect(previewStepIndex({ state: 'outlining', step: 'course-objectives' }, formal)).toBe(0);
-    expect(previewStepIndex({ state: 'preparing', step: 'learner-context' }, formal)).toBe(1);
+    expect(previewStepIndex({ state: 'preparing', step: 'learner-context' }, formal)).toBe(0);
+    expect(previewStepIndex({ state: 'outlining', step: 'course-objectives' }, formal)).toBe(1);
     expect(previewStepIndex({ state: 'outlining', step: 'outline' }, formal)).toBe(2);
   });
 });

@@ -30,7 +30,7 @@ export function previewStepIds(input: {
   return [
     ...(input.webSearch ? (['web-search'] as const) : []),
     ...(input.formalLearnerContext
-      ? (['course-objectives', 'learner-context'] as const)
+      ? (['learner-context', 'course-objectives'] as const)
       : input.learnerContext
         ? (['learner-context'] as const)
         : []),
@@ -65,8 +65,8 @@ export function previewStepIndex(
 ): number {
   const order: PreviewStepId[] = [
     'web-search',
-    'course-objectives',
     'learner-context',
+    'course-objectives',
     'outline',
     'agent-generation',
     'slide-content',

@@ -66,14 +66,11 @@ export function preparationSteps(
       ? [{ id: 'material-analysis', kind: 'material-analysis' } as const]
       : []),
     { id: 'research', kind: 'research' },
-    ...(input.simulatedLearner
+    ...(input.simulatedLearner || outlineLearnerProfileId(input)
       ? [{ id: 'learner-context', kind: 'learner-context' } as const]
       : []),
     ...(includeCourseObjectives
       ? [{ id: 'course-objectives', kind: 'course-objectives' } as const]
-      : []),
-    ...(outlineLearnerProfileId(input)
-      ? [{ id: 'learner-context', kind: 'learner-context' } as const]
       : []),
     { id: 'outline', kind: 'outline' },
   ];

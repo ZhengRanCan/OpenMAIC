@@ -734,6 +734,19 @@ export async function executeGenerationRun(
 
   // ── One step ──
   /** What a step commits; `null` for a scene skipped in parallel mode. */
+  const recheckProfileMemory = async (memory: ProfileOutlineMemory | undefined) => {
+    if (!outlineProfileId) return;
+    const validate = services.validateProfileOutlineMemory;
+    if (memory?.profileId !== outlineProfileId || !validate)
+      throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
+    await withDeadline(
+      'profile-outline-memory-recheck',
+      STEP_DEADLINES_MS.learnerContextRecheck,
+      signal,
+      () => validate(owner, memory),
+    );
+  };
+
   const runStep = async (step: RunStep): Promise<StepCommit | null> => {
     const stepId = step.id;
     const done = (value: unknown, extra: Partial<StepCommit> = {}): StepCommit => ({
@@ -827,7 +840,6 @@ export async function executeGenerationRun(
                   profileId: outlineProfileId,
                   task: input.requirement,
                   content,
-                  objectives: output<CourseObjectives>('course-objectives'),
                 },
                 { log, signal: callSignal, beforeSelect },
               ),
@@ -859,12 +871,19 @@ export async function executeGenerationRun(
       }
 
       case 'course-objectives': {
+        const profileMemory = outlineProfileId
+          ? output<ProfileOutlineMemory>('learner-context')
+          : undefined;
+        const selectedMemory = profileMemory
+          ? projectProfileOutlineMemory(profileMemory).selected
+          : undefined;
         const retry = retryOptions(stepId, 0, 500);
         let attempts = 0;
         let lastError: unknown;
         const objectives = await withRouteRetry(async () => {
           const fallbackAfter = attempts++ === retry.maxRetries ? lastError : undefined;
           try {
+            await recheckProfileMemory(profileMemory);
             return await withDeadline(
               stepId,
               STEP_DEADLINES_MS.courseObjectives,
@@ -876,6 +895,7 @@ export async function executeGenerationRun(
                     requirement: input.requirement,
                     pdfText: output<MaterialOutput>('material-analysis')?.pdfText,
                     ...materialImages(),
+                    ...(selectedMemory?.length ? { profileLearnerMemory: selectedMemory } : {}),
                   },
                   { log, signal: callSignal, fallbackAfter },
                 ),
@@ -885,6 +905,7 @@ export async function executeGenerationRun(
             throw error;
           }
         }, retry);
+        await recheckProfileMemory(profileMemory);
         return done(objectives);
       }
 
@@ -1031,19 +1052,7 @@ export async function executeGenerationRun(
     const profileMemory = outlineProfileId
       ? output<ProfileOutlineMemory>('learner-context')
       : undefined;
-    const validateProfile = services.validateProfileOutlineMemory;
-    const recheckProfile = async () => {
-      if (!outlineProfileId) return;
-      if (!profileMemory || profileMemory.profileId !== outlineProfileId || !validateProfile)
-        throw new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID');
-      await withDeadline(
-        'profile-outline-memory-recheck',
-        STEP_DEADLINES_MS.learnerContextRecheck,
-        signal,
-        () => validateProfile(owner, profileMemory),
-      );
-    };
-    await recheckProfile();
+    await recheckProfileMemory(profileMemory);
     const previewMemory = profileMemory ? projectProfileOutlineMemory(profileMemory) : undefined;
     const student = input.simulatedLearner;
     const readSimulatedMastery = services.learnerMastery;
@@ -1159,7 +1168,7 @@ export async function executeGenerationRun(
       await appending;
     }
     if (appendFailure) throw appendFailure;
-    await recheckProfile();
+    await recheckProfileMemory(profileMemory);
     if (mastery.length && readMastery) {
       const current = await withDeadline(
         'mastery-recheck',

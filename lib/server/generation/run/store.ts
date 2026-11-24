@@ -1622,20 +1622,26 @@ export async function retryGenerationRun(
           'learner-context:calling',
         ]);
       }
-      // A known-invalid dependency needs a fresh selection, rather than endlessly
-      // retrying the same frozen input. Ordinary outline retries keep it.
-      if (
+      // When the Memory dependency is invalid, discard downstream objectives
+      // derived from it. Generation errors alone can reuse the frozen input.
+      const invalidProfileMemory =
+        (run.step === 'course-objectives' || run.step === 'outline') &&
+        !!outlineLearnerProfileId(run.input) &&
+        run.error?.errorCode === 'LEARNER_CONTEXT_INVALID';
+      const invalidSimulatedMemory =
         run.step === 'outline' &&
-        ((run.input.simulatedLearner &&
-          ['LEARNER_MEMORY_SOURCE_INVALID', 'LEARNER_MEMORY_RECHECK_REQUIRED'].includes(
-            run.error?.errorCode ?? '',
-          )) ||
-          (outlineLearnerProfileId(run.input) &&
-            run.error?.errorCode === 'LEARNER_CONTEXT_INVALID'))
-      ) {
+        run.input.simulatedLearner &&
+        ['LEARNER_MEMORY_SOURCE_INVALID', 'LEARNER_MEMORY_RECHECK_REQUIRED'].includes(
+          run.error?.errorCode ?? '',
+        );
+      if (invalidProfileMemory || invalidSimulatedMemory) {
         await tx.query('DELETE FROM generation_run_steps WHERE run_id=$1 AND step_id=ANY($2)', [
           runId,
-          ['learner-context', 'learner-context:calling'],
+          [
+            'learner-context',
+            'learner-context:calling',
+            ...(invalidProfileMemory ? ['course-objectives'] : []),
+          ],
         ]);
       }
       // A run paused before it chose a step resumes where it was executing.
@@ -1689,6 +1695,9 @@ export async function retryGenerationRun(
       );
       const seq = await insertEvents(tx, runId, [
         { type: 'state', data: { state, step: run.step } },
+        ...(run.step === 'outline' && (invalidProfileMemory || invalidSimulatedMemory)
+          ? [{ type: 'outline_reset' as const, data: {} }]
+          : []),
       ]);
       return { state: updated.state, seq };
     },

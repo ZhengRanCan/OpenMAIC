@@ -850,7 +850,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         async (who, input, ctx) => {
           expect(who).toBe(owner);
           expect(input.content).toMatchObject({ researchContext: 'research context' });
-          expect(input.objectives).toEqual(objectives);
+          expect(input).not.toHaveProperty('objectives');
           await ctx.beforeSelect();
           return { profileId: input.profileId, selected: [{ key: 'server-item', ...selected }] };
         },
@@ -898,12 +898,17 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const id = (await started.json()).run.id as string;
       validateProfileOutlineMemory
         .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new PreclassLearnerContextError('LEARNER_CONTEXT_INVALID'));
       expect(await drive(id, services)).toBe('paused');
       expect((await readGenerationRun(id, owner))?.error?.errorCode).toBe(
         'LEARNER_CONTEXT_INVALID',
       );
+      expect((await readGenerationRun(id, owner))?.error?.step).toBe('outline');
+      expect((await readGenerationRunSteps(id)).get('course-objectives')).toEqual(objectives);
       await retryGenerationRun(id, owner, { commandId: 'f94-reselect-stale' });
+      expect((await readGenerationRunSteps(id)).has('course-objectives')).toBe(false);
       expect(await drive(id, services)).toBe('waiting');
       expect(profileOutlineMemory).toHaveBeenCalledTimes(2);
       expect(calls.outline.at(-1)).toMatchObject({
@@ -954,11 +959,20 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         ],
       });
       expect(profileOutlineMemory).toHaveBeenCalledTimes(3);
-      expect(validateProfileOutlineMemory).toHaveBeenCalledTimes(6);
-      expect(courseObjectives).toHaveBeenCalledTimes(5);
-      for (const [, input] of courseObjectives.mock.calls) {
-        expect(input).toEqual({ requirement: 'Teach photosynthesis', pdfText: undefined });
-      }
+      expect(validateProfileOutlineMemory).toHaveBeenCalledTimes(12);
+      const plain = { requirement: 'Teach photosynthesis', pdfText: undefined };
+      const enhanced = { ...plain, profileLearnerMemory: [selected] };
+      expect(courseObjectives.mock.calls.map(([, input]) => input)).toEqual([
+        plain,
+        enhanced,
+        enhanced,
+        plain,
+        plain,
+        enhanced,
+      ]);
+      expect(profileOutlineMemory.mock.invocationCallOrder[0]).toBeLessThan(
+        courseObjectives.mock.invocationCallOrder[1],
+      );
     },
     SLOW_TEST_MS,
   );
