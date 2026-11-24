@@ -178,6 +178,12 @@ describe('outline step', () => {
           source: 'discussion' as const,
           conditions: [{ help: 'prior-teacher-messages' as const }],
         },
+        {
+          text: '在帮助条件未知的换算题中选对了结果。',
+          section: 'experiences' as const,
+          source: 'quiz' as const,
+          conditions: [{ help: 'unknown' as const, review: 'correct' as const }],
+        },
       ];
       const profileLearnerMastery = [
         {
@@ -215,7 +221,18 @@ describe('outline step', () => {
       expect(personalized.prompt).toContain(
         'The current classroom request and materials take priority',
       );
-      expect(personalized.prompt).toContain(JSON.stringify(profileLearnerMemory));
+      expect(personalized.prompt).toContain(
+        JSON.stringify([
+          profileLearnerMemory[0],
+          {
+            ...profileLearnerMemory[1],
+            text: '在换算题中选对了结果。',
+            conditions: [{ review: 'correct' }],
+          },
+        ]),
+      );
+      expect(personalized.prompt).not.toContain('"help":"unknown"');
+      expect(personalized.prompt).not.toContain('帮助条件未知');
       expect(personalized.prompt).toContain('## Learner Mastery');
       expect(personalized.prompt).toContain(JSON.stringify(profileLearnerMastery));
       expect(control.prompt).not.toContain('## Learner Mastery');

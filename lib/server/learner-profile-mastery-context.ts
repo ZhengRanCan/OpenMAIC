@@ -5,6 +5,7 @@ import { assertLearnerProfileIn, LearnerProfileError } from '@/lib/persistence/l
 import type { Action } from '@/lib/types/action';
 import { generationRunPersistence } from './generation/run/store';
 import { readProfileMemoryCandidates } from './generation/run/interactive-profile-memory';
+import { profileOutlineRecordForUse } from '@/lib/learner-context/profile-outline-memory';
 import { readProfilePlannerMastery } from './learner-profile-mastery';
 import { invokeMemorySelectionModel } from './learner-memory-selection-model';
 
@@ -82,12 +83,22 @@ async function candidates(owner: string, profileId: string) {
     readProfilePlannerMastery(owner, profileId),
   ]);
   return [
-    ...memory.map(({ key, ...value }, index) => ({
-      id: `M${index + 1}`,
-      kind: 'memory' as const,
-      value,
-      fingerprint: JSON.stringify({ kind: 'memory', key, checksum: digest({ key, ...value }) }),
-    })),
+    ...memory.flatMap(({ key, ...record }, index) => {
+      const value = profileOutlineRecordForUse(record);
+      if (!value.text) return [];
+      return [
+        {
+          id: `M${index + 1}`,
+          kind: 'memory' as const,
+          value,
+          fingerprint: JSON.stringify({
+            kind: 'memory',
+            key,
+            checksum: digest({ key, ...record }),
+          }),
+        },
+      ];
+    }),
     ...mastery.map((item, index) => {
       const { target, sourceVersion: _version, sourceStageId, ...data } = item;
       return {

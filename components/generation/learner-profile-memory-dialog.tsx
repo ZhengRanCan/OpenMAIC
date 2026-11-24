@@ -370,7 +370,9 @@ function MemoryItem({
                     {part.answer}
                   </p>
                   {part.review && <p>{t(`profileMemory.review.${part.review}`)}</p>}
-                  <p className="text-muted-foreground">{t(`profileMemory.help.${part.help}`)}</p>
+                  {part.help !== 'unknown' && (
+                    <p className="text-muted-foreground">{t(`profileMemory.help.${part.help}`)}</p>
+                  )}
                 </div>
               ))}
             </>

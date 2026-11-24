@@ -1,4 +1,5 @@
 import type { LearnerProfileSelection } from './learner-profile-contracts';
+import { omitUnknownHelpFromExperience } from '@/lib/learner-memory/profile-memory-content';
 import type {
   ProfileMemoryKind,
   ProfileMemorySection,
@@ -19,7 +20,7 @@ export type OutlineMemoryRecord = {
   text: string;
   section: ProfileMemorySection;
   source: 'user' | ProfileMemoryKind;
-  conditions: Pick<SourcePart, 'help' | 'review'>[];
+  conditions: Partial<Pick<SourcePart, 'help' | 'review'>>[];
 };
 export type ProfileOutlineCandidate = OutlineMemoryRecord & { key: string };
 export type ProfileOutlineMemory = {
@@ -30,15 +31,30 @@ export type ProfileOutlineMemoryPreview = {
   selected: OutlineMemoryRecord[];
 };
 
+export function profileOutlineRecordForUse({
+  text,
+  section,
+  source,
+  conditions,
+}: OutlineMemoryRecord): OutlineMemoryRecord {
+  return {
+    text:
+      source !== 'user' && section === 'experiences' ? omitUnknownHelpFromExperience(text) : text,
+    section,
+    source,
+    conditions: conditions
+      .map(({ help, review }) => ({
+        ...(help && help !== 'unknown' ? { help } : {}),
+        ...(review ? { review } : {}),
+      }))
+      .filter(({ help, review }) => help || review),
+  };
+}
+
 export function projectProfileOutlineMemory(
   memory: ProfileOutlineMemory,
 ): ProfileOutlineMemoryPreview {
   return {
-    selected: memory.selected.map(({ text, section, source, conditions }) => ({
-      text,
-      section,
-      source,
-      conditions,
-    })),
+    selected: memory.selected.map(profileOutlineRecordForUse).filter(({ text }) => text),
   };
 }

@@ -5,6 +5,7 @@ import type {
   ProfileMemorySource,
   ProfileMemoryView,
 } from '@/lib/learner-memory/profile-memory-contracts';
+import { omitUnknownHelpFromExperience } from '@/lib/learner-memory/profile-memory-content';
 import {
   readProfileMemorySource,
   readProfileSourceAccess,
@@ -63,7 +64,11 @@ async function readIn(
       goals: profile.goals,
       preferences: profile.preferences,
     },
-    items,
+    items: items.flatMap((item) => {
+      if (item.section !== 'experiences') return [item];
+      const summary = omitUnknownHelpFromExperience(item.summary);
+      return summary ? [{ ...item, summary }] : [];
+    }),
     maintenance,
   };
 }

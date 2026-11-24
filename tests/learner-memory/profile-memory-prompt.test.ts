@@ -44,4 +44,35 @@ describe('formal Memory evidence boundary', () => {
       'PROFILE_MEMORY_INVALID_SECTION',
     );
   });
+
+  it('omits unknown help when sending and saving experiences while retaining real evidence', () => {
+    const quiz: ProfileMemorySource = {
+      ...qa,
+      kind: 'quiz',
+      parts: [
+        { question: '密度是多少？', answer: 'C', review: 'correct', help: 'unknown' },
+        { question: '如何换算？', answer: 'B', review: 'incorrect', help: 'practice-requested' },
+      ],
+    };
+    expect(JSON.parse(profileMemoryInput(quiz))).toEqual({
+      kind: 'quiz',
+      parts: [{ question: '密度是多少？', answer: 'C', review: 'correct' }, quiz.parts[1]],
+    });
+    expect(
+      parseProfileMemoryResult(
+        envelope('experiences', '在帮助条件未知的密度计算题中选 C。记录未确认是否获得帮助。'),
+        quiz,
+      ),
+    ).toEqual([{ section: 'experiences', summary: '在密度计算题中选 C。', refs: [0] }]);
+    expect(parseProfileMemoryResult(envelope('experiences', '帮助情况未知。'), quiz)).toEqual([]);
+    const reported = '老师先提供密度公式，学生计算正确。';
+    expect(parseProfileMemoryResult(envelope('experiences', reported), quiz)[0].summary).toBe(
+      reported,
+    );
+    const quote = '以后遇到帮助情况未知的测试，请先听我说明。';
+    const student = { ...qa, parts: [{ ...qa.parts[0], answer: quote }] };
+    expect(parseProfileMemoryResult(envelope('preferences', quote), student)[0].summary).toBe(
+      quote,
+    );
+  });
 });

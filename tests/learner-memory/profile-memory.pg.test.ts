@@ -8,6 +8,7 @@ import {
   PATCH,
 } from '@/app/api/learner-profiles/[profileId]/memory/[itemId]/route';
 import { bindLearnerProfileIn } from '@/lib/persistence/learner-profiles';
+import { digest } from '@/lib/learner-memory/contracts';
 import { readProfileMemorySource } from '@/lib/persistence/learner-profile-memory-source';
 import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { readQuizAttempt } from '@/lib/persistence/quiz-trace-read';
@@ -523,7 +524,9 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       [deep.stageId],
     );
 
-    const summary = '这次在选择题作答 B，正常评阅为错误，帮助情况未确认。';
+    const summary = '这次在选择题作答 B，正常评阅为错误。';
+    const legacySummary =
+      '这次在帮助条件未知的选择题作答 B，正常评阅为错误。记录未确认是否获得帮助。';
     const invoke: Parameters<typeof processProfileMemory>[1] = async (
       sourceOwner,
       _system,
@@ -531,13 +534,20 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     ) => {
       expect(sourceOwner).toBe(owner);
       expect(input).not.toContain(edited.preferences);
-      expect(JSON.parse(input)).toMatchObject({
+      expect(JSON.parse(input)).toEqual({
         kind: 'quiz',
         parts: [
-          { question: 'Synthetic question V1', answer: 'B', review: 'incorrect', help: 'unknown' },
+          {
+            question: 'Synthetic question V1',
+            options: ['A. Yes', 'B. No'],
+            answer: 'B',
+            review: 'incorrect',
+          },
         ],
       });
-      return JSON.stringify({ records: [{ section: 'experiences', summary, refs: [0] }] });
+      return JSON.stringify({
+        records: [{ section: 'experiences', summary: legacySummary, refs: [0] }],
+      });
     };
     expect(await processProfileMemory(app, invoke)).toBe(true);
     const saved = await readProfileMemory(owner, profileId);
@@ -552,6 +562,66 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       maintenance: { pending: false, failed: false },
     });
     const itemId = saved.items[0].id;
+    const legacyRecord = {
+      key: itemId,
+      section: 'experiences' as const,
+      source: 'quiz' as const,
+      text: legacySummary,
+      conditions: [{ help: 'unknown' as const, review: 'incorrect' as const }],
+    };
+    const lookup = () =>
+      app.pool.query<{ summary: string }>(
+        'SELECT summary FROM learner_profile_memory_items WHERE id=$1',
+        [itemId],
+      );
+    expect((await lookup()).rows[0].summary).toBe(summary);
+    await app.pool.query('UPDATE learner_profile_memory_items SET summary=$2 WHERE id=$1', [
+      itemId,
+      legacySummary,
+    ]);
+    expect((await readProfileMemory(owner, profileId)).items).toEqual(saved.items);
+    expect((await lookup()).rows[0].summary).toBe(legacySummary);
+    const selected = await buildInteractiveProfileMemory(
+      owner,
+      { profileId, task: '复习密度', content: {} },
+      async ({ user }) => {
+        expect(user).not.toContain('帮助条件未知');
+        expect(user).not.toContain('"help":"unknown"');
+        const quiz = JSON.parse(user).memory.find(
+          (item: { source: string }) => item.source === 'quiz',
+        );
+        expect(quiz).toMatchObject({ text: summary, conditions: [{ review: 'incorrect' }] });
+        return JSON.stringify({ selected: [quiz.id] });
+      },
+    );
+    expect(selected.selected).toEqual([
+      { ...legacyRecord, text: summary, conditions: [{ review: 'incorrect' }] },
+    ]);
+    await assertInteractiveProfileMemoryCurrent(owner, { profileId, selected: [legacyRecord] });
+    await assertInteractiveProfileMemoryCurrent(owner, selected);
+    const history = await selectProfileActivityHistory(
+      {
+        owner,
+        profileId,
+        system: '选取密度学习经历。',
+        task: '复习密度',
+        resolvedModel: { serverManaged: true } as ResolvedModel,
+        beforeSelect: async () => {},
+        usageLabel: 'f107-memory-fixture',
+      },
+      async ({ prompt }) => {
+        expect(prompt.user).not.toContain('"help":"unknown"');
+        const quiz = JSON.parse(prompt.user).candidates.find(
+          (item: { value: { source: string } }) => item.value.source === 'quiz',
+        );
+        return JSON.stringify({ selected: [quiz.id] });
+      },
+    );
+    expect(history?.text).toContain(summary);
+    expect(history?.text).not.toContain('记录未确认是否获得帮助');
+    expect(history?.fingerprints).toEqual([
+      JSON.stringify({ kind: 'memory', key: itemId, checksum: digest(legacyRecord) }),
+    ]);
     const basis = (identity = cookie) =>
       GET_BASIS(
         new NextRequest(`http://localhost/api/learner-profiles/${profileId}/memory/${itemId}`, {
