@@ -31,6 +31,24 @@ export async function listLearnerProfilesIn(tx: Queryable, ownerId: string) {
   return rows;
 }
 
+export async function readLastClassroomProfileIdIn(tx: Queryable, ownerId: string) {
+  const { rows } = await tx.query<{ profile_id: string | null }>(
+    `${OWNERS} SELECT b.profile_id
+       FROM generation_runs r
+       JOIN stage_meta s ON s.stage_id=r.stage_id AND s.owner_id=$1
+       LEFT JOIN classroom_learner_profiles b ON b.stage_id=s.stage_id AND b.run_id=r.id
+       LEFT JOIN LATERAL (
+         SELECT e.ts FROM generation_run_events e
+         WHERE e.run_id=r.id AND e.type='completed' ORDER BY e.seq DESC LIMIT 1
+       ) completion ON true
+       WHERE r.owner_id IN (SELECT id FROM owners) AND r.state='completed' AND s.deleted_at IS NULL
+       ORDER BY COALESCE(completion.ts, EXTRACT(EPOCH FROM r.created_at) * 1000) DESC,
+         r.created_at DESC, r.id DESC LIMIT 1`,
+    [ownerId],
+  );
+  return rows[0]?.profile_id ?? null;
+}
+
 async function ownedProfileIn(tx: Queryable, ownerId: string, profileId: string) {
   const { rows } = await tx.query<LearnerProfileSummary & { creation_run_id: string }>(
     `${OWNERS} SELECT id,name,creation_run_id FROM learner_profiles

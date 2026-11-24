@@ -27,6 +27,11 @@ export type LearnerProfileSummary = {
   name: string | null;
 };
 
+export interface LearnerProfileOptions {
+  profiles: LearnerProfileSummary[];
+  lastProfileId: string | null;
+}
+
 export interface ClassroomLearnerProfile {
   profile: LearnerProfileSummary;
   promptName: boolean;

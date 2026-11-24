@@ -109,7 +109,10 @@ import {
 } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
-import { LearnerProfilePicker } from '@/components/generation/learner-profile-picker';
+import {
+  LearnerProfilePicker,
+  useLearnerProfileOptions,
+} from '@/components/generation/learner-profile-picker';
 import { LearnerProfileMemoryDialog } from '@/components/generation/learner-profile-memory-dialog';
 import type {
   LearnerProfileChoice,
@@ -140,14 +143,13 @@ interface FormState {
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
-  learnerChoice: LearnerProfileChoice;
+  learnerChoice?: LearnerProfileChoice;
 }
 
 const initialFormState: FormState = {
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
-  learnerChoice: { mode: 'none' },
 };
 
 function HomePage() {
@@ -198,6 +200,19 @@ function HomePage() {
     if (workbenchEntryEnabled) router.prefetch('/workspace');
   }, [router, workbenchEntryEnabled]);
   const [form, setForm] = useState<FormState>(initialFormState);
+  const {
+    options: learnerProfileOptions,
+    failed: learnerProfilesFailed,
+    reload: reloadLearnerProfiles,
+  } = useLearnerProfileOptions();
+  const lastProfile = learnerProfileOptions?.profiles.find(
+    ({ id }) => id === learnerProfileOptions.lastProfileId,
+  );
+  const learnerChoice: LearnerProfileChoice | undefined =
+    form.learnerChoice ??
+    (lastProfile
+      ? { mode: 'existing', profileId: lastProfile.id, name: lastProfile.name }
+      : learnerProfileOptions && { mode: 'none' });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
     import('@/lib/types/settings').SettingsSection | undefined
@@ -299,7 +314,10 @@ function HomePage() {
   // Courses being generated on the server: a card from the moment the run
   // starts, live through the owner's run stream.
   const { runs, forget: forgetRun } = useOwnerRuns({
-    onCourseChanged: () => void loadClassrooms(),
+    onCourseChanged: () => {
+      void loadClassrooms();
+      reloadLearnerProfiles();
+    },
   });
 
   const loadFolders = async () => {
@@ -384,6 +402,7 @@ function HomePage() {
         return;
       }
       await deleteStageData(id);
+      reloadLearnerProfiles();
       await loadClassrooms();
     } catch (err) {
       log.error('Failed to delete classroom:', err);
@@ -591,7 +610,7 @@ function HomePage() {
     // (requires a usable provider), and under the #580 invariant a usable
     // provider always has a concrete model. State A (no usable provider)
     // surfaces through the toolbar's single Configure-Provider affordance.
-    if (preparingGenerate) return;
+    if (preparingGenerate || (!form.vocationalTestMode && !learnerChoice)) return;
     if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
@@ -615,8 +634,8 @@ function HomePage() {
         throw new Error(t('toolbar.materialUnavailable'));
       }
       let learnerProfileSelection: LearnerProfileSelection | undefined;
-      if (!form.vocationalTestMode) {
-        const choice = form.learnerChoice;
+      if (!form.vocationalTestMode && learnerChoice) {
+        const choice = learnerChoice;
         if (choice.mode === 'blank') {
           const key = JSON.stringify([form.requirement.trim(), materialIds, form.interactiveMode]);
           if (blankProfileRequest.current?.key !== key) {
@@ -638,6 +657,7 @@ function HomePage() {
         learnerProfileSelection,
         capabilities,
       });
+      setForm((current) => ({ ...current, learnerChoice: undefined }));
       router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
     } catch (err) {
       log.error('Error starting generation:', err);
@@ -649,10 +669,10 @@ function HomePage() {
       if (err instanceof RunStartRefusedError) {
         setError(t(err.reason, err.values));
       } else if (err instanceof RunApiError) {
-        if (form.learnerChoice.mode === 'blank' && err.status === 409)
+        if (learnerChoice?.mode === 'blank' && err.status === 409)
           blankProfileRequest.current = null;
         setError(
-          form.learnerChoice.mode === 'existing' && err.status === 404
+          learnerChoice?.mode === 'existing' && err.status === 404
             ? t('learnerProfiles.unavailable')
             : runApiErrorText(err, t),
         );
@@ -679,7 +699,11 @@ function HomePage() {
   };
 
   // Generate waits for every attached material to be uploaded and extracted.
-  const canGenerate = !!form.requirement.trim() && hasUsableProvider && courseMaterials.allReady;
+  const canGenerate =
+    !!form.requirement.trim() &&
+    hasUsableProvider &&
+    courseMaterials.allReady &&
+    (form.vocationalTestMode || !!learnerChoice);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -855,14 +879,18 @@ function HomePage() {
             {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex items-start justify-between">
               <GreetingBar
-                choice={form.learnerChoice}
+                choice={learnerChoice}
+                profiles={learnerProfileOptions?.profiles}
+                profileReadFailed={learnerProfilesFailed}
+                reloadProfiles={reloadLearnerProfiles}
                 onChoose={(choice) => {
                   if (choice.mode !== 'blank') blankProfileRequest.current = null;
                   updateForm('learnerChoice', choice);
                 }}
                 onProfileRename={(profile) => {
+                  reloadLearnerProfiles();
                   setForm((current) =>
-                    current.learnerChoice.mode === 'existing' &&
+                    current.learnerChoice?.mode === 'existing' &&
                     current.learnerChoice.profileId === profile.id
                       ? {
                           ...current,
@@ -1436,12 +1464,18 @@ function isCustomAvatar(src: string) {
 
 function GreetingBar({
   choice,
+  profiles,
+  profileReadFailed,
+  reloadProfiles,
   onChoose,
   onProfileRename,
   supported,
   disabled,
 }: {
-  choice: LearnerProfileChoice;
+  choice: LearnerProfileChoice | undefined;
+  profiles: LearnerProfileSummary[] | undefined;
+  profileReadFailed: boolean;
+  reloadProfiles: () => void;
   onChoose: (choice: LearnerProfileChoice) => void;
   onProfileRename: (profile: LearnerProfileSummary) => void;
   supported: boolean;
@@ -1460,7 +1494,6 @@ function GreetingBar({
   const [nameDraft, setNameDraft] = useState('');
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [profileMemory, setProfileMemory] = useState<LearnerProfileSummary>();
-  const [profileListRevision, setProfileListRevision] = useState(0);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1582,9 +1615,15 @@ function GreetingBar({
                     {t('home.greetingWithName', { name: displayName })}
                     {supported && (
                       <span className="max-w-40 truncate text-[11px] font-normal text-muted-foreground">
-                        {choice.mode === 'existing'
+                        {choice?.mode === 'existing'
                           ? (choice.name ?? t('learnerProfiles.unnamed'))
-                          : t(`learnerProfiles.${choice.mode}`)}
+                          : choice
+                            ? t(`learnerProfiles.${choice.mode}`)
+                            : t(
+                                profileReadFailed
+                                  ? 'learnerProfiles.unavailable'
+                                  : 'common.loading',
+                              )}
                       </span>
                     )}
                   </span>
@@ -1703,7 +1742,9 @@ function GreetingBar({
                 <LearnerProfilePicker
                   value={choice}
                   onChange={onChoose}
-                  revision={profileListRevision}
+                  profiles={profiles}
+                  failed={profileReadFailed}
+                  onRetry={reloadProfiles}
                   onView={(profile, button) => {
                     memoryTriggerRef.current = button;
                     setProfileMemory(profile);
@@ -1777,7 +1818,6 @@ function GreetingBar({
           onName={(profile) => {
             setProfileMemory(profile);
             onProfileRename(profile);
-            setProfileListRevision((n) => n + 1);
           }}
           returnFocus={() => memoryTriggerRef.current?.focus()}
         />

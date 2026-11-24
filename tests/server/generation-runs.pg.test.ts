@@ -383,12 +383,12 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
           maxActiveRunsPerOwner: 1,
           maxWaitingRunsPerOwner: 1,
         });
-      const profiles = async (cookieId: string) => {
+      const profileOptions = async (cookieId: string) => {
         const response = await list(
           new NextRequest('http://localhost/api/learner-profiles', { headers: cookie(cookieId) }),
         );
         expect(response.headers.get('cache-control')).toBe('private, no-store');
-        return (await response.json()).profiles;
+        return response.json();
       };
       const read = (stageId: string, cookieId = anonymousCookie) =>
         binding(
@@ -428,7 +428,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const stageId = (await readGenerationRun(first.id, anonymous))!.stageId!;
       expect(stageId).toBeTruthy();
       expect((await read(stageId)).status).toBe(404);
-      expect(await profiles(anonymousCookie)).toEqual([]);
+      expect(await profileOptions(anonymousCookie)).toEqual({ profiles: [], lastProfileId: null });
       fail = false;
       await retryGenerationRun(first.id, anonymous, { commandId: 'f92-retry' });
       expect(await drive(first.id, services)).toBe('completed');
@@ -437,6 +437,10 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const firstBinding = await (await read(stageId)).json();
       const profileId = firstBinding.profile.id as string;
       expect(firstBinding).toEqual({ profile: { id: profileId, name: null }, promptName: true });
+      expect(await profileOptions(anonymousCookie)).toEqual({
+        profiles: [{ id: profileId, name: null }],
+        lastProfileId: profileId,
+      });
       const setName = (name: string, cookieId = anonymousCookie, site = 'same-origin') =>
         nameProfile(
           new NextRequest(`http://localhost/api/learner-profiles/${profileId}`, {
@@ -456,8 +460,11 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(await (await setName(' 物理 ')).json()).toEqual({ id: profileId, name: '物理' });
       expect((await setName('物理')).status).toBe(200);
       expect((await setName('其它学科')).status).toBe(409);
-      expect(await profiles(anonymousCookie)).toEqual([{ id: profileId, name: '物理' }]);
-      expect(await profiles(OTHER_COOKIE)).toEqual([]);
+      expect(await profileOptions(anonymousCookie)).toEqual({
+        profiles: [{ id: profileId, name: '物理' }],
+        lastProfileId: profileId,
+      });
+      expect(await profileOptions(OTHER_COOKIE)).toEqual({ profiles: [], lastProfileId: null });
       const existing = runInput({
         outlineReview: 'auto',
         learnerProfileSelection: { mode: 'existing', profileId },
@@ -490,7 +497,14 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(await drive(second.id, base.services)).toBe('completed');
       expect(await getCount()).toBe(2);
       const secondStage = (await readGenerationRun(second.id, anonymous))!.stageId!;
-      expect((await (await read(secondStage)).json()).profile.id).not.toBe(profileId);
+      const secondProfileId = (await (await read(secondStage)).json()).profile.id;
+      expect(secondProfileId).not.toBe(profileId);
+      expect((await profileOptions(anonymousCookie)).lastProfileId).toBe(secondProfileId);
+      await pool.query(
+        "UPDATE generation_runs SET updated_at=now()+interval '1 hour' WHERE id=$1",
+        [first.id],
+      );
+      expect((await profileOptions(anonymousCookie)).lastProfileId).toBe(secondProfileId);
       const reuse = await start(existing, anonymous);
       expect(await drive(reuse.id, base.services)).toBe('completed');
       const reuseStage = (await readGenerationRun(reuse.id, anonymous))!.stageId!;
@@ -498,6 +512,15 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         profile: { id: profileId, name: '物理' },
         promptName: false,
       });
+      expect((await profileOptions(anonymousCookie)).lastProfileId).toBe(profileId);
+      const unfinished = await start(
+        runInput({ outlineReview: 'auto', learnerProfileSelection: { mode: 'none' } }),
+        anonymous,
+      );
+      fail = true;
+      expect(await drive(unfinished.id, services)).toBe('paused');
+      expect((await profileOptions(anonymousCookie)).lastProfileId).toBe(profileId);
+      const unboundStages: string[] = [];
       for (const selection of [undefined, { mode: 'none' } as const]) {
         const unbound = await start(
           runInput({ outlineReview: 'auto', learnerProfileSelection: selection }),
@@ -508,7 +531,13 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         expect(saved?.input.learnerProfileSelection).toEqual(selection);
         expect(await documentStore(anonymous).loadDocument(saved!.stageId!)).not.toBeNull();
         expect((await read(saved!.stageId!)).status).toBe(404);
+        expect((await profileOptions(anonymousCookie)).lastProfileId).toBeNull();
+        unboundStages.push(saved!.stageId!);
       }
+      await pool.query('UPDATE stage_meta SET deleted_at=now() WHERE stage_id=ANY($1)', [
+        unboundStages,
+      ]);
+      expect((await profileOptions(anonymousCookie)).lastProfileId).toBe(profileId);
       expect(await getCount()).toBe(2);
       expect((await (await read(stageId)).json()).profile.id).toBe(profileId);
 
@@ -517,9 +546,11 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         account,
       ]);
       await pool.query('UPDATE stage_meta SET owner_id=$2 WHERE owner_id=$1', [anonymous, account]);
-      const { listLearnerProfiles, readClassroomLearnerProfile } =
+      const { listLearnerProfiles, readClassroomLearnerProfile, readLearnerProfileOptions } =
         await import('@/lib/server/learner-profiles');
       expect(await listLearnerProfiles(anonymous)).toEqual([]);
+      expect((await readLearnerProfileOptions(anonymous)).lastProfileId).toBeNull();
+      expect((await readLearnerProfileOptions(account)).lastProfileId).toBe(profileId);
       expect(await listLearnerProfiles(account)).toContainEqual({ id: profileId, name: '物理' });
       expect(await readClassroomLearnerProfile(account, stageId)).toEqual({
         profile: { id: profileId, name: '物理' },
