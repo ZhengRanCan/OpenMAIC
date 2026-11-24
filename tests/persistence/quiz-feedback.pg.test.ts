@@ -1,9 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as llm from '@/lib/ai/llm';
 import { QuizFeedbackService } from '@/lib/server/quiz-feedback';
 import type { QuizEvaluation } from '@/lib/quiz/trace-types';
 import { readQuizAttempt } from '@/lib/persistence/quiz-trace-read';
 import { deleteQuizTraceIn } from '@/lib/persistence/quiz-trace-lifecycle';
+import {
+  setDeploymentConfigForTests,
+  setWorkspaceLayerLoaderForTests,
+} from '@/lib/server/model-config/runtime';
 import { testScene, traceFixture } from './quiz-trace-fixture';
+
+vi.mock('@/lib/server/learner-profile-mastery-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/learner-profile-mastery-context')>()),
+  resolveProfileSceneScope: vi.fn(async () => ({ runId: 'run', profileId: 'profile' })),
+  selectProfileActivityHistory: vi.fn(async () => undefined),
+}));
 
 const valid = {
   questionId: 'q',
@@ -209,5 +220,60 @@ describe('F85 Quiz feedback bound to a saved review', () => {
     expect(await service.generate(options, second.retryToken)).toEqual({ status: 'unknown' });
     expect(await service.generate(options, second.retryToken)).toEqual({ status: 'unknown' });
     expect(deps.generate).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries the original review with its owner’s configured model when deployment has no default', async () => {
+    const { options } = await fixture();
+    const workspaceOptions = { ...options, environment: '' };
+    const service = new QuizFeedbackService(f.provider);
+    const call = vi.spyOn(llm, 'callLLM').mockResolvedValue({
+      finishReason: 'stop',
+      text: response,
+    } as Awaited<ReturnType<typeof llm.callLLM>>);
+    setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+    setWorkspaceLayerLoaderForTests(async () => null);
+    try {
+      const first = await service.generate(workspaceOptions);
+      expect(first.status).toBe('failed');
+      expect(call).not.toHaveBeenCalled();
+      if (first.status !== 'failed') throw new Error('Expected a retry token');
+
+      const readOwnerModel = vi.fn(async (ownerId: string) =>
+        ownerId === options.owner
+          ? {
+              source: 'workspace' as const,
+              config: {
+                providers: {
+                  fixture: {
+                    preset: 'openai',
+                    apiKey: 'fixture-key',
+                    models: ['gpt-4o-mini'],
+                  },
+                },
+                slots: { classroom: 'fixture:gpt-4o-mini' },
+              },
+            }
+          : null,
+      );
+      setWorkspaceLayerLoaderForTests(readOwnerModel);
+      await expect(
+        service.generate({ ...workspaceOptions, owner: 'another-owner' }),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(readOwnerModel).not.toHaveBeenCalled();
+      expect(await service.generate(workspaceOptions, first.retryToken)).toMatchObject({
+        status: 'ready',
+        feedback: JSON.parse(response),
+      });
+      expect(readOwnerModel).toHaveBeenCalledExactlyOnceWith(options.owner);
+      expect(call).toHaveBeenCalledTimes(1);
+      const saved = await readQuizAttempt(f.provider, options.owner, options.locator.attemptId);
+      expect(saved.review?.id).toBe(options.locator.reviewId);
+      expect(saved.review?.summary.usableEarned).toBe(2);
+      expect(saved.reviews).toHaveLength(1);
+    } finally {
+      call.mockRestore();
+      setWorkspaceLayerLoaderForTests();
+      setDeploymentConfigForTests();
+    }
   });
 });

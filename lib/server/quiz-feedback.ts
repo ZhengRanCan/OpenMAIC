@@ -146,7 +146,7 @@ const deps = {
   formalScope: resolveProfileSceneScope,
   formalSelect: selectProfileActivityHistory,
   formalVerify: checkProfileActivityHistory,
-  model: () => resolveModel({ stage: 'quiz-grade' }),
+  model: (owner: string) => resolveModel({ stage: 'quiz-grade', workspaceId: owner }),
   generate: async (model: Awaited<ReturnType<typeof resolveModel>>, prompt: string) => {
     const result = await callLLM(
       {
@@ -281,7 +281,7 @@ export class QuizFeedbackService {
     let state: Row['state'] = 'failed';
     let result: Saved | null = null;
     try {
-      const model = await this.services.model();
+      const model = await this.services.model(owner);
       if (!model.serverManaged) throw new Error('SERVER_MODEL_REQUIRED');
       const signal = AbortSignal.timeout(4000);
       const selected = await Promise.race([
