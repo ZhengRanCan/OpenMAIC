@@ -5,8 +5,10 @@ import { EvidenceError } from '@/lib/evidence/contracts';
 import { digest } from '@/lib/learner-memory/contracts';
 import type {
   ProfileMemoryKind,
+  ProfileMemoryReviewResult,
   ProfileMemorySource,
 } from '@/lib/learner-memory/profile-memory-contracts';
+import type { QuizReview } from '@/lib/quiz/trace-types';
 import { QuizTraceError } from '@/lib/quiz/trace-validation';
 import { readDialogueSourceIn } from './dialogue-trace-read';
 import { readPreparedIn } from './quiz-trace';
@@ -66,6 +68,7 @@ async function quizSource(
   tx: Queryable,
   locator: ProfileSourceLocator,
   access: ProfileSourceAccess,
+  includeReviewHistory: boolean,
 ) {
   try {
     const quiz = await readPreparedIn(tx, access.owner_id, locator.activity_id);
@@ -78,6 +81,14 @@ async function quizSource(
       ? quiz.reviews.find(({ id }) => id === locator.review_id)
       : quiz.review;
     if (!review) return null;
+    const reviewResult = (
+      evaluation: QuizReview,
+      questionId: string,
+    ): ProfileMemoryReviewResult => {
+      const result = evaluation.results.find((entry) => entry.questionId === questionId);
+      if (result?.evaluation.state !== 'normal' || result.correct === null) return 'unknown';
+      return result.correct ? 'correct' : 'incorrect';
+    };
     const {
       rows: [help],
     } = await tx.query<{ requested: boolean }>(
@@ -94,8 +105,6 @@ async function quizSource(
       parts: scene.content.questions.flatMap((question) => {
         const answer = quiz.submission!.answers[question.id];
         if (!answer?.length) return [];
-        const result = review.results.find((entry) => entry.questionId === question.id);
-        const correct = result?.evaluation.state === 'normal' ? result.correct : null;
         return [
           {
             question: question.question,
@@ -103,13 +112,24 @@ async function quizSource(
               ? { options: question.options.map((o) => `${o.value}. ${o.label}`) }
               : {}),
             answer: Array.isArray(answer) ? answer.join(', ') : answer,
-            review: correct === null ? 'unknown' : correct ? 'correct' : 'incorrect',
+            review: reviewResult(review, question.id),
             help: help.requested ? 'practice-requested' : 'unknown',
           },
         ];
       }),
     };
     if (!basis.parts.length) return null;
+    if (includeReviewHistory && quiz.reviews.length > 1) {
+      const questionIds = scene.content.questions.flatMap(({ id }) =>
+        quiz.submission!.answers[id]?.length ? [id] : [],
+      );
+      basis.reviewHistory = quiz.reviews.map((entry) => ({
+        ordinal: entry.ordinal,
+        savedAt: entry.savedAt,
+        current: entry.id === quiz.review?.id,
+        results: questionIds.map((id) => reviewResult(entry, id)),
+      }));
+    }
     return {
       basis,
       sceneId: quiz.sceneId,
@@ -122,6 +142,7 @@ async function quizSource(
         quiz.submission!.answers[id]?.length ? [answer] : [],
       ),
       reviewId: review.id,
+      reviewOrdinal: review.ordinal,
       digest: digest({ version: quiz.version.id, review: review.id, parts: basis.parts }),
     };
   } catch (error) {
@@ -135,8 +156,9 @@ export async function readProfileMemorySource(
   tx: Queryable,
   locator: ProfileSourceLocator,
   access: ProfileSourceAccess,
+  includeReviewHistory = false,
 ) {
-  if (locator.kind === 'quiz') return quizSource(tx, locator, access);
+  if (locator.kind === 'quiz') return quizSource(tx, locator, access, includeReviewHistory);
   const result = await readDialogueSourceIn(tx, access.owner_id, {
     stageId: locator.stage_id,
     chatSessionId: locator.activity_id,
@@ -204,6 +226,7 @@ export async function readProfileMemorySource(
     quizQuestions: undefined,
     quizAnswerKeys: undefined,
     reviewId: null,
+    reviewOrdinal: null,
     digest: digest({
       kind: source.type,
       messages: [...prior, original].map(({ message }) => messageVersions[message.id]),

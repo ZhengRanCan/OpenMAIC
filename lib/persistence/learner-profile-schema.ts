@@ -65,6 +65,24 @@ ALTER TABLE learner_profile_memory_jobs
     UNIQUE (stage_id,profile_id,kind,activity_id,record_id);
 `;
 
+export const LEARNER_PROFILE_MEMORY_REVIEW_SCHEMA = `
+ALTER TABLE learner_profile_memory_jobs
+  ADD COLUMN requested_review_ordinal INTEGER,
+  ADD COLUMN flagged_quiz_refs INTEGER[] NOT NULL DEFAULT '{}';
+UPDATE learner_profile_memory_jobs j SET requested_review_ordinal=r.ordinal
+FROM quiz_trace_attempts a, quiz_trace_reviews r
+WHERE j.kind='quiz' AND a.id=j.activity_id AND a.stage_id=j.stage_id
+  AND a.submission->>'id'=j.record_id AND r.attempt_id=a.id
+  AND r.id=COALESCE(j.review_id,a.current_review_id) AND r.result IS NOT NULL;
+UPDATE learner_profile_memory_jobs j SET flagged_quiz_refs=flags.refs
+FROM (
+  SELECT i.job_id, array_agg(DISTINCT ref::integer ORDER BY ref::integer) AS refs
+  FROM learner_profile_memory_items i CROSS JOIN LATERAL jsonb_array_elements_text(i.refs) ref
+  WHERE i.flagged_at IS NOT NULL GROUP BY i.job_id
+) flags
+WHERE j.kind='quiz' AND j.id=flags.job_id;
+`;
+
 export const LEARNER_PROFILE_MASTERY_SCHEMA = `
 CREATE TABLE learner_profile_mastery (
   stage_id TEXT NOT NULL REFERENCES classroom_learner_profiles(stage_id) ON DELETE CASCADE,

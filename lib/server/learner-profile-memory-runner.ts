@@ -20,10 +20,16 @@ import { generationRunPersistence } from './generation/run/store';
 import { resolveModel } from './resolve-model';
 
 type Provider = Pick<ServerPersistenceProvider, 'pool' | 'withTransaction'>;
-type Job = ProfileSourceLocator & { id: string; claim_id: string; attempts: number };
+type Job = ProfileSourceLocator & {
+  id: string;
+  claim_id: string;
+  attempts: number;
+  requested_review_ordinal: number | null;
+};
 type Invoke = (ownerId: string, system: string, prompt: string) => Promise<string>;
 
-const INSERT_JOBS = `INSERT INTO learner_profile_memory_jobs (stage_id,profile_id,kind,activity_id,record_id,manually_added)`;
+const INSERT_JOBS = 'INSERT INTO learner_profile_memory_jobs AS job';
+const SOURCE_FIELDS = 'stage_id,profile_id,kind,activity_id,record_id,manually_added';
 const BOUND_STAGE = `FROM classroom_learner_profiles b
   JOIN stage_meta s ON s.stage_id=b.stage_id AND s.deleted_at IS NULL
   JOIN document_stages d ON d.id=s.stage_id AND d.task_engine_mode IS NOT TRUE`;
@@ -44,8 +50,8 @@ export async function enqueueProfileMemory(
   const target = manual ? '$3::uuid' : 'b.profile_id';
   const limit = manual ? '' : 'LIMIT 50';
   await queryable.query(
-    `${INSERT_JOBS}
-     SELECT s.stage_id,${target},'quiz',a.id,a.submission->>'id',${!!manual}
+    `${INSERT_JOBS} (${SOURCE_FIELDS},requested_review_ordinal)
+     SELECT s.stage_id,${target},'quiz',a.id,a.submission->>'id',${!!manual},r.ordinal
      ${stages}
      JOIN quiz_trace_attempts a ON a.stage_id=s.stage_id AND a.owner_id=s.owner_id
      JOIN quiz_trace_reviews r ON r.id=a.current_review_id AND r.submission_id=a.submission->>'id'
@@ -53,12 +59,17 @@ export async function enqueueProfileMemory(
      WHERE ${scope} AND (d.interactive_mode IS NOT TRUE OR NOT EXISTS (
        SELECT 1 FROM quiz_optional_practice p WHERE p.attempt_id=a.id))
      AND NOT EXISTS (SELECT 1 FROM learner_profile_memory_jobs j WHERE j.stage_id=s.stage_id AND j.profile_id=${target}
-       AND j.kind='quiz' AND j.activity_id=a.id AND j.record_id=a.submission->>'id')
-     ORDER BY a.created_at,a.id ${limit} ON CONFLICT DO NOTHING`,
+       AND j.kind='quiz' AND j.activity_id=a.id AND j.record_id=a.submission->>'id'
+       AND j.requested_review_ordinal >= r.ordinal)
+     ORDER BY a.created_at,a.id ${limit}
+     ON CONFLICT ON CONSTRAINT learner_profile_memory_jobs_source_key DO UPDATE
+       SET requested_review_ordinal=EXCLUDED.requested_review_ordinal, state='queued', attempts=0,
+         claim_id=NULL, claimed_at=NULL, ready_at=now()
+       WHERE COALESCE(job.requested_review_ordinal, 0) < EXCLUDED.requested_review_ordinal`,
     params,
   );
   await queryable.query(
-    `${INSERT_JOBS}
+    `${INSERT_JOBS} (${SOURCE_FIELDS})
      SELECT DISTINCT s.stage_id,${target},view.kind,view.chat_id,message.data#>>'{payload,message,id}',${!!manual}
      ${stages}
      ${PROFILE_DIALOGUE_MESSAGES}
@@ -85,6 +96,9 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
     [randomUUID()],
   );
   if (!job) return false;
+  // A job keeps its previous snapshot available for readback while a new review is pending.
+  // The worker always reads the current review, then checks that it is still the claimed one.
+  const locator = { ...job, review_id: null };
   const finish = (state: 'finished' | 'failed' | 'queued') =>
     app.pool.query(
       `UPDATE learner_profile_memory_jobs SET state=$3,claim_id=NULL,claimed_at=NULL,
@@ -102,8 +116,12 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
       const access = await readProfileSourceAccess(tx, job);
       if (!access) return null;
       await assertLearnerProfileIn(tx, access.owner_id, job.profile_id);
-      const evidence = profileMemorySourceVersion(await readProfileMemorySource(tx, job, access));
-      return evidence ? { ...evidence, owner: access.owner_id } : null;
+      const evidence = profileMemorySourceVersion(
+        await readProfileMemorySource(tx, locator, access),
+      );
+      return evidence && evidence.reviewOrdinal === job.requested_review_ordinal
+        ? { ...evidence, owner: access.owner_id }
+        : null;
     });
     if (!source) {
       await finish('finished');
@@ -132,21 +150,27 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
       const access = await readProfileSourceAccess(tx, job, true);
       if (!access || access.owner_id !== owner) throw new Error('PROFILE_MEMORY_SOURCE_MOVED');
       const current = profileMemorySourceVersion(
-        await readProfileMemorySource(tx, job, access),
+        await readProfileMemorySource(tx, locator, access),
         source.digest,
       );
       if (current?.digest !== source.digest) throw new Error('PROFILE_MEMORY_SOURCE_CHANGED');
-      const saved = await tx.query(
+      const {
+        rows: [saved],
+      } = await tx.query<{ flagged_quiz_refs: number[] }>(
         `UPDATE learner_profile_memory_jobs SET state='finished',source_digest=$3,review_id=$4,
-         claim_id=NULL,claimed_at=NULL WHERE id=$1 AND claim_id=$2 RETURNING id`,
+         claim_id=NULL,claimed_at=NULL WHERE id=$1 AND claim_id=$2 RETURNING flagged_quiz_refs`,
         [job.id, job.claim_id, source.digest, source.reviewId],
       );
-      if (!saved.rows.length) return;
+      if (!saved) return;
+      if (job.kind === 'quiz') {
+        await tx.query('DELETE FROM learner_profile_memory_items WHERE job_id=$1', [job.id]);
+      }
       for (const record of records) {
+        const flagged = record.refs.some((ref) => saved.flagged_quiz_refs.includes(ref));
         await tx.query(
-          `INSERT INTO learner_profile_memory_items (job_id,section,summary,refs)
-           VALUES($1,$2,$3,$4::jsonb)`,
-          [job.id, record.section, record.summary, JSON.stringify(record.refs)],
+          `INSERT INTO learner_profile_memory_items (job_id,section,summary,refs,flagged_at)
+           VALUES($1,$2,$3,$4::jsonb,CASE WHEN $5::boolean THEN now() END)`,
+          [job.id, record.section, record.summary, JSON.stringify(record.refs), flagged],
         );
       }
     });

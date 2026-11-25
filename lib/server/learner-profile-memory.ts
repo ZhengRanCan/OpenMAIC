@@ -111,7 +111,7 @@ export async function readProfileMemoryBasis(
   return withTransaction(async (tx) => {
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
     await assertLearnerProfileIn(tx, ownerId, profileId);
-    return readAuthorizedProfileMemoryBasisIn(tx, ownerId, profileId, itemId);
+    return readAuthorizedProfileMemoryBasisIn(tx, ownerId, profileId, itemId, true);
   });
 }
 
@@ -121,6 +121,7 @@ export async function readAuthorizedProfileMemoryBasisIn(
   ownerId: string,
   profileId: string,
   itemId: string,
+  includeReviewHistory = false,
 ): Promise<ProfileMemorySource | null> {
   const {
     rows: [item],
@@ -135,11 +136,20 @@ export async function readAuthorizedProfileMemoryBasisIn(
   const access = await readProfileSourceAccess(tx, item);
   if (access?.owner_id !== ownerId) return null;
   const current = profileMemorySourceVersion(
-    await readProfileMemorySource(tx, item, access),
+    await readProfileMemorySource(tx, item, access, includeReviewHistory),
     item.source_digest,
   );
   if (!current) return null;
-  return { ...current.basis, parts: item.refs.map((index) => current.basis.parts[index]) };
+  return {
+    ...current.basis,
+    parts: item.refs.map((index) => current.basis.parts[index]),
+    ...(current.basis.reviewHistory && {
+      reviewHistory: current.basis.reviewHistory.map((entry) => ({
+        ...entry,
+        results: item.refs.map((index) => entry.results[index]),
+      })),
+    }),
+  };
 }
 
 export async function flagProfileMemory(ownerId: string, profileId: string, itemId: string) {
@@ -147,15 +157,37 @@ export async function flagProfileMemory(ownerId: string, profileId: string, item
   return withTransaction(async (tx) => {
     await fenceOwnerWrite(tx, ownerId);
     await assertLearnerProfileIn(tx, ownerId, profileId);
-    const result = await tx.query(
-      `UPDATE learner_profile_memory_items i SET flagged_at=COALESCE(i.flagged_at, now())
-       FROM learner_profile_memory_jobs j
+    const {
+      rows: [item],
+    } = await tx.query<{
+      job_id: string;
+      kind: ProfileSourceLocator['kind'];
+      refs: number[];
+      flagged: boolean;
+    }>(
+      `SELECT i.job_id,j.kind,i.refs,i.flagged_at IS NOT NULL AS flagged
+       FROM learner_profile_memory_items i JOIN learner_profile_memory_jobs j ON i.job_id=j.id
        JOIN stage_meta s ON s.stage_id=j.stage_id AND s.owner_id=$3 AND s.deleted_at IS NULL
        WHERE ${PROFILE_MEMORY_JOB_AUTHORIZED}
-         AND i.id=$2 AND i.job_id=j.id AND j.profile_id=$1 RETURNING i.id`,
+         AND i.id=$2 AND j.profile_id=$1 FOR UPDATE OF s`,
       [profileId, itemId, ownerId],
     );
-    return result.rows.length > 0;
+    if (!item) return false;
+    if (item.flagged) return true;
+    const saved = await tx.query(
+      'UPDATE learner_profile_memory_items SET flagged_at=now() WHERE id=$1 RETURNING id',
+      [itemId],
+    );
+    if (!saved.rows.length) return false;
+    if (item.kind === 'quiz') {
+      await tx.query(
+        `UPDATE learner_profile_memory_jobs
+         SET flagged_quiz_refs=ARRAY(SELECT DISTINCT unnest(flagged_quiz_refs || $2::integer[]))
+         WHERE id=$1`,
+        [item.job_id, item.refs],
+      );
+    }
+    return true;
   });
 }
 

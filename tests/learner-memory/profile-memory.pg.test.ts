@@ -25,6 +25,7 @@ import {
 import {
   assertInteractiveProfileMemoryCurrent,
   buildInteractiveProfileMemory,
+  readProfileMemoryCandidates,
 } from '@/lib/server/generation/run/interactive-profile-memory';
 import { editProfileMemory, readProfileMemory } from '@/lib/server/learner-profile-memory';
 import { readProfilePlannerMastery } from '@/lib/server/learner-profile-mastery';
@@ -396,7 +397,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       (await PUT(request('PUT', physicsId, cookie, update, 'cross-site'), context(physicsId)))
         .status,
     ).toBe(403);
-    const itemId = saved.items[0].id as string;
+    let itemId = saved.items[0].id as string;
     const itemContext = (profileId: string, id = itemId) => ({
       params: Promise.resolve({ profileId, itemId: id }),
     });
@@ -437,10 +438,46 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     expect(regradedQuiz.review?.results[0].correct).toBe(true);
     const historical = await GET_BASIS(request('GET', physicsId), itemContext(physicsId));
     expect(historical.status).toBe(200);
-    expect(await historical.json()).toEqual({ ...quizBasis, historicalReview: true });
+    expect(await historical.json()).toMatchObject({
+      ...quizBasis,
+      historicalReview: true,
+      reviewHistory: [
+        { ordinal: 1, current: false, results: ['incorrect'] },
+        { ordinal: 2, current: true, results: ['correct'] },
+      ],
+    });
+    expect(await readProfileMemoryCandidates(owner, physicsId)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: 'quiz' })]),
+    );
     await discoverProfileMemory(app);
-    expect(await processProfileMemory(app, invoke)).toBe(false);
-    expect((await readProfileMemory(owner, physicsId)).items).toHaveLength(1);
+    const refresh = vi.fn(async () =>
+      JSON.stringify({
+        records: [{ section: 'experiences', summary: '选择题作答 B，复评为正确。', refs: [0] }],
+      }),
+    );
+    expect(await processProfileMemory(app, refresh)).toBe(true);
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(
+      owner,
+      expect.any(String),
+      expect.stringContaining('"review":"correct"'),
+    );
+    const updated = await readProfileMemory(owner, physicsId);
+    expect(updated.items).toHaveLength(1);
+    itemId = updated.items[0].id;
+    expect((await readProfileMemoryCandidates(owner, physicsId)).at(-1)).toMatchObject({
+      key: itemId,
+      source: 'quiz',
+      text: '选择题作答 B，复评为正确。',
+    });
+    expect(
+      await (await GET_BASIS(request('GET', physicsId), itemContext(physicsId))).json(),
+    ).toMatchObject({
+      historicalReview: false,
+      parts: [{ answer: 'B', review: 'correct' }],
+      reviewHistory: [{ results: ['incorrect'] }, { results: ['correct'] }],
+    });
+    await discoverProfileMemory(app);
+    expect(await processProfileMemory(app, refresh)).toBe(false);
     const discussionId = chemistryView.items.find((i) => i.kind === 'discussion')!.id;
     const discussionBasis = await (
       await GET_BASIS(request('GET', chemistryId), itemContext(chemistryId, discussionId))
@@ -649,10 +686,82 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     const rereviewed = await readQuizAttempt(app, owner, attemptId);
     expect(rereviewed.review?.id).toBe(newer.id);
     expect(rereviewed.submission).toEqual(original.submission);
+    expect(await (await basis()).json()).toMatchObject({
+      ...source,
+      historicalReview: true,
+      reviewHistory: [{ results: ['incorrect'] }, { results: ['correct'] }],
+    });
+    await expect(assertInteractiveProfileMemoryCurrent(owner, selected)).rejects.toMatchObject({
+      code: 'LEARNER_CONTEXT_INVALID',
+    });
+    expect(
+      (
+        await PATCH(
+          new NextRequest(`http://localhost/api/learner-profiles/${profileId}/memory/${itemId}`, {
+            method: 'PATCH',
+            headers: {
+              cookie: `anonymous_id=${cookie}`,
+              'Content-Type': 'application/json',
+              'Sec-Fetch-Site': 'same-origin',
+            },
+            body: JSON.stringify({ flagged: true }),
+          }),
+          { params: Promise.resolve({ profileId, itemId }) },
+        )
+      ).status,
+    ).toBe(204);
+    await app.withTransaction(async (tx) => {
+      await tx.query(`ALTER TABLE learner_profile_memory_jobs
+        DROP COLUMN requested_review_ordinal, DROP COLUMN flagged_quiz_refs`);
+      await tx.query(
+        "DELETE FROM openmaic_schema_migrations WHERE store='generation-runs' AND version=12",
+      );
+    });
+    resetGenerationRunSchemaForTests();
+    await generationRunPersistence();
+    expect(
+      (
+        await app.pool.query(
+          'SELECT review_id,requested_review_ordinal,flagged_quiz_refs FROM learner_profile_memory_jobs WHERE stage_id=$1',
+          [deep.stageId],
+        )
+      ).rows,
+    ).toEqual([
+      { review_id: original.review!.id, requested_review_ordinal: 1, flagged_quiz_refs: [0] },
+    ]);
     await discoverProfileMemory(app);
-    expect(await processProfileMemory(app, invoke)).toBe(false);
-    expect(await (await basis()).json()).toEqual({ ...source, historicalReview: true });
-    expect(await readProfileMemory(owner, profileId)).toEqual(saved);
+    const refresh = vi.fn(async () =>
+      JSON.stringify({
+        records: [{ section: 'experiences', summary: '深度课堂复评为正确。', refs: [0] }],
+      }),
+    );
+    expect(await processProfileMemory(app, refresh)).toBe(true);
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(
+      owner,
+      expect.any(String),
+      expect.stringContaining('"review":"correct"'),
+    );
+    expect(await readProfileMemory(owner, profileId)).toMatchObject({
+      ...saved,
+      items: [{ summary: '深度课堂复评为正确。', flagged: true }],
+    });
+    expect(
+      (await readProfileMemoryCandidates(owner, profileId)).some(({ source }) => source === 'quiz'),
+    ).toBe(false);
+    await reviewQuiz(attemptId, original.submission!.id, false);
+    await discoverProfileMemory(app);
+    expect(await processProfileMemory(app, async () => '{"records":[]}')).toBe(true);
+    expect((await readProfileMemory(owner, profileId)).items).toEqual([]);
+
+    await reviewQuiz(attemptId, original.submission!.id, true);
+    await discoverProfileMemory(app);
+    expect(await processProfileMemory(app, refresh)).toBe(true);
+    expect((await readProfileMemory(owner, profileId)).items).toMatchObject([
+      { summary: '深度课堂复评为正确。', flagged: true },
+    ]);
+    expect(
+      (await readProfileMemoryCandidates(owner, profileId)).some(({ source }) => source === 'quiz'),
+    ).toBe(false);
   });
 
   it('distinguishes no eligible deep-interaction source from a finished run with no adopted records', async () => {
@@ -685,6 +794,10 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     await submitQuiz(eligible);
     await discoverProfileMemory(app);
     expect((await readProfileMemory(owner, eligible.profile!)).maintenance.pending).toBe(true);
+    await app.pool.query(
+      "UPDATE learner_profile_memory_jobs SET ready_at='2000-01-01' WHERE stage_id=$1",
+      [eligible.stageId],
+    );
     let calls = 0;
     expect(
       await processProfileMemory(app, async () => {
@@ -1019,6 +1132,13 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       });
     };
     const first = async () => {
+      // Pin the fixture's Quiz-first order independently of the PostgreSQL clock.
+      await app.pool.query(
+        `UPDATE learner_profile_mastery_jobs SET ready_at=CASE
+           WHEN kind='quiz' THEN '2000-01-01'::timestamptz ELSE '2000-01-02'::timestamptz END
+         WHERE stage_id=$1 AND state='queued' AND attempts=0`,
+        [deep.stageId],
+      );
       for (let i = 0; i < 8 && (await processProfileMastery(app, invoke)); i++) {
         // The same fixture schema includes a previously saved F98 classroom.
       }
@@ -1519,6 +1639,71 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     }
   });
 
+  it('keeps the latest deep Quiz review through in-flight regrading and manual retry', async () => {
+    const classroom = await prepareClassroom('F111-deep-regrade', true, true);
+    const profileId = classroom.profile!;
+    const attempt = await submitQuiz(classroom);
+    const { submission } = await readQuizAttempt(app, owner, attempt.attemptId);
+    const reply = (summary: string) =>
+      JSON.stringify({ records: [{ section: 'experiences', summary, refs: [0] }] });
+
+    await discoverProfileMemory(app);
+    await processProfileMemory(app, async () => reply('初次评阅为错误。'));
+    const [original] = (await readProfileMemory(owner, profileId)).items;
+    expect(original).toMatchObject({ summary: '初次评阅为错误。', flagged: false });
+    await reviewQuiz(attempt.attemptId, submission!.id, true);
+    await discoverProfileMemory(app);
+    const superseded = vi.fn(async () => {
+      await reviewQuiz(attempt.attemptId, submission!.id, false);
+      return reply('已被取代的评阅结果。');
+    });
+    expect(await processProfileMemory(app, superseded)).toBe(true);
+    expect(superseded).toHaveBeenCalledTimes(1);
+    expect((await readProfileMemory(owner, profileId)).items).toEqual([original]);
+    expect(await readProfileMemoryCandidates(owner, profileId)).toEqual([]);
+
+    await discoverProfileMemory(app);
+    const unavailable = vi.fn(async () => {
+      throw new Error('temporary fixture failure');
+    });
+    for (let retry = 0; retry < 3; retry++) {
+      await app.pool.query(
+        'UPDATE learner_profile_memory_jobs SET ready_at=now() WHERE stage_id=$1',
+        [classroom.stageId],
+      );
+      expect(await processProfileMemory(app, unavailable)).toBe(true);
+    }
+    expect((await readProfileMemory(owner, profileId)).maintenance).toEqual({
+      pending: false,
+      failed: true,
+    });
+    await discoverProfileMemory(app);
+    expect(await processProfileMemory(app, unavailable)).toBe(false);
+
+    const retry = await POST_IMPORT(
+      new NextRequest(`http://localhost/api/learner-profiles/${profileId}/memory/classrooms`, {
+        method: 'POST',
+        headers: {
+          cookie: `anonymous_id=${cookie}`,
+          'Content-Type': 'application/json',
+          'Sec-Fetch-Site': 'same-origin',
+        },
+        body: JSON.stringify({ stageId: classroom.stageId }),
+      }),
+      { params: Promise.resolve({ profileId }) },
+    );
+    expect(retry.status).toBe(202);
+    const latest = vi.fn(async () => reply('最新评阅确认作答错误。'));
+    expect(await processProfileMemory(app, latest)).toBe(true);
+    expect(latest.mock.calls).toHaveLength(1);
+    const { items } = await readProfileMemory(owner, profileId);
+    expect(items).toMatchObject([{ summary: '最新评阅确认作答错误。' }]);
+    expect(await readProfileMemoryCandidates(owner, profileId)).toMatchObject([
+      { source: 'quiz', text: '最新评阅确认作答错误。' },
+    ]);
+    expect((await readQuizAttempt(app, owner, attempt.attemptId)).reviews).toHaveLength(3);
+  });
+
   it('provisions the formal Mastery schema when an existing classroom is opened after a v8 upgrade', async () => {
     const classroom = await prepareClassroom('F98-upgrade', true, true);
     const target = { id: 'F98-upgrade-target', revision: 1, statement: '说明密度的含义。' };
@@ -1535,6 +1720,8 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       await tx.query(`ALTER TABLE learner_profile_memory_jobs
         DROP CONSTRAINT learner_profile_memory_jobs_source_key,
         DROP COLUMN manually_added,
+        DROP COLUMN requested_review_ordinal,
+        DROP COLUMN flagged_quiz_refs,
         ADD CONSTRAINT learner_profile_memory_jobs_stage_id_kind_activity_id_recor_key
           UNIQUE(stage_id,kind,activity_id,record_id)`);
       await tx.query(
@@ -1707,7 +1894,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
          VALUES($1,$2,'{}','generating',$3)`,
       [randomUUID(), owner, unfinished.stageId],
     );
-    await submitQuiz(old);
+    const importedQuiz = await submitQuiz(old);
     await saveDiscussionAndQA(old.stageId);
     const context = { params: Promise.resolve({ profileId }) };
     const request = (stageId?: string, method = 'GET', identity = cookie, site = 'same-origin') =>
@@ -1792,18 +1979,16 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     expect(view.items.map(({ kind }) => kind).sort()).toEqual(['qa', 'quiz']);
     expect(view.fields.preferences).toBe('');
     const item = view.items.find(({ kind }) => kind === 'quiz')!;
-    const itemContext = { params: Promise.resolve({ profileId, itemId: item.id }) };
-    const basisRequest = new NextRequest(
-      'http://localhost/api/learner-profiles/' + profileId + '/memory/' + item.id,
-      {
-        headers: {
-          cookie: 'anonymous_id=' + cookie,
-          'sec-fetch-site': 'same-origin',
-          'content-type': 'application/json',
+    const basis = (itemId: string) =>
+      GET_BASIS(
+        new NextRequest(`http://localhost/api/learner-profiles/${profileId}/memory/${itemId}`, {
+          headers: { cookie: 'anonymous_id=' + cookie },
+        }),
+        {
+          params: Promise.resolve({ profileId, itemId }),
         },
-      },
-    );
-    expect(await (await GET_BASIS(basisRequest, itemContext)).json()).toMatchObject({
+      );
+    expect(await (await basis(item.id)).json()).toMatchObject({
       stageId: old.stageId,
       kind: 'quiz',
       parts: [{ answer: 'B', review: 'incorrect' }],
@@ -1821,6 +2006,35 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       },
     );
     expect(selected[0]?.key).toBe(item.id);
+    const { submission } = await readQuizAttempt(app, owner, importedQuiz.attemptId);
+    await reviewQuiz(importedQuiz.attemptId, submission!.id, true);
+    await discoverProfileMemory(app);
+    expect(
+      (
+        await app.pool.query(
+          "SELECT state,requested_review_ordinal FROM learner_profile_memory_jobs WHERE stage_id=$1 AND kind='quiz'",
+          [old.stageId],
+        )
+      ).rows,
+    ).toEqual([{ state: 'finished', requested_review_ordinal: 1 }]);
+    expect(await (await startImport()).json()).toEqual({ total: 4, pending: 1, failed: 0 });
+    await app.pool.query(
+      "UPDATE learner_profile_memory_jobs SET ready_at='2000-01-01' WHERE stage_id=$1 AND kind='quiz'",
+      [old.stageId],
+    );
+    expect(
+      await processProfileMemory(app, async () =>
+        JSON.stringify({
+          records: [{ section: 'experiences', summary: '导入的答卷复评为正确。', refs: [0] }],
+        }),
+      ),
+    ).toBe(true);
+    const refreshed = (await readProfileMemory(owner, profileId)).items.find(
+      ({ kind }) => kind === 'quiz',
+    )!;
+    expect(await (await basis(refreshed.id)).json()).toMatchObject({
+      parts: [{ answer: 'B', review: 'correct' }],
+    });
     expect(
       (
         await app.pool.query('SELECT 1 FROM classroom_learner_profiles WHERE stage_id=$1', [
@@ -1836,7 +2050,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       }),
     );
     expect((await startImport()).status).toBe(404);
-    expect((await GET_BASIS(basisRequest, itemContext)).status).toBe(404);
+    expect((await basis(refreshed.id)).status).toBe(404);
     expect((await readProfileMemory(owner, profileId)).items).toEqual([]);
     const select = vi.fn(async () => '{"selected":[]}');
     expect(

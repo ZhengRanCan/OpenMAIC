@@ -54,17 +54,24 @@ export const profileMemoryResult = z.strictObject({
 });
 export type ProfileMemoryRecord = z.infer<typeof profileMemoryResult>['records'][number];
 export type ProfileMemoryKind = 'quiz' | 'qa' | 'discussion';
+export type ProfileMemoryReviewResult = 'correct' | 'incorrect' | 'unknown';
 export type ProfileMemorySource = {
   stageId: string;
   title: string;
   kind: ProfileMemoryKind;
   occurredAt: string;
   historicalReview?: boolean;
+  reviewHistory?: {
+    ordinal: number;
+    savedAt: string;
+    current: boolean;
+    results: ProfileMemoryReviewResult[];
+  }[];
   parts: {
     question?: string;
     options?: string[];
     answer: string;
-    review?: 'correct' | 'incorrect' | 'unknown';
+    review?: ProfileMemoryReviewResult;
     previous?: { role: 'teacher' | 'student'; text: string }[];
     help: 'practice-requested' | 'prior-teacher-messages' | 'unknown';
   }[];

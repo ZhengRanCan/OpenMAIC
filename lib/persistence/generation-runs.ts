@@ -39,6 +39,7 @@ import {
   LEARNER_PROFILE_MASTERY_JOBS_SCHEMA,
   LEARNER_PROFILE_MEMORY_SCHEMA,
   LEARNER_PROFILE_MEMORY_IMPORT_SCHEMA,
+  LEARNER_PROFILE_MEMORY_REVIEW_SCHEMA,
   LEARNER_PROFILE_SCHEMA,
 } from './learner-profile-schema';
 
@@ -193,6 +194,12 @@ export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
       version: 11,
       name: 'learner_profile_memory_import',
       up: LEARNER_PROFILE_MEMORY_IMPORT_SCHEMA,
+      transaction: true,
+    },
+    {
+      version: 12,
+      name: 'learner_profile_memory_review',
+      up: LEARNER_PROFILE_MEMORY_REVIEW_SCHEMA,
       transaction: true,
     },
   ],

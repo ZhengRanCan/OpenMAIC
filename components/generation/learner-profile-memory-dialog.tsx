@@ -439,7 +439,7 @@ function MemoryItem({
   item: ProfileMemoryItem;
   onFlag: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [basis, setBasis] = useState<ProfileMemorySource | null>();
   const [sourceError, setSourceError] = useState(false);
@@ -550,6 +550,27 @@ function MemoryItem({
                     {part.answer}
                   </p>
                   {part.review && <p>{t(`profileMemory.review.${part.review}`)}</p>}
+                  {basis.reviewHistory && (
+                    <details>
+                      <summary className="cursor-pointer font-medium">
+                        {t('quiz.traceGradingHistory', { count: basis.reviewHistory.length })}
+                      </summary>
+                      <ul className="mt-1 space-y-1">
+                        {basis.reviewHistory.map((entry) => (
+                          <li key={entry.ordinal}>
+                            {t('quiz.traceGradingNumber', { number: entry.ordinal })}
+                            {' · '}
+                            <time dateTime={entry.savedAt}>
+                              {new Date(entry.savedAt).toLocaleString(locale)}
+                            </time>
+                            {' · '}
+                            {t(`profileMemory.review.${entry.results[index]}`)}
+                            {entry.current && ` · ${t('quiz.traceAdoptedGrading')}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                   {part.help !== 'unknown' && (
                     <p className="text-muted-foreground">{t(`profileMemory.help.${part.help}`)}</p>
                   )}
