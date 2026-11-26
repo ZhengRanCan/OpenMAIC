@@ -2,6 +2,8 @@
 
 在 OpenMAIC 目录运行。无需启动网页或数据库。`direct` 复用正式新画像的四区 Memory 提示词、预算和状态校验，`two-stage` 在同一批输入前增加一次逐来源语义抽取。数据库授权、并发和队列行为仍由产品集成测试验证。
 
+实验一另支持 `raw-history` 参考组，从相同的来源投影直接回答问题，不更新画像。配置增加 `"methods":["direct","two-stage","raw-history"]` 可同时运行三组，省略时仍按原来的两组执行。三组共用回答提示词与 `learningContext` 字段，只改变资料表示。`maxAnswerInputBytes` 默认 250,000 UTF-8 bytes，包含系统提示词和问题，超过上限记失败，完整历史不截断。
+
 ## 无密钥预检
 
 ```powershell
@@ -47,6 +49,7 @@ corepack pnpm eval:learner-profile run --events eval/learner-profile/fixtures/ev
 - 评测问题包含 `id`、`learnerId`、`category`（IE／MR／HC）、`question`、`gold` 和可选 `sourceIds`。Gold 文件不会传入抽取或维护模型。每组所有回答保存后再逐题评分。
 - 各组初态为空。旧来源只从本组当前画像仍支持的记录回读，沿用正式每来源最多 512 个字符及容量不足时去掉旧正文的策略。两阶段把本轮新来源语义压缩后交给综合，保留原始来源身份和帮助条件，旧依据仍按相同策略回查。
 - 首轮回答只读取最终 Memory 正文和问题，排除 supports 内的原文。按需检索原始历史是另外的实验条件。
+- `raw-history` 将同一截止点的全部共同可见来源按顺序提供给回答器，没有 Memory 维护成本。该组没有画像快照或画像陈述，结果中的空快照不表示丢失数据，实际回答输入在调用日志中。
 
 ## LongTutor 最小导入
 
@@ -77,6 +80,8 @@ corepack pnpm eval:learner-profile validate --events eval/learner-profile/local-
 | `completed.json`／`failed.json` | 程序终态。部分方法或题目失败时仍保存报告，退出码为 1 |
 
 问答按含义由本地模型裁判评分，不是官方 LongTutor 评分器的直接复现。准确率分母为已获有效评分题数，同时给出全部预期数、回答数、评分数和失败数。无有效分母时为 null。共同有效题差值只是小样例描述，不带统计显著或不劣结论。Token 不可得时记 null 并计缺失数。
+
+三组报告在 `comparisons` 中按明确的 baseline／comparison 及 IE／MR／HC 给出两两配对差值。`paired` 继续保留两组 Memory 的旧差值字段。每种方法的 `stages` 分开统计 extract、memory、answer 和 judge，便于区分构建开销与回答开销。裁判输出 null 会保留不可判定理由并导致运行不完整，不作为正常成功或错误答案悄悄计分。
 
 人工核对时把复合陈述拆成可独立判断的事实行，保留片段和来源身份。填写 `judgment` 为 `supported`、`contradicted` 或 `insufficient`，并记录 `reviewer`、`reason`。保存为新的本地文件后运行：
 

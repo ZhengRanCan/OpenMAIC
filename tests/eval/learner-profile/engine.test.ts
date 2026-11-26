@@ -76,7 +76,7 @@ describe('F113 offline memory experiments', () => {
         .every((c) => !c.user.includes(d.questions[0].question)),
     ).toBe(true);
     for (const c of s.calls.filter((c) => c.stage === 'answer')) {
-      expect(Object.keys(JSON.parse(c.user)).sort()).toEqual(['memory', 'question']);
+      expect(Object.keys(JSON.parse(c.user)).sort()).toEqual(['learningContext', 'question']);
       expect(c.user).not.toContain('sourceDigest');
       expect(c.user).not.toContain('sourceNature');
     }

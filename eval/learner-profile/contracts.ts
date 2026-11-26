@@ -10,6 +10,7 @@ const text = z
   .min(1)
   .max(12000)
   .refine((s) => !s.includes('\0'));
+export const methodSchema = z.enum(['direct', 'two-stage', 'raw-history']);
 export const partSchema = z.strictObject({
   question: text.optional(),
   options: z.array(text).max(20).optional(),
@@ -73,6 +74,13 @@ export const configSchema = z
     maxOutputTokens: z.number().int().min(256).max(16000).default(6000),
     temperature: z.number().min(0).max(2).default(0),
     checkpoints: z.array(z.number().int().positive()).default([1, 5, 10, 20]),
+    methods: z
+      .array(methodSchema)
+      .min(1)
+      .max(3)
+      .default(['direct', 'two-stage'])
+      .refine((v) => new Set(v).size === v.length, 'Duplicate method'),
+    maxAnswerInputBytes: z.number().int().min(1000).max(500000).default(250000),
     allowPublicExternal: z.boolean().default(false),
     permissionNote: z.string().max(1000).optional(),
   })
@@ -88,7 +96,7 @@ export const configSchema = z
 export type Event = z.infer<typeof eventSchema>;
 export type Question = z.infer<typeof questionSchema>;
 export type Config = z.infer<typeof configSchema>;
-export type Method = 'direct' | 'two-stage';
+export type Method = z.infer<typeof methodSchema>;
 export type Stage = 'extract' | 'memory' | 'answer' | 'judge';
 export type CallRequest = { stage: Stage; system: string; user: string; fixtureReply: string };
 export type ModelReply = {

@@ -98,6 +98,8 @@ async function main() {
       'currently supported raw sources, 512 characters each, production capacity fallback',
     projection:
       'Native answer-bearing events use classroomMemorySources; public outcome-only events use explicit unavailable-answer projection',
+    rawHistoryPolicy:
+      'Same source projection, all past records, no maintenance or truncation; fixed answer input limit',
   };
   output(resolve(target, 'manifest.json'), manifest);
   try {

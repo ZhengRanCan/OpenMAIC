@@ -145,7 +145,7 @@ export type ArmResult = {
 
 export async function replay(
   events: Event[],
-  method: Method,
+  method: Exclude<Method, 'raw-history'>,
   session: ModelSession,
   save: (step: StepResult) => void = () => {},
 ): Promise<Omit<ArmResult, 'answers'>> {
@@ -233,6 +233,7 @@ export async function answerQuestions(
   arm: Omit<ArmResult, 'answers'>,
   questions: Question[],
   session: ModelSession,
+  context = memoryText(arm.snapshot),
 ): Promise<AnswerResult[]> {
   const answers: AnswerResult[] = [];
   // Save all answers before any gold enters a judge call.
@@ -251,7 +252,9 @@ export async function answerQuestions(
       continue;
     }
     try {
-      const user = JSON.stringify({ memory: memoryText(arm.snapshot), question: q.question });
+      const user = JSON.stringify({ learningContext: context, question: q.question });
+      if (Buffer.byteLength(ANSWER_SYSTEM + user, 'utf8') > session.config.maxAnswerInputBytes)
+        throw new Error('ANSWER_INPUT_CAPACITY_EXCEEDED');
       row.answer = answerSchema.parse(
         JSON.parse(
           await session.call({
@@ -298,6 +301,22 @@ export function hasIncompleteResults(results: ArmResult[]) {
   return results.some((r) => !r.complete || r.answers.some((a) => a.error || a.correct === null));
 }
 
+/** Same admitted source projection as the memory arms, with no summarization or truncation. */
+export function rawHistoryContext(history: Event[]) {
+  return history
+    .flatMap(eventSources)
+    .map((s, i) =>
+      JSON.stringify({
+        ordinal: i + 1,
+        kind: s.kind,
+        text: s.text,
+        conditions: s.conditions,
+        occurredAt: s.occurredAt,
+      }),
+    )
+    .join('\n');
+}
+
 export async function runExperiment(
   events: Event[],
   questions: Question[],
@@ -315,10 +334,24 @@ export async function runExperiment(
   for (const learner of new Set(events.map((e) => e.learnerId))) {
     const history = events.filter((e) => e.learnerId === learner),
       qs = questions.filter((q) => q.learnerId === learner);
-    for (const method of ['direct', 'two-stage'] as const) {
+    for (const method of config.methods) {
       session.context = { learnerId: learner, method };
-      const arm = await replay(history, method, session, (step) => save(learner, method, step));
-      results.push({ ...arm, answers: await answerQuestions(arm, qs, session) });
+      if (method === 'raw-history') {
+        const arm = {
+          learnerId: learner,
+          method,
+          steps: [],
+          snapshot: emptySnapshot<ClassroomMemorySource>(),
+          complete: true,
+        };
+        results.push({
+          ...arm,
+          answers: await answerQuestions(arm, qs, session, rawHistoryContext(history)),
+        });
+      } else {
+        const arm = await replay(history, method, session, (step) => save(learner, method, step));
+        results.push({ ...arm, answers: await answerQuestions(arm, qs, session) });
+      }
     }
   }
   return { config, budgets: DEFAULT_BUDGETS, results };

@@ -1,5 +1,35 @@
 import { eventSources, type ArmResult } from './engine';
-import type { CallRecord, Event, Question } from './contracts';
+import type { CallRecord, Event, Question, Method } from './contracts';
+
+function pairwise(
+  results: ArmResult[],
+  questions: Question[],
+  baseline: Method,
+  comparison: Method,
+) {
+  return ['IE', 'MR', 'HC'].map((category) => {
+    const differences: number[] = [];
+    for (const q of questions.filter((q) => q.category === category)) {
+      const find = (method: Method) =>
+        results
+          .find((a) => a.learnerId === q.learnerId && a.method === method)
+          ?.answers.find((a) => a.id === q.id);
+      const a = find(baseline),
+        b = find(comparison);
+      if (a && b && a.correct !== null && b.correct !== null)
+        differences.push(Number(b.correct) - Number(a.correct));
+    }
+    return {
+      baseline,
+      comparison,
+      category,
+      commonScored: differences.length,
+      difference: differences.length
+        ? differences.reduce((a, b) => a + b, 0) / differences.length
+        : null,
+    };
+  });
+}
 
 export function summarize(results: ArmResult[], questions: Question[], calls: CallRecord[]) {
   return {
@@ -22,7 +52,7 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
         },
       ]),
     ),
-    methods: ['direct', 'two-stage'].map((method) => {
+    methods: [...new Set(results.map((r) => r.method))].map((method) => {
       const arms = results.filter((r) => r.method === method),
         answers = arms.flatMap((r) => r.answers);
       const costs = calls.filter((c) => c.method === method);
@@ -34,6 +64,20 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
         inputTokens: sumUsage(costs, 'inputTokens'),
         outputTokens: sumUsage(costs, 'outputTokens'),
         durationMs: costs.reduce((s, c) => s + c.durationMs, 0),
+        stages: Object.fromEntries(
+          ['extract', 'memory', 'answer', 'judge'].map((stage) => {
+            const rows = costs.filter((c) => c.stage === stage);
+            return [
+              stage,
+              {
+                calls: rows.length,
+                inputTokens: sumUsage(rows, 'inputTokens'),
+                outputTokens: sumUsage(rows, 'outputTokens'),
+                durationMs: rows.reduce((s, c) => s + c.durationMs, 0),
+              },
+            ];
+          }),
+        ),
         categories: ['IE', 'MR', 'HC'].map((category) => {
           const rows = answers.filter((a) => a.category === category),
             scored = rows.filter((a) => a.correct !== null);
@@ -49,23 +93,19 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
         }),
       };
     }),
-    paired: ['IE', 'MR', 'HC'].map((category) => {
-      const differences: number[] = [];
-      for (const q of questions.filter((q) => q.category === category)) {
-        const pair = results
-          .filter((a) => a.learnerId === q.learnerId)
-          .map((a) => a.answers.find((r) => r.id === q.id));
-        if (pair.length === 2 && pair.every((a) => a && a.correct !== null))
-          differences.push(Number(pair[1]!.correct) - Number(pair[0]!.correct));
-      }
-      return {
-        category,
-        commonScored: differences.length,
-        twoStageMinusDirect: differences.length
-          ? differences.reduce((a, b) => a + b, 0) / differences.length
-          : null,
-      };
-    }),
+    paired: pairwise(results, questions, 'direct', 'two-stage').map((r) => ({
+      ...r,
+      twoStageMinusDirect: r.difference,
+    })),
+    comparisons: (
+      [
+        ['direct', 'two-stage'],
+        ['direct', 'raw-history'],
+        ['two-stage', 'raw-history'],
+      ] as const
+    )
+      .filter((pair) => pair.every((m) => results.some((r) => r.method === m)))
+      .flatMap(([a, b]) => pairwise(results, questions, a, b)),
   };
 }
 
