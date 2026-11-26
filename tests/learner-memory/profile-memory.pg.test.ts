@@ -13,6 +13,7 @@ import {
 } from '@/app/api/learner-profiles/[profileId]/memory/[itemId]/route';
 import { bindLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import { digest } from '@/lib/learner-memory/contracts';
+import type { ProfileMemorySnapshot } from '@/lib/learner-memory/profile-memory-snapshot';
 import { readProfileMemorySource } from '@/lib/persistence/learner-profile-memory-source';
 import { QuizTraceService } from '@/lib/persistence/quiz-trace';
 import { readQuizAttempt } from '@/lib/persistence/quiz-trace-read';
@@ -85,6 +86,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
     withProfile: boolean,
     interactiveMode = false,
     taskEngineMode = false,
+    snapshotMemory = false,
   ) {
     const store = await getOwnerScopedDocumentStore(owner);
     const now = Date.now();
@@ -107,12 +109,17 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
             runId: randomUUID(),
             selection: { mode: 'blank', requestId: randomUUID() },
           });
-          return (
+          const profileId = (
             await tx.query<{ profile_id: string }>(
               'SELECT profile_id FROM classroom_learner_profiles WHERE stage_id=$1',
               [stageId],
             )
           ).rows[0].profile_id;
+          if (!snapshotMemory)
+            await tx.query('UPDATE learner_profiles SET memory_snapshot=NULL WHERE id=$1', [
+              profileId,
+            ]);
+          return profileId;
         })
       : null;
     return { stageId, scene, profile };
@@ -169,7 +176,7 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
   }
 
   const preference = '以后学化学时，我希望先看一个具体例子。';
-  async function saveDiscussionAndQA(stageId: string) {
+  async function saveDiscussionAndQA(stageId: string, withdrawPreference = false) {
     const now = Date.now();
     const common = {
       config: { agentIds: ['teacher'] },
@@ -208,6 +215,15 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
         messages: [
           { id: 'learner-preference', role: 'user', parts: [{ type: 'text', text: preference }] },
           { id: 'one-off', role: 'user', parts: [{ type: 'text', text: '这道题先不要画图。' }] },
+          ...(withdrawPreference
+            ? [
+                {
+                  id: 'withdraw-preference',
+                  role: 'user' as const,
+                  parts: [{ type: 'text' as const, text: '以后学化学时不用先看例题了。' }],
+                },
+              ]
+            : []),
         ],
       },
     ];
@@ -1717,11 +1733,18 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       await tx.query('DROP TABLE learner_profile_mastery_jobs');
       await tx.query('DROP TABLE learner_profile_mastery');
       await tx.query('DROP INDEX classroom_learner_profiles_profile_idx');
+      await tx.query(
+        'DROP TABLE learner_profile_memory_restrictions, learner_profile_memory_transitions',
+      );
+      await tx.query('ALTER TABLE learner_profiles DROP COLUMN memory_snapshot');
       await tx.query(`ALTER TABLE learner_profile_memory_jobs
         DROP CONSTRAINT learner_profile_memory_jobs_source_key,
         DROP COLUMN manually_added,
         DROP COLUMN requested_review_ordinal,
         DROP COLUMN flagged_quiz_refs,
+        DROP COLUMN snapshot_done_refs,
+        DROP COLUMN snapshot_deferred_refs,
+        DROP COLUMN snapshot_call,
         ADD CONSTRAINT learner_profile_memory_jobs_stage_id_kind_activity_id_recor_key
           UNIQUE(stage_id,kind,activity_id,record_id)`);
       await tx.query(
@@ -2057,5 +2080,409 @@ describe.skipIf(!pgUrl)('F93 formal profile memory in PostgreSQL', () => {
       await buildInteractiveProfileMemory(owner, { profileId, task: '复习', content: {} }, select),
     ).toEqual({ profileId, selected: [] });
     expect(select).not.toHaveBeenCalled();
+  });
+
+  it('F112 maintains one trusted snapshot through two classrooms, flagging and regrading', async () => {
+    const ordinary = await prepareClassroom('F112-ordinary', true, false, false, true);
+    const other = await prepareClassroom('F112-other', true, false, false, true);
+    const deep = await prepareClassroom('F112-deep', false, true);
+    const profileId = ordinary.profile!;
+    await app.withTransaction((tx) =>
+      bindLearnerProfileIn(tx, {
+        stageId: deep.stageId,
+        runId: randomUUID(),
+        selection: { mode: 'existing', profileId },
+      }),
+    );
+    await app.pool.query(
+      `INSERT INTO generation_runs(id,owner_id,input,state,stage_id,outline)
+       SELECT run_id,$2,'{}'::jsonb,'completed',stage_id,'{"targets":[]}'::jsonb
+       FROM classroom_learner_profiles WHERE stage_id=ANY($1::text[])`,
+      [[ordinary.stageId, deep.stageId], owner],
+    );
+    expect(await readProfileMemory(owner, profileId)).toMatchObject({
+      snapshotRevision: 0,
+      items: [],
+    });
+    const beforeEdit = await readProfileMemory(owner, profileId);
+    await editProfileMemory(owner, profileId, {
+      revision: beforeEdit.fields.revision,
+      name: 'F112 formal',
+      background: '初二',
+      goals: '',
+      preferences: '',
+    });
+    const attempt = await submitQuiz(ordinary);
+    const getSnapshot = async () => {
+      const {
+        rows: [profile],
+      } = await app.pool.query<{ memory_snapshot: ProfileMemorySnapshot }>(
+        'SELECT memory_snapshot FROM learner_profiles WHERE id=$1',
+        [profileId],
+      );
+      return profile.memory_snapshot;
+    };
+    const ready = (stageId: string, kind: string, record?: string) =>
+      app.pool.query(
+        "UPDATE learner_profile_memory_jobs SET ready_at='1998-01-01' WHERE stage_id=$1 AND kind=$2 AND ($3::text IS NULL OR record_id=$3)",
+        [stageId, kind, record ?? null],
+      );
+    const update = (
+      section: string,
+      id: string,
+      text: string,
+      supports = ['e1'],
+      removed?: string,
+    ) =>
+      JSON.stringify({
+        status: 'ready',
+        sections: [{ section, pieceIds: [id] }],
+        pieces: [{ id, text, formation: 'synthesis', supports }],
+        retired: removed
+          ? [
+              {
+                id: removed,
+                section,
+                action: 'correct',
+                replacements: [id],
+                reason: '按当前评分更新',
+              },
+            ]
+          : [],
+        decisions: [{ source: 'e1', action: 'adopt', pieceIds: [id], reason: '可用于后续教学' }],
+      });
+    await discoverProfileMemory(app);
+    await ready(ordinary.stageId, 'quiz');
+    let interruptCommit = false;
+    let interrupted = false;
+    const isolatedWrite: Pick<typeof app, 'pool' | 'withTransaction'> = {
+      pool: app.pool,
+      withTransaction: async (body) => {
+        if (interruptCommit && !interrupted) {
+          interrupted = true;
+          throw new Error('synthetic interruption after capture');
+        }
+        return app.withTransaction(body);
+      },
+    };
+    const first = vi.fn(async (_owner: string, system: string, user: string) => {
+      expect(system).toContain('真实课堂记录');
+      expect(user).toContain('"sourceNature": "classroom"');
+      expect(user).toContain('revision: 0');
+      expect(user).not.toContain('隔离测试');
+      interruptCommit = true;
+      return update('learning_experiences', 'new:1', '首次测验选项错误。');
+    });
+    expect(await processProfileMemory(isolatedWrite, first)).toBe(true);
+    expect(interrupted).toBe(true);
+    expect((await getSnapshot()).revision).toBe(0);
+    await ready(ordinary.stageId, 'quiz');
+    const noSecondCall = vi.fn(async () => {
+      throw new Error('captured reply should be reused');
+    });
+    expect(await processProfileMemory(app, noSecondCall)).toBe(true);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(noSecondCall).not.toHaveBeenCalled();
+    const [quizPiece] = (await getSnapshot()).pieces;
+    expect(quizPiece.text).toBe('首次测验选项错误。');
+    const originalCard = (await readProfileMemory(owner, profileId)).items[0];
+
+    await saveDiscussionAndQA(deep.stageId, true);
+    await discoverProfileMemory(app);
+    await ready(deep.stageId, 'discussion');
+    expect(
+      await processProfileMemory(app, async () =>
+        update('goals', 'new:1', '不能用测验和讨论表现推断长期目标。', ['e1', 's1']),
+      ),
+    ).toBe(true);
+    expect((await getSnapshot()).sections.goals).toEqual([]);
+    expect((await getSnapshot()).revision).toBe(1);
+    await ready(deep.stageId, 'discussion');
+    const merge = vi.fn(async (_owner: string, _system: string, user: string) => {
+      expect(user).toContain(quizPiece.text);
+      expect(user).toContain('revision: 1');
+      expect(user).toContain('prior-teacher-messages');
+      const { fields } = await readProfileMemory(owner, profileId);
+      expect(
+        await editProfileMemory(owner, profileId, { ...fields, name: 'F112 after edit' }),
+      ).not.toBeNull();
+      return update('learning_experiences', quizPiece.id, '选择题答错，提示后正确列式。', [
+        'e1',
+        's1',
+      ]);
+    });
+    expect(await processProfileMemory(app, merge)).toBe(true);
+    expect((await getSnapshot()).revision).toBe(1);
+    await ready(deep.stageId, 'discussion');
+    expect(await processProfileMemory(app, noSecondCall)).toBe(true);
+    expect(merge).toHaveBeenCalledTimes(1);
+    expect(noSecondCall).not.toHaveBeenCalled();
+    expect((await getSnapshot()).pieces[0].supports).toHaveLength(2);
+    const basis = (itemId: string, method = 'GET', identity = cookie, version?: string) => {
+      const request = new NextRequest(
+        `http://localhost/api/learner-profiles/${profileId}/memory/${itemId}${method === 'GET' && version ? '?version=' + version : ''}`,
+        {
+          method,
+          headers: {
+            cookie: `anonymous_id=${identity}`,
+            'Content-Type': 'application/json',
+            'Sec-Fetch-Site': 'same-origin',
+          },
+          ...(method === 'PATCH' && { body: JSON.stringify({ flagged: true, version }) }),
+        },
+      );
+      const context = { params: Promise.resolve({ profileId, itemId }) };
+      return method === 'PATCH' ? PATCH(request, context) : GET_BASIS(request, context);
+    };
+    expect(await (await basis(quizPiece.id)).json()).toMatchObject({
+      kind: 'discussion',
+      relatedSources: [{ kind: 'quiz' }],
+    });
+    expect((await basis(quizPiece.id, 'GET', cookie, originalCard.version)).status).toBe(409);
+    expect((await basis(quizPiece.id, 'PATCH', cookie, originalCard.version)).status).toBe(409);
+    expect((await basis(quizPiece.id, 'GET', foreign)).status).toBe(404);
+    await ready(deep.stageId, 'qa', 'learner-preference');
+    expect(
+      await processProfileMemory(app, async () =>
+        update('teaching_requirements', 'new:1', preference),
+      ),
+    ).toBe(true);
+    await ready(deep.stageId, 'qa', 'one-off');
+    const noChange = (action: 'defer' | 'not_adopt') =>
+      JSON.stringify({
+        status: 'ready',
+        sections: [],
+        pieces: [],
+        retired: [],
+        decisions: [{ source: 'e1', action, pieceIds: [], reason: '暂不纳入画像' }],
+      });
+    expect(await processProfileMemory(app, async () => noChange('defer'))).toBe(true);
+    expect((await readProfileMemory(owner, profileId)).maintenance.failed).toBe(true);
+    const importContext = { params: Promise.resolve({ profileId }) };
+    const rerun = await POST_IMPORT(
+      new NextRequest(`http://localhost/api/learner-profiles/${profileId}/memory/classrooms`, {
+        method: 'POST',
+        headers: {
+          cookie: `anonymous_id=${cookie}`,
+          'Content-Type': 'application/json',
+          'Sec-Fetch-Site': 'same-origin',
+        },
+        body: JSON.stringify({ stageId: deep.stageId }),
+      }),
+      importContext,
+    );
+    expect(rerun.status).toBe(202);
+    await ready(deep.stageId, 'qa', 'one-off');
+    expect(await processProfileMemory(app, async () => noChange('not_adopt'))).toBe(true);
+    expect((await readProfileMemory(owner, profileId)).maintenance.failed).toBe(false);
+
+    const before = await buildInteractiveProfileMemory(
+      owner,
+      { profileId, task: '密度及教学方式', content: {} },
+      async ({ user }) =>
+        JSON.stringify({ selected: JSON.parse(user).memory.map(({ id }: { id: number }) => id) }),
+    );
+    expect(before.selected.map(({ text }) => text)).toContain('选择题答错，提示后正确列式。');
+    const selectExperience = (request: Parameters<typeof selectProfileActivityHistory>[0]) =>
+      selectProfileActivityHistory(request, async ({ prompt }) =>
+        JSON.stringify({
+          selected: JSON.parse(prompt.user)
+            .candidates.filter(
+              ({ value }: { value: { section: string } }) => value.section === 'experiences',
+            )
+            .map(({ id }: { id: string }) => id),
+        }),
+      );
+    const activity = await selectExperience({
+      owner,
+      profileId,
+      task: '密度',
+      system: '使用相关课堂经历',
+      resolvedModel: { serverManaged: true } as ResolvedModel,
+      beforeSelect: async () => {},
+      usageLabel: 'f112-activity',
+    });
+    expect(activity?.text).toContain('选择题答错，提示后正确列式。');
+    const original = await readQuizAttempt(app, owner, attempt.attemptId);
+    const feedback = new QuizFeedbackService(app, {
+      scope: async () => null,
+      select: async () => undefined,
+      verify: async () => false,
+      formalScope: resolveProfileSceneScope,
+      formalSelect: selectExperience,
+      formalVerify: checkProfileActivityHistory,
+      model: async () => ({ serverManaged: true }) as ResolvedModel,
+      generate: async (_model, prompt) => {
+        expect(JSON.parse(prompt).history[0].text).toBe('选择题答错，提示后正确列式。');
+        return JSON.stringify({ summary: '结合已有密度作答复习。', practiceDirection: null });
+      },
+    });
+    expect(
+      await feedback.generate({
+        owner,
+        language: 'zh-CN',
+        environment: '',
+        locator: {
+          attemptId: original.attemptId,
+          versionId: original.version.id,
+          submissionId: original.submission!.id,
+          reviewId: original.review!.id,
+        },
+      }),
+    ).toMatchObject({ status: 'ready' });
+    const previousDialogueFlag = process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT;
+    process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT = 'true';
+    try {
+      for (const sessionType of ['qa', 'discussion'] as const) {
+        const now = Date.now();
+        const result = await resolveDialogueLearnerContext(
+          {
+            owner,
+            signal: new AbortController().signal,
+            model: { serverManaged: true } as ResolvedModel,
+            body: {
+              config: { agentIds: ['teacher'], sessionType },
+              messages: [
+                {
+                  id: 'f112-learner',
+                  role: 'user',
+                  parts: [{ type: 'text', text: '如何计算密度？' }],
+                },
+              ],
+              storeState: {
+                stage: { id: deep.stageId, name: deep.stageId, createdAt: now, updatedAt: now },
+                scenes: [deep.scene],
+                currentSceneId: deep.scene.id,
+                mode: 'autonomous',
+                whiteboardOpen: false,
+              },
+            },
+          },
+          { selectFormal: selectExperience },
+        );
+        expect(result).toEqual({
+          status: 'ready',
+          text: expect.stringContaining('选择题答错，提示后正确列式。'),
+        });
+      }
+    } finally {
+      if (previousDialogueFlag === undefined) delete process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT;
+      else process.env.OPENMAIC_DIALOGUE_LEARNER_CONTEXT = previousDialogueFlag;
+    }
+    await reviewQuiz(attempt.attemptId, original.submission!.id, true);
+    await expect(assertInteractiveProfileMemoryCurrent(owner, before)).rejects.toMatchObject({
+      code: 'LEARNER_CONTEXT_INVALID',
+    });
+    expect(await checkProfileActivityHistory(owner, profileId, activity!.fingerprints)).toBe(false);
+    const remaining = (await readProfileMemoryCandidates(owner, profileId)).map(({ text }) => text);
+    expect(remaining).toEqual(['初二', preference]);
+    await discoverProfileMemory(app);
+    await ready(ordinary.stageId, 'quiz');
+    const revise = async (_owner: string, _system: string, user: string) => {
+      expect(user).not.toContain('选择题答错，提示后正确列式。');
+      expect(user).toContain('SOURCE_REVIEW_REQUIRED');
+      return update(
+        'learning_experiences',
+        'new:1',
+        '密度选择题复评为正确。',
+        ['e1'],
+        quizPiece.id,
+      );
+    };
+    const superseded = async (principal: string, system: string, user: string) => {
+      await reviewQuiz(attempt.attemptId, original.submission!.id, true);
+      return revise(principal, system, user);
+    };
+    expect(await processProfileMemory(app, superseded)).toBe(true);
+    expect((await getSnapshot()).revision).toBe(5);
+    await discoverProfileMemory(app);
+    await ready(ordinary.stageId, 'quiz');
+    expect(await processProfileMemory(app, revise)).toBe(true);
+    const revised = (await readProfileMemory(owner, profileId)).items.find(
+      ({ kind }) => kind === 'quiz',
+    )!;
+    expect(revised.summary).toBe('密度选择题复评为正确。');
+    expect(await (await basis(revised.id)).json()).toMatchObject({
+      reviewHistory: [
+        { results: ['incorrect'] },
+        { results: ['correct'] },
+        { results: ['correct'] },
+      ],
+    });
+    expect((await basis(revised.id, 'PATCH', cookie, revised.version)).status).toBe(204);
+    expect((await readProfileMemoryCandidates(owner, profileId)).map(({ text }) => text)).toEqual([
+      '初二',
+      preference,
+    ]);
+    expect(await readProfileMemoryCandidates(owner, other.profile!)).toEqual([]);
+    await ready(deep.stageId, 'qa', 'withdraw-preference');
+    const preferenceId = (await getSnapshot()).sections.teaching_requirements[0];
+    expect(
+      await processProfileMemory(app, async () =>
+        JSON.stringify({
+          status: 'ready',
+          sections: [{ section: 'teaching_requirements', pieceIds: [] }],
+          pieces: [],
+          retired: [
+            {
+              id: preferenceId,
+              section: 'teaching_requirements',
+              action: 'withdraw',
+              replacements: [],
+              reason: '学生撤回原教学偏好',
+            },
+          ],
+          decisions: [{ source: 'e1', action: 'not_adopt', pieceIds: [], reason: '只撤回原偏好' }],
+        }),
+      ),
+    ).toBe(true);
+    expect((await readProfileMemoryCandidates(owner, profileId)).map(({ text }) => text)).toEqual([
+      '初二',
+    ]);
+
+    const unbound = await prepareClassroom('F112-import', false);
+    await submitQuiz(unbound);
+    const importedProfile = other.profile!;
+    const imported = await POST_IMPORT(
+      new NextRequest(
+        `http://localhost/api/learner-profiles/${importedProfile}/memory/classrooms`,
+        {
+          method: 'POST',
+          headers: {
+            cookie: `anonymous_id=${cookie}`,
+            'Content-Type': 'application/json',
+            'Sec-Fetch-Site': 'same-origin',
+          },
+          body: JSON.stringify({ stageId: unbound.stageId }),
+        },
+      ),
+      { params: Promise.resolve({ profileId: importedProfile }) },
+    );
+    expect(imported.status).toBe(202);
+    await ready(unbound.stageId, 'quiz');
+    expect(
+      await processProfileMemory(app, async () =>
+        update('learning_experiences', 'new:1', '主动导入的测验选项错误。'),
+      ),
+    ).toBe(true);
+    expect((await readProfileMemory(owner, importedProfile)).items).toMatchObject([
+      { summary: '主动导入的测验选项错误。' },
+    ]);
+    expect(
+      (
+        await app.pool.query(
+          'SELECT 1 FROM learner_profile_memory_items i JOIN learner_profile_memory_jobs j ON j.id=i.job_id WHERE j.profile_id=$1',
+          [profileId],
+        )
+      ).rowCount,
+    ).toBe(0);
+    expect(
+      (
+        await app.pool.query(
+          'SELECT revision FROM learner_profile_memory_transitions WHERE profile_id=$1 ORDER BY revision',
+          [profileId],
+        )
+      ).rows,
+    ).toEqual([1, 2, 3, 4, 5, 6, 7].map((revision) => ({ revision })));
   });
 });

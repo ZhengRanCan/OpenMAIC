@@ -239,7 +239,8 @@ export function LearnerProfileMemoryDialog({
                         <MemoryItem
                           endpoint={endpoint}
                           item={item}
-                          key={item.id}
+                          key={item.version ? `${item.id}:${item.version}` : item.id}
+                          onReload={reload}
                           onFlag={() =>
                             setView(
                               (current) =>
@@ -434,12 +435,14 @@ function MemoryItem({
   endpoint,
   item,
   onFlag,
+  onReload,
 }: {
   endpoint: string;
   item: ProfileMemoryItem;
   onFlag: () => void;
+  onReload: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [basis, setBasis] = useState<ProfileMemorySource | null>();
   const [sourceError, setSourceError] = useState(false);
@@ -450,8 +453,13 @@ function MemoryItem({
     setBasis(undefined);
     setSourceError(false);
     try {
-      const reply = await fetch(url, { cache: 'no-store' });
-      if (reply.status === 404) setBasis(null);
+      const reply = await fetch(item.version ? `${url}?version=${item.version}` : url, {
+        cache: 'no-store',
+      });
+      if (reply.status === 409) {
+        setExpanded(false);
+        onReload();
+      } else if (reply.status === 404) setBasis(null);
       else if (reply.ok) setBasis((await reply.json()) as ProfileMemorySource);
       else throw new Error('Source unavailable');
     } catch {
@@ -467,10 +475,17 @@ function MemoryItem({
       const reply = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ flagged: true }),
+        body: JSON.stringify({ flagged: true, version: item.version }),
       });
+      if (reply.status === 409) {
+        setExpanded(false);
+        setBasis(undefined);
+        onReload();
+        return;
+      }
       if (!reply.ok) throw new Error('Report failed');
-      onFlag();
+      if (item.version) onReload();
+      else onFlag();
     } catch {
       setFlagError(true);
     } finally {
@@ -523,63 +538,71 @@ function MemoryItem({
           )}
           {!sourceError && basis === undefined && <p role="status">{t('common.loading')}</p>}
           {basis === null && <p>{t('profileMemory.sourceUnavailable')}</p>}
-          {basis && (
-            <>
-              <p className="font-medium">{basis.title || t(`profileMemory.kind.${basis.kind}`)}</p>
-              {basis.historicalReview && (
-                <p className="text-muted-foreground">{t('profileMemory.historicalReview')}</p>
-              )}
-              {basis.parts.map((part, index) => (
-                <div className="space-y-1 border-t pt-1.5" key={index}>
-                  {part.previous?.map((message, messageIndex) => (
-                    <p key={messageIndex} className="whitespace-pre-wrap">
-                      <strong>{t(`profileMemory.role.${message.role}`)} </strong>
-                      {message.text}
-                    </p>
-                  ))}
-                  {part.question && <p className="whitespace-pre-wrap">{part.question}</p>}
-                  {!!part.options?.length && (
-                    <ul className="list-inside list-disc">
-                      {part.options.map((option, optionIndex) => (
-                        <li key={optionIndex}>{option}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <p className="whitespace-pre-wrap">
-                    <strong>{t('profileMemory.answer')} </strong>
-                    {part.answer}
-                  </p>
-                  {part.review && <p>{t(`profileMemory.review.${part.review}`)}</p>}
-                  {basis.reviewHistory && (
-                    <details>
-                      <summary className="cursor-pointer font-medium">
-                        {t('quiz.traceGradingHistory', { count: basis.reviewHistory.length })}
-                      </summary>
-                      <ul className="mt-1 space-y-1">
-                        {basis.reviewHistory.map((entry) => (
-                          <li key={entry.ordinal}>
-                            {t('quiz.traceGradingNumber', { number: entry.ordinal })}
-                            {' · '}
-                            <time dateTime={entry.savedAt}>
-                              {new Date(entry.savedAt).toLocaleString(locale)}
-                            </time>
-                            {' · '}
-                            {t(`profileMemory.review.${entry.results[index]}`)}
-                            {entry.current && ` · ${t('quiz.traceAdoptedGrading')}`}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                  {part.help !== 'unknown' && (
-                    <p className="text-muted-foreground">{t(`profileMemory.help.${part.help}`)}</p>
-                  )}
-                </div>
-              ))}
-            </>
-          )}
+          {basis &&
+            [basis, ...(basis.relatedSources ?? [])].map((source, index) => (
+              <MemoryBasis key={index} basis={source} />
+            ))}
         </div>
       )}
     </article>
+  );
+}
+
+function MemoryBasis({ basis }: { basis: ProfileMemorySource }) {
+  const { t, locale } = useI18n();
+  return (
+    <div className="space-y-1.5">
+      <p className="font-medium">{basis.title || t(`profileMemory.kind.${basis.kind}`)}</p>
+      {basis.historicalReview && (
+        <p className="text-muted-foreground">{t('profileMemory.historicalReview')}</p>
+      )}
+      {basis.parts.map((part, index) => (
+        <div className="space-y-1 border-t pt-1.5" key={index}>
+          {part.previous?.map((message, messageIndex) => (
+            <p key={messageIndex} className="whitespace-pre-wrap">
+              <strong>{t(`profileMemory.role.${message.role}`)} </strong>
+              {message.text}
+            </p>
+          ))}
+          {part.question && <p className="whitespace-pre-wrap">{part.question}</p>}
+          {!!part.options?.length && (
+            <ul className="list-inside list-disc">
+              {part.options.map((option, optionIndex) => (
+                <li key={optionIndex}>{option}</li>
+              ))}
+            </ul>
+          )}
+          <p className="whitespace-pre-wrap">
+            <strong>{t('profileMemory.answer')} </strong>
+            {part.answer}
+          </p>
+          {part.review && <p>{t(`profileMemory.review.${part.review}`)}</p>}
+          {basis.reviewHistory && (
+            <details>
+              <summary className="cursor-pointer font-medium">
+                {t('quiz.traceGradingHistory', { count: basis.reviewHistory.length })}
+              </summary>
+              <ul className="mt-1 space-y-1">
+                {basis.reviewHistory.map((entry) => (
+                  <li key={entry.ordinal}>
+                    {t('quiz.traceGradingNumber', { number: entry.ordinal })}
+                    {' · '}
+                    <time dateTime={entry.savedAt}>
+                      {new Date(entry.savedAt).toLocaleString(locale)}
+                    </time>
+                    {' · '}
+                    {t(`profileMemory.review.${entry.results[index]}`)}
+                    {entry.current && ` · ${t('quiz.traceAdoptedGrading')}`}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {part.help !== 'unknown' && (
+            <p className="text-muted-foreground">{t(`profileMemory.help.${part.help}`)}</p>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

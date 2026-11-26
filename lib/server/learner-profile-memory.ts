@@ -8,6 +8,12 @@ import type {
   ProfileMemoryView,
 } from '@/lib/learner-memory/profile-memory-contracts';
 import { omitUnknownHelpFromExperience } from '@/lib/learner-memory/profile-memory-content';
+import { SECTIONS, sourceKey } from '@/lib/learner-memory/contracts';
+import {
+  PROFILE_SECTION,
+  profileMemoryPieceVersion,
+  type ProfileMemorySnapshot,
+} from '@/lib/learner-memory/profile-memory-snapshot';
 import {
   PROFILE_MEMORY_JOB_AUTHORIZED,
   readProfileMemorySource,
@@ -15,6 +21,11 @@ import {
   profileMemorySourceVersion,
   type ProfileSourceLocator,
 } from '@/lib/persistence/learner-profile-memory-source';
+import {
+  readProfileSnapshotIn,
+  readSnapshotEvidenceIn,
+  readTrustedProfileSnapshotIn,
+} from '@/lib/persistence/learner-profile-memory-snapshot';
 import { assertLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { generationRunPersistence } from './generation/run/store';
@@ -26,6 +37,7 @@ type FieldsRow = {
   background: string;
   goals: string;
   preferences: string;
+  memory_snapshot: ProfileMemorySnapshot | null;
 };
 
 async function readIn(
@@ -37,18 +49,46 @@ async function readIn(
   const {
     rows: [profile],
   } = await tx.query<FieldsRow>(
-    'SELECT name,memory_revision,background,goals,preferences FROM learner_profiles WHERE id=$1',
+    'SELECT name,memory_revision,background,goals,preferences,memory_snapshot FROM learner_profiles WHERE id=$1',
     [profileId],
   );
-  const { rows: items } = await tx.query<ProfileMemoryItem>(
-    `SELECT i.id,i.section,i.summary,j.kind,i.flagged_at IS NOT NULL AS flagged
+  let items: ProfileMemoryItem[];
+  if (profile.memory_snapshot) {
+    const { evidence, flagged } = await readTrustedProfileSnapshotIn(
+      tx,
+      ownerId,
+      profileId,
+      profile.memory_snapshot,
+    );
+    const pieces = new Map(profile.memory_snapshot.pieces.map((piece) => [piece.id, piece]));
+    items = SECTIONS.flatMap((section) =>
+      profile.memory_snapshot!.sections[section].flatMap((id) => {
+        const piece = pieces.get(id)!;
+        // A summary can combine several classrooms. Show it only while they remain readable.
+        if (!piece.supports.every((support) => evidence.has(sourceKey(support)))) return [];
+        return [
+          {
+            id,
+            version: profileMemoryPieceVersion(piece),
+            section: PROFILE_SECTION[section],
+            summary: piece.text,
+            kind: evidence.get(sourceKey(piece.supports[0]))!.kind,
+            flagged: piece.supports.some(({ id }) => flagged.has(id)),
+          },
+        ];
+      }),
+    );
+  } else {
+    ({ rows: items } = await tx.query<ProfileMemoryItem>(
+      `SELECT i.id,i.section,i.summary,j.kind,i.flagged_at IS NOT NULL AS flagged
      FROM learner_profile_memory_items i
      JOIN learner_profile_memory_jobs j ON j.id=i.job_id AND j.profile_id=$1
      JOIN stage_meta s ON s.stage_id=j.stage_id AND s.owner_id=$2 AND s.deleted_at IS NULL
      WHERE ${PROFILE_MEMORY_JOB_AUTHORIZED}
      ORDER BY i.created_at DESC,i.id`,
-    [profileId, ownerId],
-  );
+      [profileId, ownerId],
+    ));
+  }
   const {
     rows: [maintenance],
   } = await tx.query<ProfileMemoryView['maintenance']>(
@@ -61,6 +101,7 @@ async function readIn(
   );
   return {
     profile: { id: profileId, name: profile.name },
+    ...(profile.memory_snapshot && { snapshotRevision: profile.memory_snapshot.revision }),
     fields: {
       revision: profile.memory_revision,
       background: profile.background,
@@ -106,11 +147,21 @@ export async function readProfileMemoryBasis(
   ownerId: string,
   profileId: string,
   itemId: string,
-): Promise<ProfileMemorySource | null> {
+  version?: string,
+): Promise<ProfileMemorySource | 'conflict' | null> {
   const { withTransaction } = await generationRunPersistence();
   return withTransaction(async (tx) => {
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
     await assertLearnerProfileIn(tx, ownerId, profileId);
+    const stored = await readProfileSnapshotIn(tx, profileId);
+    if (stored?.memory_snapshot) {
+      const piece = stored.memory_snapshot.pieces.find(({ id }) => id === itemId);
+      if (!piece) return null;
+      if (version && version !== profileMemoryPieceVersion(piece)) return 'conflict';
+      const sources = await readSnapshotEvidenceIn(tx, ownerId, profileId, piece.supports, true);
+      const [first, ...related] = sources.values();
+      return first ? { ...first, ...(related.length && { relatedSources: related }) } : null;
+    }
     return readAuthorizedProfileMemoryBasisIn(tx, ownerId, profileId, itemId, true);
   });
 }
@@ -152,11 +203,36 @@ export async function readAuthorizedProfileMemoryBasisIn(
   };
 }
 
-export async function flagProfileMemory(ownerId: string, profileId: string, itemId: string) {
+export async function flagProfileMemory(
+  ownerId: string,
+  profileId: string,
+  itemId: string,
+  version?: string,
+) {
   const { withTransaction } = await generationRunPersistence();
   return withTransaction(async (tx) => {
     await fenceOwnerWrite(tx, ownerId);
     await assertLearnerProfileIn(tx, ownerId, profileId);
+    const stored = await readProfileSnapshotIn(tx, profileId);
+    if (stored?.memory_snapshot) {
+      const current = await readProfileSnapshotIn(tx, profileId, true);
+      const piece = current?.memory_snapshot?.pieces.find(({ id }) => id === itemId);
+      if (!piece) return false;
+      if (version !== profileMemoryPieceVersion(piece)) return 'conflict' as const;
+      const sources = await readSnapshotEvidenceIn(tx, ownerId, profileId, piece.supports);
+      if (!piece.supports.every((source) => sources.has(sourceKey(source)))) return false;
+      const flags = await tx.query(
+        `INSERT INTO learner_profile_memory_restrictions(profile_id,source_id)
+         SELECT $1,unnest($2::text[]) ON CONFLICT DO NOTHING RETURNING source_id`,
+        [profileId, piece.supports.map(({ id }) => id)],
+      );
+      if (flags.rows.length)
+        await tx.query(
+          'UPDATE learner_profiles SET memory_revision=memory_revision+1 WHERE id=$1',
+          [profileId],
+        );
+      return true;
+    }
     const {
       rows: [item],
     } = await tx.query<{
@@ -232,7 +308,9 @@ export async function profileMemoryClassroomImport(
     if (enqueue) {
       await enqueueProfileMemory(tx, { ownerId, profileId, stageId });
       await tx.query(
-        `UPDATE learner_profile_memory_jobs SET state='queued', attempts=0, ready_at=now()
+        `UPDATE learner_profile_memory_jobs SET state='queued', attempts=0, ready_at=now(),
+         snapshot_deferred_refs='{}',
+         snapshot_call=CASE WHEN snapshot_call ? 'reply' THEN snapshot_call ELSE NULL END
          WHERE stage_id=$1 AND profile_id=$2 AND state='failed'`,
         [stageId, profileId],
       );

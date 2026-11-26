@@ -8,6 +8,7 @@ import {
   type MemoryPrompt,
   type MemorySnapshot,
   type MemorySource,
+  type TransitionSource,
 } from './contracts';
 import { OUTPUT_PROTOCOL } from './output-protocol';
 
@@ -46,15 +47,16 @@ function readableConditions(conditions: string[]): unknown[] {
   });
 }
 
-export function buildMemoryPrompt(
-  snapshot: MemorySnapshot,
-  batch: MemorySource[],
+export function buildMemoryPrompt<Source extends TransitionSource = MemorySource>(
+  snapshot: MemorySnapshot<Source>,
+  batch: Source[],
   budgets: MemoryBudgets,
-  availableOld: MemorySource[],
+  availableOld: Source[],
   system = SYSTEM,
+  classroom = false,
 ) {
   budgetsSchema.parse(budgets);
-  const aliases: Record<string, MemorySource> = {};
+  const aliases: Record<string, Source> = {};
   batch.forEach((s, i) => {
     aliases['e' + (i + 1)] = s;
   });
@@ -64,12 +66,14 @@ export function buildMemoryPrompt(
       aliases['s' + (Object.keys(aliases).filter((x) => x.startsWith('s')).length + 1)] = s;
       present.add(sourceKey(s));
     }
-  const aliasOf = (s: MemorySource) =>
+  const aliasOf = (s: Source) =>
     Object.keys(aliases).find((k) => sourceKey(aliases[k]) === sourceKey(s));
   const pretty = (value: unknown) => JSON.stringify(value, null, 2);
   const lines = [
     '# 本次任务',
-    '为隔离测试 Memory 整理本批新增信息，并核对已限制的片段。',
+    classroom
+      ? '根据本批真实课堂资料维护学习画像，并核对已限制的片段。'
+      : '为隔离测试 Memory 整理本批新增信息，并核对已限制的片段。',
     '判断是否值得保留，只更新受影响内容；不要求每条 Evidence 形成新片段。',
     '',
     '# 当前 Memory',
@@ -80,19 +84,20 @@ export function buildMemoryPrompt(
     if (!snapshot.sections[section].length) lines.push('（空）');
     for (const id of snapshot.sections[section]) {
       const p = snapshot.pieces.find((p) => p.id === id)!;
+      const restricted = classroom && p.restrictions.length > 0;
       lines.push(
         pretty({
           id: p.id,
-          text: p.text,
+          text: restricted ? undefined : p.text,
           formation: p.formation,
           supports: p.supports.map(aliasOf).filter(Boolean),
-          conditions: readableConditions(p.conditions),
+          conditions: restricted ? [] : readableConditions(p.conditions),
           restrictions: p.restrictions,
         }),
       );
     }
   }
-  const sourceBlock = ([alias, s]: [string, MemorySource]) =>
+  const sourceBlock = ([alias, s]: [string, Source]) =>
     `## ${alias}\n${pretty({
       kind: s.kind,
       text: s.text,
@@ -121,8 +126,12 @@ export function buildMemoryPrompt(
     '按 Unicode code points 计数。来源元数据不计入正文预算。',
     '',
     '# 来源范围与输出',
-    '本次为隔离测试；完整来源、原始条件和版本由程序保存。',
-    '来源性质限定结果归属，不单独作为拒绝分析模拟内容的理由。按 System Prompt 的 JSON 协议返回。',
+    ...(classroom
+      ? ['正式课堂原始记录和版本由程序保存。按 System Prompt 的 JSON 协议返回。']
+      : [
+          '本次为隔离测试；完整来源、原始条件和版本由程序保存。',
+          '来源性质限定结果归属，不单独作为拒绝分析模拟内容的理由。按 System Prompt 的 JSON 协议返回。',
+        ]),
   );
   const user = lines.join('\n');
   const inputBytes = Buffer.byteLength(system + user, 'utf8');
@@ -149,7 +158,7 @@ export function checkModelCapacity(
   );
   invariant(outputWindow === undefined || outputWindow >= 16000, 'MODEL_OUTPUT_CAPACITY');
 }
-export function contentSize(snapshot: MemorySnapshot) {
+export function contentSize(snapshot: MemorySnapshot<TransitionSource>) {
   const sections = Object.fromEntries(
     SECTIONS.map((s) => [
       s,

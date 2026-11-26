@@ -61,6 +61,7 @@ export type ProfileMemorySource = {
   kind: ProfileMemoryKind;
   occurredAt: string;
   historicalReview?: boolean;
+  relatedSources?: ProfileMemorySource[];
   reviewHistory?: {
     ordinal: number;
     savedAt: string;
@@ -78,6 +79,7 @@ export type ProfileMemorySource = {
 };
 export type ProfileMemoryItem = {
   id: string;
+  version?: string;
   section: ProfileMemorySection;
   summary: string;
   kind: ProfileMemoryKind;
@@ -87,5 +89,6 @@ export type ProfileMemoryView = {
   profile: LearnerProfileSummary;
   fields: Omit<ProfileMemoryEdit, 'name'>;
   items: ProfileMemoryItem[];
+  snapshotRevision?: number;
   maintenance: { pending: boolean; failed: boolean };
 };

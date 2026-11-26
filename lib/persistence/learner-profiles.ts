@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { emptySnapshot } from '@/lib/learner-memory/contracts';
 
 import type {
   ClassroomLearnerProfile,
@@ -83,9 +84,10 @@ export async function bindLearnerProfileIn(
     await assertLearnerProfileIn(tx, owner, profileId);
   } else {
     const created = await tx.query<{ id: string }>(
-      `INSERT INTO learner_profiles(id,owner_id,creation_run_id) VALUES($1,$2,$3)
+      `INSERT INTO learner_profiles(id,owner_id,creation_run_id,memory_snapshot)
+         VALUES($1,$2,$3,$4::jsonb)
          RETURNING id`,
-      [randomUUID(), owner, input.runId],
+      [randomUUID(), owner, input.runId, JSON.stringify(emptySnapshot())],
     );
     profileId = created.rows[0]!.id;
   }

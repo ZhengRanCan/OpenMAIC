@@ -40,6 +40,10 @@ const rawSourceSchema = z.strictObject({
 });
 export const sourceSchema = rawSourceSchema.extend({ version: z.string().regex(/^[a-f0-9]{64}$/) });
 export type MemorySource = z.infer<typeof sourceSchema>;
+export type TransitionSource = Pick<
+  MemorySource,
+  'id' | 'version' | 'kind' | 'text' | 'refs' | 'conditions' | 'occurredAt'
+> & { sourceNature: MemorySource['sourceNature'] | 'classroom' };
 export function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_key, item) =>
     item && typeof item === 'object' && !Array.isArray(item)
@@ -83,21 +87,23 @@ export const DEFAULT_BUDGETS: MemoryBudgets = {
   batchSize: 16,
 };
 export type Formation = 'declaration' | 'confirmed_experience' | 'synthesis';
-export interface MemoryPiece {
+export interface MemoryPiece<Source extends TransitionSource = MemorySource> {
   id: string;
   text: string;
   formation: Formation;
-  supports: MemorySource[];
+  supports: Source[];
   conditions: string[];
   restrictions: string[];
 }
-export interface MemorySnapshot {
+export interface MemorySnapshot<Source extends TransitionSource = MemorySource> {
   schemaVersion: 1;
   revision: number;
   sections: Record<MemorySection, string[]>;
-  pieces: MemoryPiece[];
+  pieces: MemoryPiece<Source>[];
 }
-export function emptySnapshot(): MemorySnapshot {
+export function emptySnapshot<
+  Source extends TransitionSource = MemorySource,
+>(): MemorySnapshot<Source> {
   return {
     schemaVersion: 1,
     revision: 0,
@@ -200,4 +206,4 @@ export class MemoryError extends Error {
 export function invariant(ok: unknown, code: string): asserts ok {
   if (!ok) throw new MemoryError(code);
 }
-export const sourceKey = (s: MemorySource) => s.id + ':' + s.version;
+export const sourceKey = (s: Pick<TransitionSource, 'id' | 'version'>) => s.id + ':' + s.version;

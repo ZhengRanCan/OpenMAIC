@@ -10,10 +10,15 @@ import {
   type ProfileOutlineMemory,
 } from '@/lib/learner-context/profile-outline-memory';
 import type { MemorySelectionPrompt } from '@/lib/learner-context/selection-contracts';
-import { canonicalJson } from '@/lib/learner-memory/contracts';
+import { canonicalJson, digest, SECTIONS, sourceKey } from '@/lib/learner-memory/contracts';
+import {
+  PROFILE_SECTION,
+  type ProfileMemorySnapshot,
+} from '@/lib/learner-memory/profile-memory-snapshot';
 import type { ProfileMemoryItem } from '@/lib/learner-memory/profile-memory-contracts';
 import { assertLearnerProfileIn } from '@/lib/persistence/learner-profiles';
 import { PROFILE_MEMORY_JOB_AUTHORIZED } from '@/lib/persistence/learner-profile-memory-source';
+import { readTrustedProfileSnapshotIn } from '@/lib/persistence/learner-profile-memory-snapshot';
 import { readAuthorizedProfileMemoryBasisIn } from '@/lib/server/learner-profile-memory';
 import { generationRunPersistence } from './store';
 
@@ -40,10 +45,11 @@ export async function readProfileMemoryCandidates(
     await assertLearnerProfileIn(tx, ownerId, profileId);
     const {
       rows: [profile],
-    } = await tx.query<Record<(typeof FIELDS)[number], string>>(
-      'SELECT background,goals,preferences FROM learner_profiles WHERE id=$1',
-      [profileId],
-    );
+    } = await tx.query<
+      Record<(typeof FIELDS)[number], string> & { memory_snapshot: ProfileMemorySnapshot | null }
+    >('SELECT background,goals,preferences,memory_snapshot FROM learner_profiles WHERE id=$1', [
+      profileId,
+    ]);
     const candidates: ProfileOutlineCandidate[] = FIELDS.flatMap((section) => {
       const key = `user:${section}`;
       return profile[section].trim() && (!keys || keys.includes(key))
@@ -51,6 +57,47 @@ export async function readProfileMemoryCandidates(
         : [];
     });
     if (keys && keys.every((key) => key.startsWith('user:'))) return candidates;
+    if (profile.memory_snapshot) {
+      const wanted = keys && new Set(keys.map((key) => key.split(':', 1)[0]));
+      const snapshot = wanted
+        ? {
+            ...profile.memory_snapshot,
+            pieces: profile.memory_snapshot.pieces.filter(({ id }) => wanted.has(id)),
+            sections: Object.fromEntries(
+              SECTIONS.map((section) => [
+                section,
+                profile.memory_snapshot!.sections[section].filter((id) => wanted.has(id)),
+              ]),
+            ) as ProfileMemorySnapshot['sections'],
+          }
+        : profile.memory_snapshot;
+      const { usable, evidence } = await readTrustedProfileSnapshotIn(
+        tx,
+        ownerId,
+        profileId,
+        snapshot,
+      );
+      const pieces = new Map(usable.pieces.map((piece) => [piece.id, piece]));
+      for (const section of SECTIONS) {
+        for (const id of usable.sections[section]) {
+          const piece = pieces.get(id)!;
+          const supports = piece.supports.map(sourceKey);
+          const key = `${id}:${section}:${digest(supports)}`;
+          if (keys && !keys.includes(key)) continue;
+          const sources = supports.map((support) => evidence.get(support)!);
+          candidates.push({
+            key,
+            section: PROFILE_SECTION[section],
+            text: piece.text,
+            source: sources[0].kind,
+            conditions: sources.flatMap(({ parts }) =>
+              parts.map(({ help, review }) => ({ help, ...(review && { review }) })),
+            ),
+          });
+        }
+      }
+      return candidates;
+    }
     const { rows } = await tx.query<Pick<ProfileMemoryItem, 'id' | 'section' | 'summary' | 'kind'>>(
       `SELECT i.id,i.section,i.summary,j.kind
        FROM learner_profile_memory_items i

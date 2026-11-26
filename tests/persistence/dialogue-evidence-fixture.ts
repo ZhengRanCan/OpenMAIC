@@ -8,6 +8,7 @@ import {
 import { ensureDialogueEvidenceSchema } from '@/lib/persistence/dialogue-evidence-schema';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { ensureOwnerMergeSchema } from '@/lib/persistence/owner-merges';
+import { ensureQuizTraceSchema } from '@/lib/persistence/quiz-trace-schema';
 import { buildChatRecordInit, statePayload, runtimeSessionId } from '@/lib/utils/chat-storage-core';
 import { readDialogueSource } from '@/lib/persistence/dialogue-trace-read';
 import { DialogueEvidenceStore } from '@/lib/persistence/dialogue-evidence-store';
@@ -56,6 +57,7 @@ export async function dialogueEvidenceFixture(url: string) {
       'CREATE TABLE stage_meta(stage_id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,deleted_at TIMESTAMPTZ)',
     );
     await db.query("INSERT INTO stage_meta VALUES('stage','owner',NULL)");
+    await ensureQuizTraceSchema(db);
     await ensureGenerationRunSchema(db);
     await ensureDialogueEvidenceSchema(db);
     await db.query(

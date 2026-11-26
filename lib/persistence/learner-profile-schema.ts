@@ -96,6 +96,27 @@ CREATE TABLE learner_profile_mastery (
 CREATE INDEX classroom_learner_profiles_profile_idx ON classroom_learner_profiles(profile_id);
 `;
 
+export const LEARNER_PROFILE_MEMORY_SNAPSHOT_SCHEMA = `
+ALTER TABLE learner_profiles ADD COLUMN memory_snapshot JSONB;
+ALTER TABLE learner_profile_memory_jobs
+  ADD COLUMN snapshot_done_refs INTEGER[] NOT NULL DEFAULT '{}',
+  ADD COLUMN snapshot_deferred_refs INTEGER[] NOT NULL DEFAULT '{}',
+  ADD COLUMN snapshot_call JSONB;
+CREATE TABLE learner_profile_memory_transitions (
+  profile_id UUID NOT NULL REFERENCES learner_profiles(id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL,
+  job_id UUID NOT NULL REFERENCES learner_profile_memory_jobs(id) ON DELETE CASCADE,
+  decisions JSONB NOT NULL,
+  retired JSONB NOT NULL,
+  PRIMARY KEY(profile_id,revision)
+);
+CREATE TABLE learner_profile_memory_restrictions (
+  profile_id UUID NOT NULL REFERENCES learner_profiles(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  PRIMARY KEY(profile_id,source_id)
+);
+`;
+
 export const LEARNER_PROFILE_MASTERY_JOBS_SCHEMA = `
 CREATE TABLE learner_profile_mastery_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -174,7 +174,7 @@ export class LearnerMemoryStore {
         if (r.rows.length) old.push(s);
       }
       const batch = pending.rows.map((r) => r.data);
-      let built: ReturnType<typeof buildMemoryPrompt>;
+      let built: ReturnType<typeof buildMemoryPrompt<MemorySource>>;
       for (;;) {
         try {
           built = buildMemoryPrompt(
@@ -282,7 +282,7 @@ export class LearnerMemoryStore {
         await this.saveRun(tx, run);
         return run;
       }
-      let transition: ReturnType<typeof validateTransition>;
+      let transition: ReturnType<typeof validateTransition<MemorySource>>;
       try {
         invariant(run.reply.finishReason !== 'error', 'INVOCATION_RESULT_UNKNOWN');
         invariant(run.reply.finishReason === 'stop', 'INCOMPLETE_MODEL_REPLY');

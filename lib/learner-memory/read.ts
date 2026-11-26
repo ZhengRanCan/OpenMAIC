@@ -1,7 +1,7 @@
-import { SECTIONS, type MemorySnapshot } from './contracts';
+import { SECTIONS, type MemorySnapshot, type TransitionSource } from './contracts';
 import { contentSize } from './prompt';
 
-export function projectMemory(snapshot: MemorySnapshot) {
+export function projectMemory<Source extends TransitionSource>(snapshot: MemorySnapshot<Source>) {
   const usable = new Set(snapshot.pieces.filter((p) => !p.restrictions.length).map((p) => p.id));
   const sections = Object.fromEntries(
     SECTIONS.map((s) => [s, snapshot.sections[s].filter((id) => usable.has(id))]),

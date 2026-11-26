@@ -5,14 +5,25 @@ import {
   SECTIONS,
   sourceKey,
   type MemoryPiece,
-  type PreparedMemoryRun,
+  type MemoryPrompt,
+  type MemorySnapshot,
+  type MemoryBudgets,
+  type TransitionSource,
   type MemoryDecision,
 } from './contracts';
 import { contentSize } from './prompt';
 
 const unique = (values: string[], code: string) =>
   invariant(new Set(values).size === values.length, code);
-export function validateTransition(run: PreparedMemoryRun, value: unknown) {
+export function validateTransition<Source extends TransitionSource>(
+  run: {
+    prompt: MemoryPrompt;
+    snapshot: MemorySnapshot<Source>;
+    aliases: Record<string, Source>;
+    budgets: MemoryBudgets;
+  },
+  value: unknown,
+) {
   invariant(run.prompt.version === 'memory.v2', 'PROMPT_VERSION_UNSUPPORTED');
   const output = outputSchema.parse(value);
   invariant(output.status === 'ready', 'CAPACITY_EXCEEDED');
@@ -59,7 +70,7 @@ export function validateTransition(run: PreparedMemoryRun, value: unknown) {
       for (const section of SECTIONS)
         if (snapshot.sections[section].includes(p.id))
           invariant(changedSections.has(section), 'SHARED_PIECE_SECTION_OMITTED');
-    const piece: MemoryPiece = {
+    const piece: MemoryPiece<Source> = {
       id: ids.get(p.id)!,
       text: p.text,
       formation: p.formation,
@@ -136,5 +147,13 @@ export function validateTransition(run: PreparedMemoryRun, value: unknown) {
     invariant(size.sections[section] <= run.budgets.sections[section], 'SECTION_BUDGET_EXCEEDED');
   invariant(size.total <= run.budgets.total, 'TOTAL_BUDGET_EXCEEDED');
   snapshot.revision++;
-  return { snapshot, decisions, retired: output.retired };
+  return {
+    snapshot,
+    decisions,
+    retired: output.retired,
+    resolvedRetired: output.retired.map((entry) => ({
+      ...entry,
+      replacements: entry.replacements.map(resolve),
+    })),
+  };
 }

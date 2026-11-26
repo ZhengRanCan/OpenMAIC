@@ -12,20 +12,18 @@ import {
   PROFILE_DIALOGUE_MESSAGES,
   profileMemorySourceVersion,
   readProfileSourceAccess,
-  type ProfileSourceLocator,
 } from '@/lib/persistence/learner-profile-memory-source';
 import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
 import type { ServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { generationRunPersistence } from './generation/run/store';
 import { resolveModel } from './resolve-model';
+import {
+  processSnapshotMemory,
+  ProfileMemoryKnownModelFailure,
+  type ProfileMemoryJob,
+} from './learner-profile-memory-snapshot-runner';
 
 type Provider = Pick<ServerPersistenceProvider, 'pool' | 'withTransaction'>;
-type Job = ProfileSourceLocator & {
-  id: string;
-  claim_id: string;
-  attempts: number;
-  requested_review_ordinal: number | null;
-};
 type Invoke = (ownerId: string, system: string, prompt: string) => Promise<string>;
 
 const INSERT_JOBS = 'INSERT INTO learner_profile_memory_jobs AS job';
@@ -64,7 +62,8 @@ export async function enqueueProfileMemory(
      ORDER BY a.created_at,a.id ${limit}
      ON CONFLICT ON CONSTRAINT learner_profile_memory_jobs_source_key DO UPDATE
        SET requested_review_ordinal=EXCLUDED.requested_review_ordinal, state='queued', attempts=0,
-         claim_id=NULL, claimed_at=NULL, ready_at=now()
+         claim_id=NULL, claimed_at=NULL, ready_at=now(),
+         snapshot_done_refs='{}',snapshot_deferred_refs='{}',snapshot_call=NULL
        WHERE COALESCE(job.requested_review_ordinal, 0) < EXCLUDED.requested_review_ordinal`,
     params,
   );
@@ -86,7 +85,7 @@ export async function enqueueProfileMemory(
 export async function processProfileMemory(app: Provider, invoke: Invoke): Promise<boolean> {
   const {
     rows: [job],
-  } = await app.pool.query<Job>(
+  } = await app.pool.query<ProfileMemoryJob>(
     `UPDATE learner_profile_memory_jobs SET state='running', attempts=attempts+1, claim_id=$1,
       claimed_at=now()
      WHERE id=(SELECT id FROM learner_profile_memory_jobs
@@ -127,6 +126,7 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
       await finish('finished');
       return true;
     }
+    if (await processSnapshotMemory(app, job, source, invoke)) return true;
     let prompt = profileMemoryInput(source.basis);
     if (job.kind !== 'quiz' && Buffer.byteLength(prompt) > 24_000) {
       prompt = profileMemoryInput({
@@ -181,14 +181,17 @@ export async function processProfileMemory(app: Provider, invoke: Invoke): Promi
 }
 
 async function invokeProfileMemory(ownerId: string, system: string, prompt: string) {
-  const model = await resolveModel({ stage: 'quiz-evidence', workspaceId: ownerId });
-  if (!model.serverManaged) throw new Error('PROFILE_MEMORY_MODEL_UNAVAILABLE');
+  const model = await resolveModel({ stage: 'quiz-evidence', workspaceId: ownerId }).catch(() => {
+    throw new ProfileMemoryKnownModelFailure('PROFILE_MEMORY_MODEL_UNAVAILABLE');
+  });
+  if (!model.serverManaged)
+    throw new ProfileMemoryKnownModelFailure('PROFILE_MEMORY_MODEL_UNAVAILABLE');
   const reply = await callLLM(
     {
       model: model.model,
       system,
       prompt,
-      maxOutputTokens: 2048,
+      maxOutputTokens: system === PROFILE_MEMORY_SYSTEM ? 2048 : 8192,
       maxRetries: 0,
       abortSignal: AbortSignal.timeout(60_000),
     },
@@ -197,7 +200,9 @@ async function invokeProfileMemory(ownerId: string, system: string, prompt: stri
     model.thinkingConfig,
     { enabled: false },
   );
-  if (reply.finishReason !== 'stop') throw new Error('PROFILE_MEMORY_INCOMPLETE');
+  if (reply.finishReason === 'error') throw new Error('PROFILE_MEMORY_RESULT_UNKNOWN');
+  if (reply.finishReason !== 'stop')
+    throw new ProfileMemoryKnownModelFailure('PROFILE_MEMORY_INCOMPLETE');
   return reply.text;
 }
 
