@@ -1,0 +1,58 @@
+[
+  {
+    "id": "q1",
+    "learnerId": "synthetic-a",
+    "ordinal": 1,
+    "occurredAt": "2026-01-01T10:00:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "question": "质量20g，体积5cm³，求密度。",
+        "answer": "5÷20=0.25g/cm³",
+        "review": "incorrect",
+        "help": "unknown"
+      }
+    ]
+  },
+  {
+    "id": "d1",
+    "learnerId": "synthetic-a",
+    "ordinal": 2,
+    "occurredAt": "2026-01-01T10:05:00.000Z",
+    "kind": "discussion",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "我刚才把密度公式写反了，应是质量除以体积，所以20÷5=4g/cm³。",
+        "previous": [{ "role": "teacher", "text": "请重新检查密度公式。" }],
+        "help": "prior-teacher-messages"
+      }
+    ]
+  },
+  {
+    "id": "a1",
+    "learnerId": "synthetic-a",
+    "ordinal": 3,
+    "occurredAt": "2026-01-01T10:06:00.000Z",
+    "kind": "qa",
+    "origin": "synthetic",
+    "parts": [{ "answer": "接下来这一周，我想练习物理单位换算。", "help": "unknown" }]
+  },
+  {
+    "id": "q2",
+    "learnerId": "synthetic-b",
+    "ordinal": 1,
+    "occurredAt": "2026-01-02T10:00:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "question": "质量12g，体积3cm³，求密度。",
+        "answer": "12÷3=4g/cm³",
+        "review": "correct",
+        "help": "unknown"
+      }
+    ]
+  }
+]

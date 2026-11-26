@@ -79,6 +79,8 @@ next-env.d.ts
 # docs
 /docs
 # Eval results
+eval/learner-profile/results/
+eval/learner-profile/local-data/
 eval/whiteboard-layout/results/
 eval/outline-language/results/
 eval/orchestration/results/

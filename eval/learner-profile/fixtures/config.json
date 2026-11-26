@@ -1,0 +1,10 @@
+{
+  "mode": "fixture",
+  "batchSize": 1,
+  "maxCalls": 100,
+  "timeoutMs": 60000,
+  "maxRetries": 0,
+  "maxOutputTokens": 6000,
+  "temperature": 0,
+  "checkpoints": [1, 2, 3]
+}

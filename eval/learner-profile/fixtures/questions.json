@@ -1,0 +1,34 @@
+[
+  {
+    "id": "ie",
+    "learnerId": "synthetic-a",
+    "category": "IE",
+    "question": "学生第一次密度题写的算式是什么？",
+    "gold": "5÷20=0.25g/cm³",
+    "sourceIds": ["q1"]
+  },
+  {
+    "id": "mr",
+    "learnerId": "synthetic-a",
+    "category": "MR",
+    "question": "学生对密度公式的表述发生了什么变化？",
+    "gold": "最初用体积除以质量，之后在教师要求检查公式后改成质量除以体积。",
+    "sourceIds": ["q1", "d1"]
+  },
+  {
+    "id": "hc",
+    "learnerId": "synthetic-a",
+    "category": "HC",
+    "question": "学生是否明确说过自己害怕物理考试？",
+    "gold": "没有这类记录，无法推断。",
+    "sourceIds": []
+  },
+  {
+    "id": "ie",
+    "learnerId": "synthetic-b",
+    "category": "IE",
+    "question": "学生提交的密度答案是什么？",
+    "gold": "4g/cm³",
+    "sourceIds": ["q2"]
+  }
+]

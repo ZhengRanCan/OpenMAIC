@@ -1,11 +1,9 @@
-import { DEFAULT_BUDGETS, MemoryError, SECTIONS, sourceKey } from '@/lib/learner-memory/contracts';
-import { omitUnknownHelpFromExperience } from '@/lib/learner-memory/profile-memory-content';
+import { sourceKey } from '@/lib/learner-memory/contracts';
 import {
-  CLASSROOM_MEMORY_SYSTEM,
-  classroomMemorySources,
-} from '@/lib/learner-memory/profile-memory-snapshot';
-import { buildMemoryPrompt } from '@/lib/learner-memory/prompt';
-import { validateTransition } from '@/lib/learner-memory/transition';
+  prepareClassroomMemory,
+  applyClassroomMemory,
+} from '@/lib/learner-memory/classroom-transition';
+import { classroomMemorySources } from '@/lib/learner-memory/profile-memory-snapshot';
 import {
   profileMemorySourceVersion,
   readProfileMemorySource,
@@ -80,35 +78,15 @@ export async function processSnapshotMemory(
     await finish(frozen.eligible.length ? 'failed' : 'finished', true);
     return true;
   }
-  const batch = remaining.slice(0, DEFAULT_BUDGETS.batchSize);
-  let available = frozen.available.map((support) => ({
-    ...support,
-    text: support.text.slice(0, 512),
-  }));
   let prepared;
-  while (!prepared) {
-    try {
-      prepared = buildMemoryPrompt(
-        frozen.snapshot,
-        batch,
-        DEFAULT_BUDGETS,
-        available,
-        CLASSROOM_MEMORY_SYSTEM,
-        true,
-      );
-    } catch (error) {
-      if (!(error instanceof MemoryError) || error.code !== 'REQUEST_CAPACITY_EXCEEDED')
-        throw error;
-      if (available.some(({ text }) => text)) {
-        available = available.map((support) => ({ ...support, text: '' }));
-      } else if (batch.length === 1) {
-        await finish('failed', true);
-        return true;
-      } else {
-        batch.pop();
-      }
-    }
+  try {
+    prepared = prepareClassroomMemory(frozen.snapshot, remaining, frozen.available);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'REQUEST_CAPACITY_EXCEEDED') throw error;
+    await finish('failed', true);
+    return true;
   }
+  const batch = prepared.batch;
   const checkpoint = job.snapshot_call;
   if (checkpoint && checkpoint.reply === undefined) {
     await finish('failed');
@@ -156,31 +134,7 @@ export async function processSnapshotMemory(
   const supportsBefore = new Set(frozen.available.map(sourceKey));
   let transition;
   try {
-    transition = validateTransition(
-      { ...prepared, snapshot: frozen.snapshot, budgets: DEFAULT_BUDGETS },
-      JSON.parse(reply),
-    );
-    const snapshot = transition.snapshot;
-    const supports = snapshot.pieces.flatMap((piece) => piece.supports.map(sourceKey));
-    if (new Set(supports).size > 64 || supports.length > 96)
-      throw new Error('PROFILE_MEMORY_SUPPORT_CAPACITY');
-    for (const piece of snapshot.pieces) {
-      const hasQuiz = piece.supports.some(({ kind }) => kind === 'quiz_evidence');
-      const hasQa = piece.supports.some(({ refs }) => refs[0] === 'qa');
-      if (
-        SECTIONS.some(
-          (section) =>
-            snapshot.sections[section].includes(piece.id) &&
-            ((hasQuiz && section !== 'learning_experiences') ||
-              (hasQa && section !== 'goals' && section !== 'teaching_requirements')),
-        )
-      )
-        throw new Error('PROFILE_MEMORY_SOURCE_SECTION');
-      piece.text = omitUnknownHelpFromExperience(piece.text);
-      if (!piece.text) throw new Error('PROFILE_MEMORY_EMPTY_PIECE');
-      // Authoritative trace supplies the source text again when needed.
-      piece.supports = piece.supports.map((support) => ({ ...support, text: '' }));
-    }
+    transition = applyClassroomMemory(prepared, reply);
   } catch {
     await finish(job.attempts >= 3 ? 'failed' : 'queued', true);
     return true;
