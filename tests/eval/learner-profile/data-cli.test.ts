@@ -65,6 +65,8 @@ describe('F113 data adapters and output boundaries', () => {
     expect(result.events[0].occurredAt).toBeNull();
     expect(result.events[0].recordedTime).toBe('2020-01-01T09:00:00');
     expect(result.questions[2].gold).toBe('未知，不可猜测');
+    expect(result.questions.every((q) => !/结果: (正确|错误)|时间:/.test(q.question))).toBe(true);
+    expect(result.events[0].concepts).toEqual(['算术', '加法']);
     expect(JSON.stringify(result.events)).not.toMatch(/HIDDEN_ANSWER_EXPLANATION|hidden|历史事实/);
     expect(result.events[0].parts[0].answer).toBeUndefined();
   });

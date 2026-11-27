@@ -2,6 +2,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { resolveEvalModel } from '../shared/resolve-model';
 import type { CallRecord, CallRequest, Config, Invoker } from './contracts';
 import { safeError } from './contracts';
+import { DEFAULT_BUDGETS } from '@/lib/learner-memory/contracts';
 
 export async function createInvoker(config: Config): Promise<Invoker> {
   if (config.mode === 'fixture')
@@ -48,13 +49,46 @@ export class ModelSession {
     private invoke: Invoker,
     private capture: (record: CallRecord) => void = () => {},
   ) {}
-  async call(request: CallRequest): Promise<string> {
+  async callValidated<T>(request: CallRequest, validate: (reply: string) => T): Promise<T> {
+    let lastError: string | undefined;
+    for (let attempt = 0; ; attempt++) {
+      const attemptRequest = {
+        ...request,
+        user:
+          request.user +
+          (lastError
+            ? `\n\n前次候选未通过校验：${lastError}。请重新检查完整输出协议及正文预算，返回修正后的完整JSON。`
+            : ''),
+      };
+      const inputBytes = Buffer.byteLength(attemptRequest.system + attemptRequest.user, 'utf8');
+      if (request.stage === 'answer' && inputBytes > this.config.maxAnswerInputBytes)
+        throw new Error('ANSWER_INPUT_CAPACITY_EXCEEDED');
+      if (request.stage === 'memory' && inputBytes > DEFAULT_BUDGETS.inputBytes)
+        throw new Error('REQUEST_CAPACITY_EXCEEDED');
+      const reply = await this.call(attemptRequest, attempt);
+      const record = this.calls.at(-1)!;
+      record.validationAttempt = attempt;
+      try {
+        const result = validate(reply);
+        this.capture({ ...record });
+        return result;
+      } catch (error) {
+        lastError = safeError(error);
+        record.validationError = lastError;
+        this.capture({ ...record });
+        if (attempt >= this.config.validationRetries) throw error;
+      }
+    }
+  }
+  async call(request: CallRequest, validationAttempt?: number): Promise<string> {
     for (let attempt = 0; ; attempt++) {
       if (this.calls.length >= this.config.maxCalls) throw new Error('CALL_BUDGET_EXHAUSTED');
       const record: CallRecord = {
         ...this.context,
         index: this.calls.length + 1,
         stage: request.stage,
+        validationAttempt,
+        transportAttempt: attempt,
         system: request.system,
         user: request.user,
         model: this.config.mode === 'fixture' ? 'fixture-protocol-only' : this.config.model!,

@@ -34,8 +34,10 @@ describe('F114 three-arm architecture pilot', () => {
     expect(new Set(s.calls.filter((c) => c.stage === 'answer').map((c) => c.system)).size).toBe(1);
     const first = raw.find((c) => c.stage === 'answer')!;
     const context = JSON.parse(first.user).learningContext;
-    expect(context).toBe(rawHistoryContext(d.events.filter((e) => e.learnerId === 'synthetic-a')));
-    expect(context).not.toContain(d.questions[0].gold + 'GOLD_SENTINEL');
+    expect(context).toEqual(
+      rawHistoryContext(d.events.filter((e) => e.learnerId === 'synthetic-a')),
+    );
+    expect(JSON.stringify(context)).not.toContain(d.questions[0].gold + 'GOLD_SENTINEL');
     expect(
       r.results
         .filter((a) => a.method === 'raw-history')

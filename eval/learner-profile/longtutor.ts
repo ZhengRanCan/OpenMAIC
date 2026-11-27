@@ -53,10 +53,10 @@ async function fileHash(path: string) {
 }
 
 /** Exact XES renderer from the pinned official data_processing.py. Whitespace is part of the join key. */
-export function renderQuestion(info: Info, item: Item) {
-  const segments = [
+export function conceptSegments(concepts: string[]) {
+  return [
     ...new Set(
-      info.concepts.flatMap((c) =>
+      concepts.flatMap((c) =>
         c
           .split('----')
           .slice(1)
@@ -65,6 +65,11 @@ export function renderQuestion(info: Info, item: Item) {
       ),
     ),
   ];
+}
+
+/** Model-visible task context: no current response or observation time. */
+export function renderCurrentTaskContext(info: Info, item: Pick<Item, 'question'>) {
+  const segments = conceptSegments(info.concepts);
   const lines = [`[${item.question}]`];
   if (info.content) lines.push(`${info.type}: ${info.content}`);
   if (Object.keys(info.options).length)
@@ -74,6 +79,12 @@ export function renderQuestion(info: Info, item: Item) {
         .join('; '),
     );
   lines.push(`知识点: ${segments.length ? segments.join(', ') : '[]'}`);
+  return lines.join('\n');
+}
+
+/** Keep the exact official bytes exclusively for joining Gold, never for answer input. */
+export function renderQuestion(info: Info, item: Item) {
+  const lines = [renderCurrentTaskContext(info, item)];
   if (item.timestamp) lines.push(`时间: ${item.timestamp}`);
   lines.push(`结果: ${item.response === 1 ? '正确' : '错误'}`);
   return lines.join('\n');
@@ -146,7 +157,7 @@ export async function importLongTutor(
         kind: 'quiz',
         origin: 'public',
         questionId: item.question,
-        concepts: q.concepts,
+        concepts: conceptSegments(q.concepts),
         recordedTime: item.timestamp ?? undefined,
         parts: [
           {
@@ -166,7 +177,7 @@ export async function importLongTutor(
         id: `Q${i + 1}`,
         learnerId,
         category: (['IE', 'MR', 'HC'] as const)[i],
-        question: `当前题（不属于历史回放，未提供标准答案）：\n${rendered}\n历史问题：${memory.query}`,
+        question: `当前题（不属于历史回放，未提供作答、结果和标准答案）：\n${renderCurrentTaskContext(info, current)}\n历史问题：${memory.query}`,
         gold: memory.answer,
         sourceIds: [],
       });
@@ -201,6 +212,7 @@ export async function importLongTutor(
       timePolicy:
         'Preserve original text; no timezone inferred. Replay uses original sequence ordinal.',
       scoring: 'Local semantic judge; official reference answers preserved unchanged.',
+      adapterVersion: 'longtutor-history-v2-no-current-outcome',
       externalModelProcessing: false,
     },
   };

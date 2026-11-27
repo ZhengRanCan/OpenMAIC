@@ -71,6 +71,7 @@ export const configSchema = z
     maxCalls: z.number().int().min(1).max(10000).default(100),
     timeoutMs: z.number().int().min(100).max(300000).default(60000),
     maxRetries: z.number().int().min(0).max(2).default(0),
+    validationRetries: z.number().int().min(0).max(2).default(0),
     maxOutputTokens: z.number().int().min(256).max(16000).default(6000),
     temperature: z.number().min(0).max(2).default(0),
     checkpoints: z.array(z.number().int().positive()).default([1, 5, 10, 20]),
@@ -122,6 +123,9 @@ export type CallRecord = {
   durationMs: number;
   error?: string;
   finishReason?: string;
+  validationAttempt?: number;
+  transportAttempt?: number;
+  validationError?: string;
 };
 export const safeError = (error: unknown) => {
   if (error instanceof z.ZodError) return 'SCHEMA_VALIDATION_FAILED';

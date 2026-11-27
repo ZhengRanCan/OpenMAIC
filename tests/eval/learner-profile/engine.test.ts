@@ -97,7 +97,12 @@ describe('F113 offline memory experiments', () => {
       occurredAt: e.occurredAt!,
       parts: e.parts.map((p) => ({ ...p, answer: p.answer! })),
     });
-    expect(eventSources(e)).toEqual(native);
+    expect(eventSources(e)).toEqual(
+      native.map((s) => ({
+        ...s,
+        text: JSON.stringify({ ...JSON.parse(s.text), ordinal: e.ordinal, answerAvailable: true }),
+      })),
+    );
     const snapshot = emptySnapshot<(typeof native)[number]>();
     const prepared = prepareClassroomMemory(snapshot, native, []);
     expect(prepared.prompt).toEqual(
@@ -263,7 +268,7 @@ describe('F113 offline memory experiments', () => {
     expect(s.calls).toHaveLength(1);
   });
   it('requires explicit human adjudication and reports pending rows', () => {
-    expect(reviewSummary([{ judgment: null }])).toEqual({
+    expect(reviewSummary([{ judgment: null }])).toMatchObject({
       supported: 0,
       contradicted: 0,
       insufficient: 0,

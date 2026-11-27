@@ -7,6 +7,7 @@ import {
 import { omitUnknownHelpFromExperience } from './profile-memory-content';
 import { buildMemoryPrompt } from './prompt';
 import { validateTransition } from './transition';
+import { sourcePreview } from './source-preview';
 
 /** Shared by the production queue and the file-based evaluation adapter. */
 export function prepareClassroomMemory(
@@ -15,7 +16,7 @@ export function prepareClassroomMemory(
   oldSources: ClassroomMemorySource[],
 ) {
   const batch = increments.slice(0, DEFAULT_BUDGETS.batchSize);
-  let available = oldSources.map((s) => ({ ...s, text: s.text.slice(0, 512) }));
+  let available = oldSources.map((s) => ({ ...s, text: sourcePreview(s.text) }));
   while (batch.length) {
     try {
       return {

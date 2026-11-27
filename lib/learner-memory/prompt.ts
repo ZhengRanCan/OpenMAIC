@@ -123,6 +123,7 @@ export function buildMemoryPrompt<Source extends TransitionSource = MemorySource
     '',
     '# 正文预算',
     pretty({ sections: budgets.sections, total: budgets.total }),
+    `当前已用码点：${pretty(contentSize(snapshot))}`,
     '按 Unicode code points 计数。来源元数据不计入正文预算。',
     '',
     '# 来源范围与输出',

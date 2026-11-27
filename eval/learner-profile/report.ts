@@ -1,5 +1,22 @@
 import { eventSources, type ArmResult } from './engine';
 import type { CallRecord, Event, Question, Method } from './contracts';
+import { explicitUnknown } from './prompts';
+
+function validationSummary(calls: CallRecord[]) {
+  const first = calls.filter((c) => c.validationAttempt === 0 && (c.transportAttempt ?? 0) === 0);
+  return {
+    firstAttempts: first.length,
+    firstPasses: first.filter((c) => !c.validationError && !c.error).length,
+    firstFailures: first.filter((c) => c.validationError || c.error).length,
+    correctionAttempts: calls.filter(
+      (c) => (c.validationAttempt ?? 0) > 0 && (c.transportAttempt ?? 0) === 0,
+    ).length,
+    correctionPasses: calls.filter(
+      (c) => (c.validationAttempt ?? 0) > 0 && !c.validationError && !c.error,
+    ).length,
+    validationFailures: calls.filter((c) => c.validationError).length,
+  };
+}
 
 function pairwise(
   results: ArmResult[],
@@ -37,6 +54,9 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
       ? 'fixture-exact-v1'
       : 'local-semantic-v1',
     calls: calls.length,
+    reportVersion: 'profile-eval-v2',
+    metricPolicy:
+      'accuracy = correct/scored; confirmedCorrectOverExpected is a conservative full-denominator result, not adjudication of unknown scores; explicitUnknown is a lexical signal, not a correctness rule',
     failedCalls: calls.filter((c) => c.error).length,
     inputTokens: sumUsage(calls, 'inputTokens'),
     outputTokens: sumUsage(calls, 'outputTokens'),
@@ -74,20 +94,40 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
                 inputTokens: sumUsage(rows, 'inputTokens'),
                 outputTokens: sumUsage(rows, 'outputTokens'),
                 durationMs: rows.reduce((s, c) => s + c.durationMs, 0),
+                validation: validationSummary(rows),
               },
             ];
           }),
         ),
+        maintenance: {
+          ...validationSummary(costs.filter((c) => c.stage === 'memory')),
+          learnersWithoutCorrection: arms.filter(
+            (a) =>
+              a.complete &&
+              !costs.some((c) => c.learnerId === a.learnerId && (c.validationError || c.error)),
+          ).length,
+          successfulSteps: arms.flatMap((a) => a.steps).filter((s) => s.status !== 'failed').length,
+          failedSteps: arms.flatMap((a) => a.steps).filter((s) => s.status === 'failed').length,
+        },
         categories: ['IE', 'MR', 'HC'].map((category) => {
+          const expected = questions.filter((q) => q.category === category).length;
           const rows = answers.filter((a) => a.category === category),
             scored = rows.filter((a) => a.correct !== null);
+          const correct = scored.filter((a) => a.correct).length;
           return {
             category,
-            expected: questions.filter((q) => q.category === category).length,
+            expected,
             answered: rows.filter((a) => a.answer !== null).length,
             scored: scored.length,
-            correct: scored.filter((a) => a.correct).length,
-            accuracy: scored.length ? scored.filter((a) => a.correct).length / scored.length : null,
+            correct,
+            accuracy: scored.length ? correct / scored.length : null,
+            confirmedCorrectOverExpected: expected ? correct / expected : null,
+            scoringCoverage: expected ? scored.length / expected : null,
+            unresolved: expected - scored.length,
+            explicitUnknownAnswers: rows.filter((a) => explicitUnknown(a.answer)).length,
+            explicitUnknownOverExpected: expected
+              ? rows.filter((a) => explicitUnknown(a.answer)).length / expected
+              : null,
             failures: rows.filter((a) => a.error).length,
           };
         }),
@@ -112,7 +152,11 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
 function sumUsage(calls: CallRecord[], key: 'inputTokens' | 'outputTokens') {
   // Partial sums are separately labelled; an unavailable count is never zero.
   return {
-    known: calls.some((c) => c[key] !== null) ? calls.reduce((s, c) => s + (c[key] ?? 0), 0) : null,
+    known: !calls.length
+      ? 0
+      : calls.some((c) => c[key] !== null)
+        ? calls.reduce((s, c) => s + (c[key] ?? 0), 0)
+        : null,
     missing: calls.filter((c) => c[key] === null).length,
   };
 }
@@ -122,6 +166,11 @@ export function reviewRows(results: ArmResult[], events: Event[]) {
     arm.snapshot.pieces.map((piece) => ({
       learnerId: arm.learnerId,
       method: arm.method,
+      complete: arm.complete,
+      lastCompletedCheckpoint:
+        arm.steps.filter((s) => s.status !== 'failed').at(-1)?.checkpoint ?? 0,
+      stoppedAt: arm.steps.at(-1)?.checkpoint ?? 0,
+      snapshotRevision: arm.snapshot.revision,
       pieceId: piece.id,
       statement: piece.text,
       sections: Object.entries(arm.snapshot.sections)
@@ -145,14 +194,32 @@ export function reviewRows(results: ArmResult[], events: Event[]) {
 
 export function reviewSummary(raw: unknown) {
   if (!Array.isArray(raw)) throw new Error('REVIEW_FORMAT_INVALID');
-  const counts = { supported: 0, contradicted: 0, insufficient: 0, pending: 0 };
+  const groups = new Map<string, unknown[]>();
   for (const item of raw) {
     if (!item || typeof item !== 'object') throw new Error('REVIEW_FORMAT_INVALID');
+    const method = 'method' in item ? String(item.method) : 'legacy-unknown';
+    const complete =
+      'complete' in item && typeof item.complete === 'boolean' ? item.complete : null;
+    const key = JSON.stringify({ method, complete });
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return {
+    ...reviewCounts(raw),
+    groups: [...groups].map(([key, rows]) => ({ ...JSON.parse(key), ...reviewCounts(rows) })),
+  };
+}
+
+function reviewCounts(raw: unknown[]) {
+  const counts = { supported: 0, contradicted: 0, insufficient: 0, pending: 0 };
+  for (const value of raw) {
+    if (!value || typeof value !== 'object') throw new Error('REVIEW_FORMAT_INVALID');
+    const item = value as Record<string, unknown>;
     if (item.judgment === null) {
       counts.pending++;
       continue;
     }
     if (
+      typeof item.judgment !== 'string' ||
       !['supported', 'contradicted', 'insufficient'].includes(item.judgment) ||
       typeof item.reason !== 'string' ||
       !item.reason.trim() ||

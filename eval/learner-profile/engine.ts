@@ -27,8 +27,11 @@ import {
   memoryText,
   answerSchema,
   scoreSchema,
+  parseModelJSON,
+  sourceContent,
 } from './prompts';
 import { fixtureMemory } from './fixture';
+import { buildMemoryPrompt } from '@/lib/learner-memory/prompt';
 
 export function validateInputs(rawEvents: unknown, rawQuestions: unknown) {
   const events = eventSchema.array().min(1).parse(rawEvents),
@@ -72,6 +75,17 @@ export function eventSources(e: Event): ClassroomMemorySource[] {
   const job = `eval:${digest([e.learnerId, e.id]).slice(0, 32)}`,
     version = digest(e);
   const hasAnswers = e.parts.every((p) => p.answer !== undefined);
+  const locate = (s: ClassroomMemorySource) => ({
+    ...s,
+    text: JSON.stringify({
+      ...JSON.parse(s.text),
+      ordinal: e.ordinal,
+      questionId: e.questionId,
+      concepts: e.concepts,
+      recordedTime: e.recordedTime,
+      answerAvailable: JSON.parse(s.text).answer !== undefined,
+    }),
+  });
   if (hasAnswers) {
     const basis: ProfileMemorySource = {
       stageId: 'offline',
@@ -80,39 +94,43 @@ export function eventSources(e: Event): ClassroomMemorySource[] {
       occurredAt: e.occurredAt ?? '1970-01-01T00:00:00.000Z',
       parts: e.parts.map((p) => ({ ...p, answer: p.answer! })),
     };
-    return classroomMemorySources(job, version, null, basis).map((s) => ({
-      ...s,
-      occurredAt: e.occurredAt,
-    }));
+    return classroomMemorySources(job, version, null, basis).map((s) =>
+      locate({
+        ...s,
+        occurredAt: e.occurredAt,
+      }),
+    );
   }
   // Public correctness logs are not native submissions. No invented learner answer.
-  return e.parts.flatMap((p, partIndex) =>
-    p.review === 'unknown'
-      ? []
-      : [
-          {
-            id: `${job}:${partIndex}`,
-            version: digest([`${job}:${partIndex}`, version]),
-            kind: 'quiz_evidence' as const,
-            sourceNature: 'classroom' as const,
-            text: JSON.stringify({
-              ...p,
-              help: undefined,
-              answerAvailable: p.answer !== undefined,
-              questionId: e.questionId,
-              concepts: e.concepts,
-              recordedTime: e.recordedTime,
-            }),
-            refs: ['quiz'],
-            conditions: p.help === 'unknown' ? [] : [p.help],
-            occurredAt: e.occurredAt,
-            jobId: job,
-            partIndex,
-            reviewId: null,
-            sourceDigest: version,
-          },
-        ],
-  );
+  return e.parts
+    .flatMap((p, partIndex) =>
+      p.review === 'unknown'
+        ? []
+        : [
+            {
+              id: `${job}:${partIndex}`,
+              version: digest([`${job}:${partIndex}`, version]),
+              kind: 'quiz_evidence' as const,
+              sourceNature: 'classroom' as const,
+              text: JSON.stringify({
+                ...p,
+                help: undefined,
+                answerAvailable: p.answer !== undefined,
+                questionId: e.questionId,
+                concepts: e.concepts,
+                recordedTime: e.recordedTime,
+              }),
+              refs: ['quiz'],
+              conditions: p.help === 'unknown' ? [] : [p.help],
+              occurredAt: e.occurredAt,
+              jobId: job,
+              partIndex,
+              reviewId: null,
+              sourceDigest: version,
+            },
+          ],
+    )
+    .map(locate);
 }
 
 export type StepResult = {
@@ -142,6 +160,31 @@ export type ArmResult = {
   complete: boolean;
   answers: AnswerResult[];
 };
+
+export function prepareExtractedBatch(
+  prepared: ReturnType<typeof prepareClassroomMemory>,
+  compressed: ClassroomMemorySource[],
+) {
+  if (
+    compressed.length !== prepared.batch.length ||
+    compressed.some((s, i) => sourceKey(s) !== sourceKey(prepared.batch[i]))
+  )
+    throw new Error('EXTRACTION_REFERENCE_INVALID');
+  return {
+    ...prepared,
+    ...buildMemoryPrompt(
+      prepared.snapshot,
+      compressed,
+      prepared.budgets,
+      Object.entries(prepared.aliases)
+        .filter(([alias]) => alias.startsWith('s'))
+        .map(([, s]) => s),
+      prepared.prompt.system,
+      true,
+    ),
+    batch: compressed,
+  };
+}
 
 export async function replay(
   events: Event[],
@@ -182,35 +225,43 @@ export async function replay(
           const user = JSON.stringify({
             sources: batch.map((s, i) => ({
               source: `e${i + 1}`,
-              text: s.text,
+              text: sourceContent(s.text),
               conditions: s.conditions,
               occurredAt: s.occurredAt,
             })),
           });
-          const reply = await session.call({
-            stage: 'extract',
-            system: EXTRACTION_SYSTEM,
-            user,
-            fixtureReply: JSON.stringify({
-              facts: batch.map((s, i) => ({ source: `e${i + 1}`, text: s.text })),
-            }),
-          });
-          const compressed = extractSources(reply, batch);
-          prepared = prepareClassroomMemory(snapshot, compressed, old);
-          if (prepared.batch.length !== batch.length)
-            throw new Error('EXTRACTION_CAPACITY_CHANGED');
+          const compressed = await session.callValidated(
+            {
+              stage: 'extract',
+              system: EXTRACTION_SYSTEM,
+              user,
+              fixtureReply: JSON.stringify({
+                facts: batch.map((s, i) => ({ source: `e${i + 1}`, text: s.text })),
+              }),
+            },
+            (reply) => extractSources(reply, batch),
+          );
+          // Preserve the original admission decision, including any dropped old text.
+          // An oversized extracted request fails explicitly; it never changes batch or restores s text.
+          prepared = prepareExtractedBatch(prepared, compressed);
         }
-        const reply = await session.call({
-          stage: 'memory',
-          system: prepared.prompt.system,
-          user: prepared.prompt.user,
-          fixtureReply: fixtureMemory(prepared),
-        });
-        const next = applyClassroomMemory(prepared, reply);
-        if (next.decisions.some((d) => d.action === 'defer')) throw new Error('MEMORY_DEFERRED');
+        const next = await session.callValidated(
+          {
+            stage: 'memory',
+            system: prepared.prompt.system,
+            user: prepared.prompt.user,
+            fixtureReply: fixtureMemory(prepared),
+          },
+          (reply) => {
+            const next = applyClassroomMemory(prepared, reply);
+            if (next.decisions.some((d) => d.action === 'defer'))
+              throw new Error('MEMORY_DEFERRED');
+            return next;
+          },
+        );
         snapshot = next.snapshot;
         step.decisions = [...(step.decisions as unknown[]), ...next.decisions];
-        for (const s of pending.slice(0, prepared.batch.length)) originals.set(sourceKey(s), s);
+        for (const s of prepared.batch) originals.set(sourceKey(s), s);
         pending.splice(0, prepared.batch.length);
       }
       if (!increments.length) step.status = 'no-sources';
@@ -233,7 +284,7 @@ export async function answerQuestions(
   arm: Omit<ArmResult, 'answers'>,
   questions: Question[],
   session: ModelSession,
-  context = memoryText(arm.snapshot),
+  context: unknown = memoryText(arm.snapshot),
 ): Promise<AnswerResult[]> {
   const answers: AnswerResult[] = [];
   // Save all answers before any gold enters a judge call.
@@ -255,15 +306,16 @@ export async function answerQuestions(
       const user = JSON.stringify({ learningContext: context, question: q.question });
       if (Buffer.byteLength(ANSWER_SYSTEM + user, 'utf8') > session.config.maxAnswerInputBytes)
         throw new Error('ANSWER_INPUT_CAPACITY_EXCEEDED');
-      row.answer = answerSchema.parse(
-        JSON.parse(
-          await session.call({
+      row.answer = (
+        await session.callValidated(
+          {
             stage: 'answer',
             system: ANSWER_SYSTEM,
             user,
             fixtureReply: '{"answer":"unknown"}',
-          }),
-        ),
+          },
+          (reply) => answerSchema.parse(parseModelJSON(reply)),
+        )
       ).answer;
     } catch (error) {
       row.error = safeError(error);
@@ -274,18 +326,17 @@ export async function answerQuestions(
     const row = answers[i];
     if (row.answer === null) continue;
     try {
-      const result = scoreSchema.parse(
-        JSON.parse(
-          await session.call({
-            stage: 'judge',
-            system: JUDGE_SYSTEM,
-            user: JSON.stringify({ question: q.question, answer: row.answer, reference: q.gold }),
-            fixtureReply: JSON.stringify({
-              correct: row.answer.trim() === q.gold.trim(),
-              reason: 'Fixture exact equality only; not a semantic judgment',
-            }),
+      const result = await session.callValidated(
+        {
+          stage: 'judge',
+          system: JUDGE_SYSTEM,
+          user: JSON.stringify({ question: q.question, answer: row.answer, reference: q.gold }),
+          fixtureReply: JSON.stringify({
+            correct: row.answer.trim() === q.gold.trim(),
+            reason: 'Fixture exact equality only; not a semantic judgment',
           }),
-        ),
+        },
+        (reply) => scoreSchema.parse(parseModelJSON(reply)),
       );
       row.correct = result.correct;
       row.reason = result.reason;
@@ -303,18 +354,12 @@ export function hasIncompleteResults(results: ArmResult[]) {
 
 /** Same admitted source projection as the memory arms, with no summarization or truncation. */
 export function rawHistoryContext(history: Event[]) {
-  return history
-    .flatMap(eventSources)
-    .map((s, i) =>
-      JSON.stringify({
-        ordinal: i + 1,
-        kind: s.kind,
-        text: s.text,
-        conditions: s.conditions,
-        occurredAt: s.occurredAt,
-      }),
-    )
-    .join('\n');
+  return history.flatMap(eventSources).map((s) => ({
+    kind: s.kind,
+    content: sourceContent(s.text),
+    conditions: s.conditions,
+    occurredAt: s.occurredAt,
+  }));
 }
 
 export async function runExperiment(

@@ -94,8 +94,9 @@ async function main() {
     duplicates: data.duplicates,
     scoring: config.mode === 'fixture' ? 'fixture-exact-v1' : 'local-semantic-v1',
     fixtureOnly: config.mode === 'fixture',
+    protocolVersion: 'profile-eval-v2',
     oldSources:
-      'currently supported raw sources, 512 characters each, production capacity fallback',
+      'currently supported method-specific sources; structured content preview with protected metadata; production capacity fallback planned once before extraction',
     projection:
       'Native answer-bearing events use classroomMemorySources; public outcome-only events use explicit unavailable-answer projection',
     rawHistoryPolicy:
