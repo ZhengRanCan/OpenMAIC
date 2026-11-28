@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   invariant,
+  MemoryError,
   outputSchema,
   SECTIONS,
   sourceKey,
@@ -143,9 +144,22 @@ export function validateTransition<Source extends TransitionSource>(
       invariant(d?.action === 'adopt' && d.pieceIds.includes(p.id), 'UNDECLARED_ADOPTION');
     }
   const size = contentSize(snapshot);
-  for (const section of SECTIONS)
-    invariant(size.sections[section] <= run.budgets.sections[section], 'SECTION_BUDGET_EXCEEDED');
-  invariant(size.total <= run.budgets.total, 'TOTAL_BUDGET_EXCEEDED');
+  const details = {
+    sections: SECTIONS.map((section) => ({
+      section,
+      actual: size.sections[section],
+      limit: run.budgets.sections[section],
+      overBy: Math.max(0, size.sections[section] - run.budgets.sections[section]),
+    })),
+    total: {
+      actual: size.total,
+      limit: run.budgets.total,
+      overBy: Math.max(0, size.total - run.budgets.total),
+    },
+  };
+  if (details.sections.some((s) => s.overBy > 0))
+    throw new MemoryError('SECTION_BUDGET_EXCEEDED', details);
+  if (details.total.overBy > 0) throw new MemoryError('TOTAL_BUDGET_EXCEEDED', details);
   snapshot.revision++;
   return {
     snapshot,

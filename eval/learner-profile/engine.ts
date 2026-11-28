@@ -13,6 +13,7 @@ import {
   eventSchema,
   questionSchema,
   safeError,
+  VALIDATION_FEEDBACK_RESERVE,
   type Event,
   type Question,
   type Method,
@@ -67,6 +68,14 @@ export function validateInputs(rawEvents: unknown, rawQuestions: unknown) {
     seenQuestions.add(key);
     if (q.sourceIds.some((id) => !unique.has(`${q.learnerId}:${id}`)))
       throw new Error('QUESTION_SOURCE_UNKNOWN');
+    if (q.checkpoint !== undefined) {
+      const prefix = ordered.filter((e) => e.learnerId === q.learnerId).slice(0, q.checkpoint);
+      if (
+        prefix.length !== q.checkpoint ||
+        q.sourceIds.some((id) => !prefix.some((e) => e.id === id))
+      )
+        throw new Error('QUESTION_CHECKPOINT_INVALID');
+    }
   }
   return { events: ordered, questions, duplicates };
 }
@@ -75,17 +84,26 @@ export function eventSources(e: Event): ClassroomMemorySource[] {
   const job = `eval:${digest([e.learnerId, e.id]).slice(0, 32)}`,
     version = digest(e);
   const hasAnswers = e.parts.every((p) => p.answer !== undefined);
-  const locate = (s: ClassroomMemorySource) => ({
-    ...s,
-    text: JSON.stringify({
-      ...JSON.parse(s.text),
-      ordinal: e.ordinal,
-      questionId: e.questionId,
-      concepts: e.concepts,
-      recordedTime: e.recordedTime,
-      answerAvailable: JSON.parse(s.text).answer !== undefined,
-    }),
-  });
+  const locate = (s: ClassroomMemorySource) => {
+    const body = JSON.parse(s.text);
+    const questionType =
+      typeof body.question === 'string'
+        ? (body.question.match(/^(单选|多选|填空|简答|判断)(?:题)?[:：]/)?.[1] ??
+          (body.options?.length ? '选择题' : undefined))
+        : undefined;
+    return {
+      ...s,
+      text: JSON.stringify({
+        ...body,
+        ordinal: e.ordinal,
+        questionId: e.questionId,
+        concepts: e.concepts,
+        recordedTime: e.recordedTime,
+        answerAvailable: body.answer !== undefined,
+        questionType,
+      }),
+    };
+  };
   if (hasAnswers) {
     const basis: ProfileMemorySource = {
       stageId: 'offline',
@@ -151,6 +169,7 @@ export type AnswerResult = {
   correct: boolean | null;
   reason: string;
   error?: string;
+  checkpoint?: number;
 };
 export type ArmResult = {
   learnerId: string;
@@ -219,7 +238,12 @@ export async function replay(
         // Rehydrate only currently supported old evidence. Never expose future events.
         const keys = new Set(snapshot.pieces.flatMap((p) => p.supports.map(sourceKey)));
         const old = [...originals.values()].filter((s) => keys.has(sourceKey(s)));
-        let prepared = prepareClassroomMemory(snapshot, pending, old);
+        let prepared = prepareClassroomMemory(
+          snapshot,
+          pending,
+          old,
+          session.config.validationRetries > 0 ? VALIDATION_FEEDBACK_RESERVE : 0,
+        );
         if (method === 'two-stage') {
           const batch = prepared.batch;
           const user = JSON.stringify({
@@ -296,14 +320,27 @@ export async function answerQuestions(
       answer: null,
       correct: null,
       reason: 'Not scored',
+      checkpoint: q.checkpoint,
     };
     answers.push(row);
-    if (!arm.complete) {
+    const checkpointStep =
+      q.checkpoint === undefined
+        ? undefined
+        : arm.steps.find((s) => s.checkpoint === q.checkpoint && s.status !== 'failed');
+    const available =
+      q.checkpoint === undefined ? arm.complete : arm.method === 'raw-history' || !!checkpointStep;
+    if (!available) {
       row.error = 'INCOMPLETE_REPLAY';
       continue;
     }
     try {
-      const user = JSON.stringify({ learningContext: context, question: q.question });
+      const learningContext =
+        typeof context === 'function'
+          ? context(q)
+          : checkpointStep
+            ? memoryText(checkpointStep.after)
+            : context;
+      const user = JSON.stringify({ learningContext, question: q.question });
       if (Buffer.byteLength(ANSWER_SYSTEM + user, 'utf8') > session.config.maxAnswerInputBytes)
         throw new Error('ANSWER_INPUT_CAPACITY_EXCEEDED');
       row.answer = (
@@ -391,7 +428,9 @@ export async function runExperiment(
         };
         results.push({
           ...arm,
-          answers: await answerQuestions(arm, qs, session, rawHistoryContext(history)),
+          answers: await answerQuestions(arm, qs, session, (q: Question) =>
+            rawHistoryContext(history.slice(0, q.checkpoint ?? history.length)),
+          ),
         });
       } else {
         const arm = await replay(history, method, session, (step) => save(learner, method, step));

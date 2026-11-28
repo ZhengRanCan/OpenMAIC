@@ -2,19 +2,33 @@ import { eventSources, type ArmResult } from './engine';
 import type { CallRecord, Event, Question, Method } from './contracts';
 import { explicitUnknown } from './prompts';
 
-function validationSummary(calls: CallRecord[]) {
-  const first = calls.filter((c) => c.validationAttempt === 0 && (c.transportAttempt ?? 0) === 0);
+export function validationSummary(calls: CallRecord[]) {
+  const identified = calls.filter(
+    (c) => c.logicalCallId !== undefined && c.validationAttempt !== undefined,
+  );
+  const attempts = new Map<string, CallRecord>();
+  for (const c of identified) attempts.set(`${c.logicalCallId}:${c.validationAttempt}`, c);
+  const first = [...attempts.values()].filter((c) => c.validationAttempt === 0);
+  const corrected = [...attempts.values()].filter((c) => (c.validationAttempt ?? 0) > 0);
+  const firstRequests = identified.filter(
+    (c) => c.validationAttempt === 0 && (c.transportAttempt ?? 0) === 0,
+  );
   return {
     firstAttempts: first.length,
-    firstPasses: first.filter((c) => !c.validationError && !c.error).length,
-    firstFailures: first.filter((c) => c.validationError || c.error).length,
-    correctionAttempts: calls.filter(
-      (c) => (c.validationAttempt ?? 0) > 0 && (c.transportAttempt ?? 0) === 0,
-    ).length,
-    correctionPasses: calls.filter(
-      (c) => (c.validationAttempt ?? 0) > 0 && !c.validationError && !c.error,
-    ).length,
+    firstPasses: first.filter((c) => c.validationOutcome === 'passed').length,
+    firstFailures: first.filter((c) => c.validationOutcome === 'failed').length,
+    firstUnavailable: first.filter((c) => c.validationOutcome === undefined).length,
+    firstRequestPasses: firstRequests.filter((c) => !c.error || c.errorPhase === 'response').length,
+    firstRequestFailures: firstRequests.filter((c) => c.errorPhase === 'transport').length,
+    transportRetries: calls.filter((c) => (c.transportAttempt ?? 0) > 0).length,
+    transportFailures: calls.filter((c) => c.errorPhase === 'transport').length,
+    responseFailures: calls.filter((c) => c.errorPhase === 'response').length,
+    correctionAttempts: corrected.length,
+    correctionPasses: corrected.filter((c) => c.validationOutcome === 'passed').length,
+    correctionFailures: corrected.filter((c) => c.validationOutcome === 'failed').length,
+    correctionUnavailable: corrected.filter((c) => c.validationOutcome === undefined).length,
     validationFailures: calls.filter((c) => c.validationError).length,
+    legacyUnidentifiedCalls: calls.filter((c) => c.logicalCallId === undefined).length,
   };
 }
 
@@ -54,7 +68,7 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
       ? 'fixture-exact-v1'
       : 'local-semantic-v1',
     calls: calls.length,
-    reportVersion: 'profile-eval-v2',
+    reportVersion: 'profile-eval-v3',
     metricPolicy:
       'accuracy = correct/scored; confirmedCorrectOverExpected is a conservative full-denominator result, not adjudication of unknown scores; explicitUnknown is a lexical signal, not a correctness rule',
     failedCalls: calls.filter((c) => c.error).length,
@@ -104,7 +118,12 @@ export function summarize(results: ArmResult[], questions: Question[], calls: Ca
           learnersWithoutCorrection: arms.filter(
             (a) =>
               a.complete &&
-              !costs.some((c) => c.learnerId === a.learnerId && (c.validationError || c.error)),
+              !costs.some(
+                (c) =>
+                  c.learnerId === a.learnerId &&
+                  (c.stage === 'memory' || c.stage === 'extract') &&
+                  (c.validationError || (c.validationAttempt ?? 0) > 0),
+              ),
           ).length,
           successfulSteps: arms.flatMap((a) => a.steps).filter((s) => s.status !== 'failed').length,
           failedSteps: arms.flatMap((a) => a.steps).filter((s) => s.status === 'failed').length,

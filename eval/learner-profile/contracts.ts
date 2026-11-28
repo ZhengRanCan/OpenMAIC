@@ -62,6 +62,7 @@ export const questionSchema = z.strictObject({
   question: text,
   gold: text,
   sourceIds: z.array(id).default([]),
+  checkpoint: z.number().int().positive().optional(),
 });
 export const configSchema = z
   .strictObject({
@@ -109,6 +110,7 @@ export type ModelReply = {
 };
 export type Invoker = (request: CallRequest, signal: AbortSignal) => Promise<ModelReply>;
 export type CallRecord = {
+  logicalCallId?: string;
   index: number;
   stage: Stage;
   system: string;
@@ -122,11 +124,14 @@ export type CallRecord = {
   outputTokens: number | null;
   durationMs: number;
   error?: string;
+  errorPhase?: 'transport' | 'response';
   finishReason?: string;
   validationAttempt?: number;
   transportAttempt?: number;
   validationError?: string;
+  validationOutcome?: 'passed' | 'failed';
 };
+export const VALIDATION_FEEDBACK_RESERVE = 2048;
 export const safeError = (error: unknown) => {
   if (error instanceof z.ZodError) return 'SCHEMA_VALIDATION_FAILED';
   if (error instanceof SyntaxError) return 'INVALID_JSON';

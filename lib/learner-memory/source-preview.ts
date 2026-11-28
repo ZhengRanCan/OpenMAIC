@@ -23,7 +23,7 @@ export function sourcePreview(text: string, limit = 512): string {
     truncated: true,
     omittedContentFields: Object.keys(content),
   };
-  let preview = [...JSON.stringify(content)];
+  let preview = [...JSON.stringify(content)].slice(0, limit);
   while (preview.length) {
     result.contentPreview = preview.join('');
     if ([...JSON.stringify(result)].length <= limit) return JSON.stringify(result);

@@ -198,7 +198,13 @@ export const capturedReplySchema = z.strictObject({
     .nullable(),
 });
 export class MemoryError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly details?: {
+      sections: Array<{ section: MemorySection; actual: number; limit: number; overBy: number }>;
+      total: { actual: number; limit: number; overBy: number };
+    },
+  ) {
     super(code);
     this.name = 'MemoryError';
   }

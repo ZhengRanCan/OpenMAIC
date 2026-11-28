@@ -89,6 +89,7 @@ export function buildMemoryPrompt<Source extends TransitionSource = MemorySource
         pretty({
           id: p.id,
           text: restricted ? undefined : p.text,
+          codePoints: restricted ? undefined : [...p.text].length,
           formation: p.formation,
           supports: p.supports.map(aliasOf).filter(Boolean),
           conditions: restricted ? [] : readableConditions(p.conditions),

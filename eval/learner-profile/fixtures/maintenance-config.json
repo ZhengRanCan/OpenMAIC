@@ -1,0 +1,14 @@
+{
+  "mode": "live",
+  "model": "deepseek:deepseek-v4-flash",
+  "methods": ["direct", "two-stage"],
+  "batchSize": 1,
+  "maxCalls": 140,
+  "timeoutMs": 90000,
+  "maxRetries": 0,
+  "validationRetries": 1,
+  "maxOutputTokens": 6000,
+  "temperature": 0,
+  "checkpoints": [12, 24],
+  "maxAnswerInputBytes": 250000
+}

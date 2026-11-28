@@ -172,7 +172,9 @@ describe('F115 experiment repairs', () => {
     s.calls[0].method = 'direct';
     expect(summarize(arms, [], s.calls).methods[0].maintenance).toMatchObject({
       firstAttempts: 1,
-      firstFailures: 1,
+      firstFailures: 0,
+      firstUnavailable: 1,
+      firstRequestFailures: 1,
       firstPasses: 0,
       correctionAttempts: 0,
     });
@@ -202,8 +204,10 @@ describe('F115 experiment repairs', () => {
     expect(s.calls.map((c) => c.transportAttempt)).toEqual([0, 1]);
     expect(summarize(arms, [], s.calls).methods[0].maintenance).toMatchObject({
       firstAttempts: 1,
-      firstFailures: 1,
-      firstPasses: 0,
+      firstFailures: 0,
+      firstPasses: 1,
+      firstRequestFailures: 1,
+      transportRetries: 1,
       correctionAttempts: 0,
     });
   });

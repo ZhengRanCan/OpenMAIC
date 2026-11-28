@@ -1,0 +1,74 @@
+[
+  {
+    "id": "c12-density",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 12,
+    "category": "MR",
+    "question": "截至本检查点，密度题的先后表现及最近一次帮助条件是什么？",
+    "gold": "先答错，把质量乘体积；后来在教师提示密度公式后答对，用12除以4得到3。不能将这次答对说成无帮助的独立掌握。",
+    "sourceIds": ["step-2", "step-12"]
+  },
+  {
+    "id": "c12-type",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 12,
+    "category": "IE",
+    "question": "3x+2=11的题是什么题型，学生表现和已知帮助是什么？",
+    "gold": "这是单选题，学生选C即x=3，被评为正确；教师事先提示先减2再除3。",
+    "sourceIds": ["step-6"]
+  },
+  {
+    "id": "c12-preference",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 12,
+    "category": "IE",
+    "question": "学生目前希望数学讲解按什么顺序组织？",
+    "gold": "先举例子，再讲公式。",
+    "sourceIds": ["step-1"]
+  },
+  {
+    "id": "c12-unknown",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 12,
+    "category": "HC",
+    "question": "学生的生日是什么时候？",
+    "gold": "不知道，材料没有生日信息。",
+    "sourceIds": []
+  },
+  {
+    "id": "c24-density",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 24,
+    "category": "MR",
+    "question": "密度题的记录能否说明学生始终答对，或者已经独立掌握？请说明依据。",
+    "gold": "不能。曾把质量乘体积而答错，后来在教师给公式后答对，又有一次答对但没有明确帮助记录；不能据此确认独立掌握或始终正确。",
+    "sourceIds": ["step-2", "step-12", "step-18"]
+  },
+  {
+    "id": "c24-preference",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 24,
+    "category": "IE",
+    "question": "学生目前仍适用的讲解顺序和额外要求是什么？",
+    "gold": "已经改为先列公式再做例题，并要求每次解题后检查单位；先举例再讲公式已被后续明确更改。",
+    "sourceIds": ["step-1", "step-13", "step-24"]
+  },
+  {
+    "id": "c24-rectangle",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 24,
+    "category": "MR",
+    "question": "长方形周长题前后发生了什么变化？",
+    "gold": "开始误用20减7得到13米，被判错误；后来用20除以2再减7得到3米，被判正确。",
+    "sourceIds": ["step-3", "step-14"]
+  },
+  {
+    "id": "c24-units",
+    "learnerId": "synthetic-maintenance",
+    "checkpoint": 24,
+    "category": "MR",
+    "question": "1米换算厘米的作答前后如何变化？",
+    "gold": "先答10厘米且被判错误，后来答100厘米且被判正确。",
+    "sourceIds": ["step-5", "step-16"]
+  }
+]

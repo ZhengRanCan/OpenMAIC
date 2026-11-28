@@ -47,6 +47,7 @@ corepack pnpm eval:learner-profile run --events eval/learner-profile/fixtures/ev
 - 事件包含 `id`、`learnerId`、`ordinal`、`occurredAt`、`kind`、`origin` 和 `parts`。Quiz 保留题目、实际作答及评分，QA／Discussion 的 `answer` 是学生发言，`previous` 保留可见的教师／学生前文。帮助只能是已记录的条件或 `unknown`。
 - 公开正误日志可省略实际 `answer`，同时提供题目和正确／错误判定。投影明确 `answerAvailable=false`，不伪造提交。原始时间无时区时存于 `recordedTime`，`occurredAt=null`，不擅自指定时区。
 - 评测问题包含 `id`、`learnerId`、`category`（IE／MR／HC）、`question`、`gold` 和可选 `sourceIds`。Gold 文件不会传入抽取或维护模型。每组所有回答保存后再逐题评分。
+- 问题可声明 `checkpoint`，表示该学习者排序后前 N 个事件（不是任意 ordinal 值）。sourceIds 必须都在该前缀内。Memory 只读该完整成功批次后的快照，raw-history 只读同一前缀。最终回放失败时，已成功前缀可答其预先声明的前缀 Gold，最终题仍失败；检查点不在批次边界时记不可用，不能用邻近或最终快照代替。参考答案须在执行前固定。
 - 各组初态为空。旧来源只从本组当前画像仍支持的记录回读，内容预览以 512 码点为目标；关键元数据不截断，过长时由输入容量退让省略旧正文。两阶段保存本方法抽取表示供后续回读，原始事件仍单独供人工核对。
 - 首轮回答只读取最终 Memory 正文和问题，排除 supports 内的原文。按需检索原始历史是另外的实验条件。
 - `raw-history` 将同一截止点的全部共同可见来源按顺序提供给回答器，没有 Memory 维护成本。该组没有画像快照或画像陈述，结果中的空快照不表示丢失数据，实际回答输入在调用日志中。
@@ -83,7 +84,15 @@ corepack pnpm eval:learner-profile validate --events eval/learner-profile/local-
 
 `validationRetries` 默认 0，可显式设为 1 或 2。它在模型成功返回后对解析／内核校验失败补充错误码并修正，逐次保留 validationAttempt／validationError 和全部用量。它不会重放超时等未知结果，不复现生产队列恢复行为。报告按阶段列首轮失败和修正次数，不能只用最终完成率描述可靠性。网络重试仍由独立的 `maxRetries` 控制。
 
-两阶段只替换语义正文，程序保留序号、题号、时间、正误、作答可用性和知识点；旧来源继续使用本方法的抽取表示。入模批次及旧文本退让先按原始新来源规划，替换后只检查容量，不恢复已退让文本或改变批次；抽取扩张导致超限时明确失败。回答的 raw-history 为结构化对象数组，仅序列化一次。Memory-only 包含条件，不含支持原文。
+v3 每个逻辑调用带 `logicalCallId`，网络尝试 `transportAttempt` 和模型修正 `validationAttempt` 分开。`firstPasses/firstFailures` 只判首个模型回复的校验结果；没有可校验回复计 `firstUnavailable`。恢复后的首个合法回复算校验首轮通过，网络初次失败仍计 firstRequestFailures／transportRetries。修正按逻辑 ID＋validationAttempt 的最终网络记录统计。旧日志无 ID 计 legacyUnidentifiedCalls，不猜并。learnersWithoutCorrection 只看维护／抽取的语义修正，不因恢复的网络抖动或回答器修正改变。
+
+已收到但被截断、超出回复上限的候选属于 responseFailures，并进入显式校验修正，不算 transportFailures 或无回复，也不消耗网络重试；所有原回执与用量仍保留。供应商模型与配置不一致立即失败，超时未知结果不重放。
+
+已收到但被截断、超出回复上限的候选属于 responseFailures，并进入显式校验修正，不算 transportFailures 或无回复，也不消耗网络重试；所有原回执与用量仍保留。供应商模型与配置不一致立即失败，超时未知结果不重放。
+
+开启 Memory 修正时，准备阶段预留 2,048 bytes，基础请求最多 45,952 bytes，反馈后仍最多 48,000。预算异常附候选实际用量、上限和超出量。修正回显完整被拒候选；放不下时明确省略候选并保留原调用日志，不截断原材料或扩大上限。共享解析允许单个完整 JSON 围栏，内容／来源／预算等校验保持严格。若是同题正误反转且目标只支持相反结果，不允许误判 already_represented；该保护只覆盖可由元数据确认的情况，不代替语义审阅。
+
+两阶段只替换语义正文，程序保留序号、题号、题型、时间、正误、作答可用性和知识点；旧来源继续使用本方法的抽取表示。入模批次及旧文本退让先按原始新来源规划，替换后只检查容量，不恢复已退让文本或改变批次；抽取扩张导致超限时明确失败。回答的 raw-history 为结构化对象数组，仅序列化一次。Memory-only 包含条件，不含支持原文。
 
 三组报告在 `comparisons` 中按明确的 baseline／comparison 及 IE／MR／HC 给出两两配对差值。`paired` 继续保留两组 Memory 的旧差值字段。每种方法的 `stages` 分开统计 extract、memory、answer 和 judge，便于区分构建开销与回答开销。裁判输出 null 会保留不可判定理由并导致运行不完整，不作为正常成功或错误答案悄悄计分。
 

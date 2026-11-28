@@ -94,7 +94,7 @@ async function main() {
     duplicates: data.duplicates,
     scoring: config.mode === 'fixture' ? 'fixture-exact-v1' : 'local-semantic-v1',
     fixtureOnly: config.mode === 'fixture',
-    protocolVersion: 'profile-eval-v2',
+    protocolVersion: 'profile-eval-v3',
     oldSources:
       'currently supported method-specific sources; structured content preview with protected metadata; production capacity fallback planned once before extraction',
     projection:

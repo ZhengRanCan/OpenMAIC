@@ -1,0 +1,418 @@
+[
+  {
+    "id": "step-1",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 1,
+    "occurredAt": "2026-01-01T00:00:00.000Z",
+    "kind": "qa",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "以后数学讲解请先举例子，再讲公式。",
+        "help": "unknown"
+      }
+    ]
+  },
+  {
+    "id": "step-2",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 2,
+    "occurredAt": "2026-01-01T00:01:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "B：48，用质量乘体积。",
+        "help": "unknown",
+        "question": "单选: 质量12克、体积4立方厘米，密度多少？",
+        "review": "incorrect",
+        "options": ["A:12", "B:48", "C:3"]
+      }
+    ],
+    "questionId": "density"
+  },
+  {
+    "id": "step-3",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 3,
+    "occurredAt": "2026-01-01T00:02:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "20-7=13米。",
+        "help": "unknown",
+        "question": "简答: 长方形周长20米、长7米，宽多少？",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "rectangle"
+  },
+  {
+    "id": "step-4",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 4,
+    "occurredAt": "2026-01-01T00:03:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "分子分母各相加，2/5。",
+        "help": "unknown",
+        "question": "简答: 计算1/2+1/3。",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "fractions"
+  },
+  {
+    "id": "step-5",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 5,
+    "occurredAt": "2026-01-01T00:04:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "10厘米。",
+        "help": "unknown",
+        "question": "填空: 1米等于多少厘米？",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "units"
+  },
+  {
+    "id": "step-6",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 6,
+    "occurredAt": "2026-01-01T00:05:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "C：x=3。",
+        "help": "prior-teacher-messages",
+        "question": "单选: 3x+2=11，x是多少？",
+        "review": "correct",
+        "options": ["A:2", "B:4", "C:3"],
+        "previous": [
+          {
+            "role": "teacher",
+            "text": "先两边减2，再除以3。"
+          }
+        ]
+      }
+    ],
+    "questionId": "equation"
+  },
+  {
+    "id": "step-7",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 7,
+    "occurredAt": "2026-01-01T00:06:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "25除以2等于12.5。",
+        "help": "unknown",
+        "question": "简答: 两部分之比2:3，总数25，较少部分是多少？",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "ratio"
+  },
+  {
+    "id": "step-8",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 8,
+    "occurredAt": "2026-01-01T00:07:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "25%。",
+        "help": "unknown",
+        "question": "填空: 0.25写成百分数。",
+        "review": "correct"
+      }
+    ],
+    "questionId": "percentage"
+  },
+  {
+    "id": "step-9",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 9,
+    "occurredAt": "2026-01-01T00:08:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "6乘4等于24平方厘米。",
+        "help": "unknown",
+        "question": "简答: 三角形底6厘米、高4厘米，面积是多少？",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "triangle"
+  },
+  {
+    "id": "step-10",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 10,
+    "occurredAt": "2026-01-01T00:09:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "3。",
+        "help": "unknown",
+        "question": "填空: 计算5-(-2)。",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "signed"
+  },
+  {
+    "id": "step-11",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 11,
+    "occurredAt": "2026-01-01T00:10:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "9厘米，乘以3。",
+        "help": "unknown",
+        "question": "简答: 正方形边长3厘米，周长是多少？",
+        "review": "incorrect"
+      }
+    ],
+    "questionId": "square"
+  },
+  {
+    "id": "step-12",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 12,
+    "occurredAt": "2026-01-01T00:11:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "C：12除以4等于3克每立方厘米。",
+        "help": "prior-teacher-messages",
+        "question": "单选: 质量12克、体积4立方厘米，密度多少？",
+        "review": "correct",
+        "options": ["A:12", "B:48", "C:3"],
+        "previous": [
+          {
+            "role": "teacher",
+            "text": "密度等于质量除以体积。"
+          }
+        ]
+      }
+    ],
+    "questionId": "density"
+  },
+  {
+    "id": "step-13",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 13,
+    "occurredAt": "2026-01-01T00:12:00.000Z",
+    "kind": "qa",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "我更改讲解偏好：之后请先列公式，再做例题。",
+        "help": "unknown"
+      }
+    ]
+  },
+  {
+    "id": "step-14",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 14,
+    "occurredAt": "2026-01-01T00:13:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "先20除以2再减7，等于3米。",
+        "help": "unknown",
+        "question": "简答: 长方形周长20米、长7米，宽多少？",
+        "review": "correct"
+      }
+    ],
+    "questionId": "rectangle"
+  },
+  {
+    "id": "step-15",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 15,
+    "occurredAt": "2026-01-01T00:14:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "通分为3/6加2/6等于5/6。",
+        "help": "unknown",
+        "question": "简答: 计算1/2+1/3。",
+        "review": "correct"
+      }
+    ],
+    "questionId": "fractions"
+  },
+  {
+    "id": "step-16",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 16,
+    "occurredAt": "2026-01-01T00:15:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "100厘米。",
+        "help": "unknown",
+        "question": "填空: 1米等于多少厘米？",
+        "review": "correct"
+      }
+    ],
+    "questionId": "units"
+  },
+  {
+    "id": "step-17",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 17,
+    "occurredAt": "2026-01-01T00:16:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "C：x=3。",
+        "help": "unknown",
+        "question": "单选: 3x+2=11，x是多少？",
+        "review": "correct",
+        "options": ["A:2", "B:4", "C:3"]
+      }
+    ],
+    "questionId": "equation"
+  },
+  {
+    "id": "step-18",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 18,
+    "occurredAt": "2026-01-01T00:17:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "C：3克每立方厘米。",
+        "help": "unknown",
+        "question": "单选: 质量12克、体积4立方厘米，密度多少？",
+        "review": "correct",
+        "options": ["A:12", "B:48", "C:3"]
+      }
+    ],
+    "questionId": "density"
+  },
+  {
+    "id": "step-19",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 19,
+    "occurredAt": "2026-01-01T00:18:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "25乘以2/5等于10。",
+        "help": "unknown",
+        "question": "简答: 两部分之比2:3，总数25，较少部分是多少？",
+        "review": "correct"
+      }
+    ],
+    "questionId": "ratio"
+  },
+  {
+    "id": "step-20",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 20,
+    "occurredAt": "2026-01-01T00:19:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "6乘4再除2等于12平方厘米。",
+        "help": "unknown",
+        "question": "简答: 三角形底6厘米、高4厘米，面积是多少？",
+        "review": "correct"
+      }
+    ],
+    "questionId": "triangle"
+  },
+  {
+    "id": "step-21",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 21,
+    "occurredAt": "2026-01-01T00:20:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "减去负数等于加正数，结果7。",
+        "help": "unknown",
+        "question": "填空: 计算5-(-2)。",
+        "review": "correct"
+      }
+    ],
+    "questionId": "signed"
+  },
+  {
+    "id": "step-22",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 22,
+    "occurredAt": "2026-01-01T00:21:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "3乘4等于12厘米。",
+        "help": "unknown",
+        "question": "简答: 正方形边长3厘米，周长是多少？",
+        "review": "correct"
+      }
+    ],
+    "questionId": "square"
+  },
+  {
+    "id": "step-23",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 23,
+    "occurredAt": "2026-01-01T00:22:00.000Z",
+    "kind": "quiz",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "30。",
+        "help": "unknown",
+        "question": "填空: 150的20%是多少？",
+        "review": "correct"
+      }
+    ],
+    "questionId": "percentage-new"
+  },
+  {
+    "id": "step-24",
+    "learnerId": "synthetic-maintenance",
+    "ordinal": 24,
+    "occurredAt": "2026-01-01T00:23:00.000Z",
+    "kind": "qa",
+    "origin": "synthetic",
+    "parts": [
+      {
+        "answer": "以后每次解题后请检查单位，并继续先列公式再做例题。",
+        "help": "unknown"
+      }
+    ]
+  }
+]
